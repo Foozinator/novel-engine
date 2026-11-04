@@ -145,7 +145,7 @@ Owns the `activeStreams` map and the repetitive stream lifecycle pattern used by
 2. Emit `callStart` event
 3. Accumulate `textDelta` / `thinkingDelta` into buffers
 4. Track `progressStage` and `toolDuration` on active stream
-5. On `done`: save assistant message, record usage, end session, delete active stream, call optional `onDone` hook
+5. On `done`: save assistant message, record usage (against `done.model` when the provider reported a resolved model, else the requested model), end session, delete active stream, call optional `onDone` hook
 6. On `error`: end session as idle, delete active stream
 7. Forward all events to caller's `onEvent`
 
@@ -513,6 +513,7 @@ Key behaviors:
 - `callStart` forwarded only from the first attempt (suppressed on resumes)
 - Token usage (`inputTokens`, `outputTokens`, `thinkingTokens`) and `filesTouched` accumulated across all attempts into the final merged `done` event
 - Intermediate `done`/`error` events are suppressed (never forwarded to the caller)
+- The resolved model (from `modelResolved` or an intermediate `done.model`) is carried onto every merged `done` as `model`
 - `MAX_RESUME_ATTEMPTS` and `NO_PROGRESS_LIMIT` are exported constants — tests reference them by name
 - Hard cap fires at the top of the loop on entry to attempt `MAX_RESUME_ATTEMPTS + 1` (after `MAX_RESUME_ATTEMPTS` re-spawns)
 - No-progress guard compares `partialText.length` and `Object.keys(allFilesTouched).length` against the previous attempt's values; resets to 0 on real progress

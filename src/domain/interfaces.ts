@@ -66,6 +66,7 @@ import type {
   StreamSessionRecord,
   UsageRecord,
   UsageTimePoint,
+  UsageCostBasisRow,
   UsageSummary,
   WordCountSnapshot,
 } from './types';
@@ -166,6 +167,8 @@ export interface IDatabaseService {
   getUsageOverTime(bookSlug?: string): UsageTimePoint[];
   getUsageByAgent(bookSlug?: string): { agentName: string; inputTokens: number; outputTokens: number; thinkingTokens: number; conversationCount: number }[];
   getUsageByPhase(bookSlug?: string): { phase: string; inputTokens: number; outputTokens: number; thinkingTokens: number; conversationCount: number }[];
+  /** Token totals grouped by agent, phase and model, so costs can be priced per model. */
+  getUsageCostBasis(bookSlug?: string): UsageCostBasisRow[];
   recordWordCountSnapshot(bookSlug: string, wordCount: number, chapterCount: number): void;
   getWordCountHistory(bookSlug?: string, limit?: number): WordCountSnapshot[];
 

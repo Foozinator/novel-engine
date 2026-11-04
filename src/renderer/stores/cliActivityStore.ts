@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import type { StreamEvent, ToolUseInfo, ContextDiagnostics, AgentName } from '@domain/types';
-import { CHARS_PER_TOKEN, AGENT_REGISTRY } from '@domain/constants';
+import { CHARS_PER_TOKEN, AGENT_REGISTRY, formatModelLabel } from '@domain/constants';
 
 type CliActivityEntryKind =
   | 'spawn'
@@ -140,11 +140,14 @@ let _activityRecoveryTimeout: ReturnType<typeof setTimeout> | null = null;
  *
  * Examples:
  *   'claude-opus-4-20250514'    → 'Opus 4'
- *   'claude-sonnet-4-20250514'  → 'Sonnet 4'
+ *   'claude-opus-5-5'           → 'Opus 5.5'  (via formatModelLabel)
+ *   'opus'                      → 'Opus'
  *   'llama3.2'                  → 'Llama3.2'
  *   'gpt-4o'                    → 'Gpt 4o'
  */
 function getModelLabel(model: string): string {
+  const claudeLabel = formatModelLabel(model);
+  if (claudeLabel !== model) return claudeLabel;
   const withoutDate = model.replace(/-\d{8}$/, '');
   const withoutVendor = withoutDate.replace(/^claude-/, '');
   if (!withoutVendor.includes('-')) {
@@ -409,6 +412,18 @@ export const useCliActivityStore = create<CliActivityState>((set, get) => ({
       case 'status':
         updated = pushEntry(updated, 'status', event.message);
         break;
+
+      case 'modelResolved': {
+        // The requested ID was an alias; show the model it actually resolved to.
+        if (event.model === updated.callMeta.model) break;
+        const modelLabel = getModelLabel(event.model);
+        updated = {
+          ...updated,
+          callMeta: { ...updated.callMeta, model: event.model, modelLabel },
+        };
+        updated = pushEntry(updated, 'status', `Model: ${modelLabel}`);
+        break;
+      }
 
       case 'blockStart': {
         const now = Date.now();
@@ -687,6 +702,7 @@ export const useCliActivityStore = create<CliActivityState>((set, get) => ({
 export type ActiveCallSummary = {
   agentName: string;
   agentColor: string;
+  modelLabel: string;
   toolLabel: string | null;
   filePath: string | null;
   elapsedMs: number;
@@ -709,6 +725,7 @@ export function useActiveCallSummary(): ActiveCallSummary | null {
       return {
         agentName: call.callMeta.agentName,
         agentColor: call.callMeta.agentColor,
+        modelLabel: call.callMeta.modelLabel,
         toolLabel: call.currentToolName,
         filePath: lastToolEntry?.tool?.filePath ?? null,
         elapsedMs: call.callElapsedMs,

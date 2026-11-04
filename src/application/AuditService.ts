@@ -163,7 +163,7 @@ export class AuditService implements IAuditService {
               inputTokens: event.inputTokens,
               outputTokens: event.outputTokens,
               thinkingTokens: event.thinkingTokens,
-              model: auditModel,
+              model: event.model ?? auditModel,
             });
           }
           onEvent(event);
@@ -288,7 +288,7 @@ export class AuditService implements IAuditService {
             inputTokens: event.inputTokens,
             outputTokens: event.outputTokens,
             thinkingTokens: event.thinkingTokens,
-            model: fixModel,
+            model: event.model ?? fixModel,
           });
         }
 
@@ -415,7 +415,7 @@ export class AuditService implements IAuditService {
             inputTokens: event.inputTokens,
             outputTokens: event.outputTokens,
             thinkingTokens: event.thinkingTokens,
-            model: motifModel,
+            model: event.model ?? motifModel,
           });
         }
         // Forward ALL events to IPC layer for CLI Activity visibility
@@ -543,7 +543,7 @@ ${batches.length > 1 ? `Do NOT update source/motif-ledger.json yet — this is b
             inputTokens: event.inputTokens,
             outputTokens: event.outputTokens,
             thinkingTokens: event.thinkingTokens,
-            model,
+            model: event.model ?? model,
           });
           console.log(`[AuditService] Intercepted intermediate done (motif batch ${stepNum}/${batches.length})`);
           return;
@@ -657,7 +657,7 @@ After updating the ledger, respond with a brief summary: how many phrases found,
               inputTokens: event.inputTokens,
               outputTokens: event.outputTokens,
               thinkingTokens: event.thinkingTokens,
-              model,
+              model: event.model ?? model,
             });
           }
           // Final step — let all events through (including done)

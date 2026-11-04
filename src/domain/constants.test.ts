@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  formatModelLabel,
+  getModelPricing,
   AGENT_MULTI_CALL_STEPS,
   AGENT_QUICK_ACTIONS,
   AGENT_READ_GUIDANCE,
@@ -300,5 +302,38 @@ describe('AGENT_MULTI_CALL_STEPS', () => {
         expect(step.promptTemplate).toContain('{{CHAPTER_LIST}}');
       }
     }
+  });
+});
+
+describe('getModelPricing', () => {
+  it('returns the exact entry for listed aliases and full IDs', () => {
+    expect(getModelPricing('sonnet')).toBe(MODEL_PRICING['sonnet']);
+    expect(getModelPricing('claude-haiku-5-5')).toBe(MODEL_PRICING['claude-haiku-5-5']);
+    expect(getModelPricing('claude-opus-4-20250514')).toBe(MODEL_PRICING['claude-opus-4-20250514']);
+  });
+
+  it('prices an unlisted full Claude ID by its family alias', () => {
+    expect(getModelPricing('claude-sonnet-5-6')).toBe(MODEL_PRICING['sonnet']);
+    expect(getModelPricing('claude-fable-6')).toBe(MODEL_PRICING['fable']);
+  });
+
+  it('falls back to the first entry for anything else', () => {
+    expect(getModelPricing('llama3.2')).toBe(Object.values(MODEL_PRICING)[0]);
+  });
+});
+
+describe('formatModelLabel', () => {
+  it.each([
+    ['claude-opus-5-5', 'Opus 5.5'],
+    ['claude-fable-5-1', 'Fable 5.1'],
+    ['claude-haiku-5-5', 'Haiku 5.5'],
+    ['claude-opus-4-20250514', 'Opus 4'],
+    ['claude-sonnet-4-5-20250929', 'Sonnet 4.5'],
+  ])('%s → %s', (id, label) => {
+    expect(formatModelLabel(id)).toBe(label);
+  });
+
+  it.each(['opus', 'llama3.2', 'gpt-4o', 'claude-3-5-sonnet-20241022'])('leaves %s unchanged', (id) => {
+    expect(formatModelLabel(id)).toBe(id);
   });
 });

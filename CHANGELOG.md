@@ -4,6 +4,45 @@ All notable changes to Novel Engine are documented here.
 
 ---
 
+## [2026-11-04] — Show the model a Claude alias resolved to, and price usage per model
+
+### Summary
+
+The Claude CLI's `system`/`init` stream event names the concrete model an alias resolved to (`opus` → `claude-opus-5-5`). NE ignored it. `ClaudeCodeClient` now emits it as a new `modelResolved` stream event and attaches it to `done` as `model`, so usage rows record the model that actually ran. The CLI Activity panel and the StatusBar show it as "Opus 5.5". Statistics no longer apply the first pricing entry to every call: usage is grouped by agent, phase and model and each group is priced at its own model's rate. Reference implementation for the intake brief `claude-model-aliases-and-cli-updates.md` (part 2 of 3; the CLI update flow is not included).
+
+### Added
+- `src/domain/constants.ts` — `getModelPricing(modelId)` (exact entry → family alias for an unlisted `claude-<family>-N[-M]` ID → first entry) and `formatModelLabel(modelId)` (`claude-opus-5-5` → "Opus 5.5"). `MODEL_PRICING` gains the resolved full IDs `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1`.
+- `src/domain/types.ts` — `StreamEvent` variant `{ type: 'modelResolved'; model }`; optional `model` on `done`; `UsageCostBasisRow`.
+- `src/domain/interfaces.ts`, `src/infrastructure/database/DatabaseService.ts` — `getUsageCostBasis(bookSlug?)`: token totals grouped by agent, phase (null → `adhoc`) and model.
+
+### Changed
+- `src/infrastructure/claude-cli/ClaudeCodeClient.ts` — Reads `model` from the `init` event once per process, emits `modelResolved`, and sets `done.model`.
+- `src/infrastructure/claude-cli/StreamSessionTracker.ts` — `getResolvedModel()` / `setResolvedModel()`.
+- `src/application/AutoTurnResumer.ts` — Carries the resolved model (from `modelResolved` or an intermediate `done.model`) onto every merged `done`.
+- `src/application/StreamManager.ts`, `src/application/AuditService.ts` — `recordUsage` uses `event.model ?? <requested model>`.
+- `src/application/StatisticsService.ts` — Per-agent, per-phase and total cost estimates are summed from `getUsageCostBasis()` rows priced with `getModelPricing()`. Rounding happens after summing.
+- `src/renderer/stores/cliActivityStore.ts` — Handles `modelResolved` (updates `callMeta.model`/`modelLabel`, logs `Model: …` once). `getModelLabel` uses `formatModelLabel` for full Claude IDs (previously `claude-opus-5-5` → "Opus 5 5"). `ActiveCallSummary` gains `modelLabel`.
+- `src/renderer/components/StatusBar/StatusBar.tsx` — Shows the model label after the agent name.
+- `docs/architecture/DOMAIN.md`, `docs/architecture/INFRASTRUCTURE.md`, `docs/architecture/APPLICATION.md`, `docs/architecture/RENDERER.md` — Updated for the above.
+
+### Tests
+- `ClaudeCodeClient.test.ts` — init event → one `modelResolved` + `done.model`; no model when init has none.
+- `AutoTurnResumer.test.ts` — resolved model survives a max-turns resume onto the merged `done`.
+- `StreamManager.test.ts` — usage recorded against `done.model`.
+- `StatisticsService.test.ts` — mixed models (resolved ID, alias, Haiku, legacy Opus 4) priced per model, per agent and per phase.
+- `DatabaseService.usage.test.ts` — `getUsageCostBasis` grouping and book filter.
+- `cliActivityStore.test.ts` — `modelResolved` relabels the call once.
+- `constants.test.ts` — `getModelPricing` and `formatModelLabel` cases.
+
+### Architecture Impact
+- New `StreamEvent` variant `modelResolved`. It flows through the existing stream IPC unchanged; consumers that don't handle it ignore it. New `IDatabaseService` method. No new IPC channels, stores or DI wiring.
+
+### Migration Notes
+- No schema change. Existing usage rows keep the model they were recorded with (aliases or legacy IDs) and are priced by that entry. New rows from the Claude CLI record the resolved full ID.
+- Cost estimates remain best-effort: `done.inputTokens` is the CLI result's `usage.input_tokens`, which excludes cache reads and cache writes. With Claude Code's large cached context that is most of the input, so estimates still undercount. Not changed here.
+
+---
+
 ## [2026-11-04] — Claude CLI model aliases replace dated model IDs
 
 ### Summary

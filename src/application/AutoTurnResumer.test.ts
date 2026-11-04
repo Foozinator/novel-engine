@@ -133,6 +133,41 @@ describe('AutoTurnResumer', () => {
     }
   });
 
+  it('carries the resolved model onto the merged done across a resume', async () => {
+    const events: StreamEvent[] = [];
+    let callCount = 0;
+    const inner = makeMockRegistry({
+      onSend: (onEvent) => {
+        callCount++;
+        // The model is only reported by the first attempt; the attempt that
+        // hits max turns ends with an error, not a done.
+        if (callCount === 1) {
+          onEvent({ type: 'modelResolved', model: 'claude-opus-5-5' });
+          onEvent({ type: 'textDelta', text: 'partial work' });
+          onEvent({ type: 'error', message: 'max turns', isMaxTurns: true });
+          return Promise.reject(new Error('max turns'));
+        }
+        onEvent({ type: 'textDelta', text: ' finished' });
+        onEvent({ type: 'done', inputTokens: 10, outputTokens: 20, thinkingTokens: 0, filesTouched: {} });
+        return Promise.resolve();
+      },
+    });
+    const resumer = new AutoTurnResumer(inner);
+
+    await resumer.sendMessage({
+      model: 'opus',
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'do work' }],
+      maxTokens: 4096,
+      maxTurns: 30,
+      conversationId: 'conv-1',
+      onEvent: (e) => events.push(e),
+    });
+
+    expect(events.filter((e) => e.type === 'modelResolved')).toHaveLength(1);
+    expect(events.find((e) => e.type === 'done')).toMatchObject({ model: 'claude-opus-5-5' });
+  });
+
   it('forwards genuine errors (non-maxTurns) without resuming', async () => {
     const events: StreamEvent[] = [];
     const inner = makeMockRegistry({

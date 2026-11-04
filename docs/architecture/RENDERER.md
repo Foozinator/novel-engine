@@ -262,7 +262,7 @@ Stores initialize the handler via a lazy IIFE pattern to avoid circular TypeScri
 
 File: `stores/cliActivityStore.ts`
 
-Tracks active CLI tool usage for the activity panel. Recovery polling uses module-level timer refs (`_activityRecoveryPollTimer`, `_activityRecoveryTimeout`) to prevent duplicate intervals on rapid view switches. `loadDiagnostics()` passes the call's `conversationId` to `context.getLastDiagnostics()` for per-conversation diagnostic lookup.
+Tracks active CLI tool usage for the activity panel. Recovery polling uses module-level timer refs (`_activityRecoveryPollTimer`, `_activityRecoveryTimeout`) to prevent duplicate intervals on rapid view switches. `loadDiagnostics()` passes the call's `conversationId` to `context.getLastDiagnostics()` for per-conversation diagnostic lookup. A `modelResolved` event replaces the call's `model`/`modelLabel` (alias → "Opus 5.5" via `formatModelLabel`) and logs one `Model: …` entry. `useActiveCallSummary()` exposes `modelLabel`, which the StatusBar shows after the agent name.
 
 ### fileChangeStore
 

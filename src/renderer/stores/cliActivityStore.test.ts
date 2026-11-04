@@ -55,6 +55,18 @@ describe('cliActivityStore', () => {
     expect(call.entries[0]).toMatchObject({ kind: 'spawn', message: 'Spark call started (Opus 4)' });
   });
 
+  it('modelResolved replaces an alias with the resolved model label, once', () => {
+    startCall('call-1', { model: 'opus' });
+    expect(useCliActivityStore.getState().calls['call-1'].callMeta.modelLabel).toBe('Opus');
+
+    handle({ type: 'modelResolved', model: 'claude-opus-5-5', callId: 'call-1' });
+    handle({ type: 'modelResolved', model: 'claude-opus-5-5', callId: 'call-1' }); // repeat (resumed call)
+
+    const call = useCliActivityStore.getState().calls['call-1'];
+    expect(call.callMeta).toMatchObject({ model: 'claude-opus-5-5', modelLabel: 'Opus 5.5' });
+    expect(call.entries.filter((e) => e.message === 'Model: Opus 5.5')).toHaveLength(1);
+  });
+
   it('tracks a full call lifecycle: phases, deltas, tools, files, done + diagnostics', async () => {
     mock.context.getLastDiagnostics.mockResolvedValue({
       filesAvailable: ['source/pitch.md'],

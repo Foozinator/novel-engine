@@ -267,6 +267,12 @@ export type StreamEventSource = 'chat' | 'auto-draft' | 'hot-take' | 'adhoc-revi
  *
  * `maxTurnsResume` is emitted by the auto-resume wrapper to notify the UI
  * that a re-spawn is happening (attempt number + new turn budget).
+ *
+ * `modelResolved` reports the concrete model a provider is running when the
+ * requested ID was an alias (Claude CLI: `opus` → `claude-opus-5-5`, read from
+ * the CLI's system init event). `done.model` carries the same value so usage
+ * is recorded against the model that actually ran. Both are optional — a
+ * provider that cannot tell leaves them out and callers keep the requested ID.
  */
 export type StreamEvent =
   | { type: 'callStart'; agentName: AgentName; model: string; bookSlug: string }
@@ -277,7 +283,8 @@ export type StreamEvent =
   | { type: 'blockEnd'; blockType: StreamBlockType }
   | { type: 'toolUse'; tool: ToolUseInfo }
   | { type: 'filesChanged'; paths: string[] }
-  | { type: 'done'; inputTokens: number; outputTokens: number; thinkingTokens: number; filesTouched: FileTouchMap; isMaxTurns?: boolean }
+  | { type: 'modelResolved'; model: string }
+  | { type: 'done'; inputTokens: number; outputTokens: number; thinkingTokens: number; filesTouched: FileTouchMap; isMaxTurns?: boolean; model?: string }
   | { type: 'progressStage'; stage: ProgressStage }
   | { type: 'thinkingSummary'; summary: ThinkingSummary }
   | { type: 'toolDuration'; tool: TimestampedToolUse }
@@ -401,6 +408,16 @@ export type UsageRecord = {
   thinkingTokens: number;
   model: string;
   timestamp: string;
+};
+
+/** One row of token usage grouped by agent, pipeline phase and model. */
+export type UsageCostBasisRow = {
+  agentName: string;
+  phase: string;                  // pipeline phase, or 'adhoc'
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  thinkingTokens: number;
 };
 
 export type UsageSummary = {

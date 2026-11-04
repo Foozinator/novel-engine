@@ -510,12 +510,14 @@ export class ClaudeCodeClient implements IClaudeClient, IModelProvider {
         onEvent({ type: 'progressStage', stage: stageChange });
       }
 
+      const resolvedModel = tracker.getResolvedModel();
       onEvent({
         type: 'done',
         inputTokens,
         outputTokens,
         thinkingTokens,
         filesTouched: tracker.getFileTouches(),
+        ...(resolvedModel ? { model: resolvedModel } : {}),
       });
       return;
     }
@@ -677,7 +679,14 @@ export class ClaudeCodeClient implements IClaudeClient, IModelProvider {
 
     // === system — CLI initialization info (useful for diagnostics) ===
     if (eventType === 'system') {
-      // We don't emit a stream event for system init, but it confirms the CLI is running
+      // The init event names the concrete model an alias resolved to
+      // (`opus` → `claude-opus-5-5`). Report it once so the UI can show it and
+      // usage can be priced against it.
+      const model = event.model;
+      if (event.subtype === 'init' && typeof model === 'string' && model && !tracker.getResolvedModel()) {
+        tracker.setResolvedModel(model);
+        onEvent({ type: 'modelResolved', model });
+      }
       return;
     }
 

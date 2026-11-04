@@ -88,6 +88,7 @@ Key behavior:
 - Working directory set to book directory (CLI tools operate on book files)
 - Parses NDJSON line-by-line from stdout
 - Maps CLI events to `StreamEvent` union variants
+- Resolved model: the `system`/`init` event's `model` (e.g. `opus` → `claude-opus-5-5`) is stored on the `StreamSessionTracker`, emitted once as `modelResolved`, and attached to `done` as `model`
 - `abortStream` sends SIGTERM, then SIGKILL after 2s grace period
 - `isAvailable()` caches result of `claude --version` check
 - Persists stream events to SQLite in batches (100ms flush interval, max 20, critical events flush immediately) for reduced I/O pressure

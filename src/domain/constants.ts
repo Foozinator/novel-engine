@@ -425,17 +425,51 @@ export type ModelPricing = {
 // Alias entries reflect the model each Claude CLI alias resolved to as of
 // 2026-10 (Opus 5.5, Sonnet 5.5, Haiku 5.5 at <=100K-token prompts, Fable 5.1).
 // When an alias moves to a new model these become approximate. Order matters:
-// StatisticsService.estimateCost() applies the FIRST entry to every call, so
-// the default model (`opus`) stays first.
+// the FIRST entry is the fallback price for models with no entry (see
+// getModelPricing), so the default model (`opus`) stays first.
 export const MODEL_PRICING: Record<string, ModelPricing> = {
   'opus': { inputPer1M: 4, outputPer1M: 20 },
   'sonnet': { inputPer1M: 2, outputPer1M: 10 },
   'haiku': { inputPer1M: 0.1, outputPer1M: 0.5 },
   'fable': { inputPer1M: 10, outputPer1M: 50 },
+  // Full IDs the aliases resolved to as of 2026-10 (recorded when the CLI's
+  // init event reports the resolved model)
+  'claude-opus-5-5': { inputPer1M: 4, outputPer1M: 20 },
+  'claude-sonnet-5-5': { inputPer1M: 2, outputPer1M: 10 },
+  'claude-haiku-5-5': { inputPer1M: 0.1, outputPer1M: 0.5 },
+  'claude-fable-5-1': { inputPer1M: 10, outputPer1M: 50 },
   // Legacy dated IDs (pre-alias settings, historical usage rows)
   'claude-opus-4-20250514': { inputPer1M: 15, outputPer1M: 75 },
   'claude-sonnet-4-20250514': { inputPer1M: 3, outputPer1M: 15 },
 };
+
+const CLAUDE_FAMILY_PATTERN = /^claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/;
+
+/**
+ * Price for a model ID: an exact MODEL_PRICING entry, else the family alias
+ * price for an unlisted full Claude ID (e.g. a future `claude-opus-5-6` is
+ * priced as `opus`), else the first entry as a ballpark fallback.
+ */
+export function getModelPricing(modelId: string): ModelPricing {
+  const exact = MODEL_PRICING[modelId];
+  if (exact) return exact;
+  const family = CLAUDE_FAMILY_PATTERN.exec(modelId)?.[1];
+  if (family && MODEL_PRICING[family]) return MODEL_PRICING[family];
+  return Object.values(MODEL_PRICING)[0];
+}
+
+/**
+ * Short display label for a full Claude model ID:
+ * `claude-opus-5-5` → "Opus 5.5", `claude-opus-4-20250514` → "Opus 4".
+ * Anything else (aliases, non-Claude models) is returned unchanged.
+ */
+export function formatModelLabel(modelId: string): string {
+  const match = CLAUDE_FAMILY_PATTERN.exec(modelId);
+  if (!match) return modelId;
+  const [, family, major, minor] = match;
+  const name = family.charAt(0).toUpperCase() + family.slice(1);
+  return minor !== undefined ? `${name} ${major}.${minor}` : `${name} ${major}`;
+}
 
 // === Dynamic Turn Budget ===
 

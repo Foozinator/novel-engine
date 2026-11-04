@@ -78,6 +78,9 @@ export class AutoTurnResumer implements IProviderRegistry {
     let totalOutputTokens = 0;
     let totalThinkingTokens = 0;
     let allFilesTouched: FileTouchMap = {};
+    // Concrete model reported by the provider (alias → full ID), carried onto
+    // every synthesized `done` so usage is recorded against the model that ran.
+    let resolvedModel: string | undefined;
 
     let callStartForwarded = false;
 
@@ -106,6 +109,7 @@ export class AutoTurnResumer implements IProviderRegistry {
             thinkingTokens: totalThinkingTokens,
             filesTouched: allFilesTouched,
             isMaxTurns: true,
+            ...(resolvedModel ? { model: resolvedModel } : {}),
           });
           doneEmitted = true;
         }
@@ -130,6 +134,8 @@ export class AutoTurnResumer implements IProviderRegistry {
           partialText += event.text;
         } else if (event.type === 'thinkingDelta') {
           partialThinking += event.text;
+        } else if (event.type === 'modelResolved') {
+          resolvedModel = event.model;
         }
 
         if (event.type === 'done') {
@@ -140,6 +146,7 @@ export class AutoTurnResumer implements IProviderRegistry {
           attemptOutputTokens = event.outputTokens;
           attemptThinkingTokens = event.thinkingTokens;
           attemptFilesTouched = event.filesTouched;
+          if (event.model) resolvedModel = event.model;
           return;
         }
 
@@ -188,6 +195,7 @@ export class AutoTurnResumer implements IProviderRegistry {
               outputTokens: totalOutputTokens,
               thinkingTokens: totalThinkingTokens,
               filesTouched: allFilesTouched,
+              ...(resolvedModel ? { model: resolvedModel } : {}),
             });
             doneEmitted = true;
           } else {
@@ -234,6 +242,7 @@ export class AutoTurnResumer implements IProviderRegistry {
             thinkingTokens: totalThinkingTokens,
             filesTouched: allFilesTouched,
             isMaxTurns: true,
+            ...(resolvedModel ? { model: resolvedModel } : {}),
           });
           doneEmitted = true;
         }

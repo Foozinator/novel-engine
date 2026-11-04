@@ -7,8 +7,9 @@ import type {
   AgentUsageBreakdown,
   BookStatistics,
   PhaseUsageBreakdown,
+  UsageCostBasisRow,
 } from '@domain/types';
-import { MODEL_PRICING } from '@domain/constants';
+import { getModelPricing } from '@domain/constants';
 
 export class StatisticsService implements IStatisticsService {
   constructor(
@@ -32,21 +33,29 @@ export class StatisticsService implements IStatisticsService {
       }
     }
 
+    // Price each (agent, phase, model) group at that model's rate, then roll up.
+    const costBasis = this.db.getUsageCostBasis(bookSlug);
+    const costByAgent = new Map<string, number>();
+    const costByPhase = new Map<string, number>();
+    let totalCost = 0;
+    for (const row of costBasis) {
+      const cost = this.rawCost(row);
+      costByAgent.set(row.agentName, (costByAgent.get(row.agentName) ?? 0) + cost);
+      costByPhase.set(row.phase, (costByPhase.get(row.phase) ?? 0) + cost);
+      totalCost += cost;
+    }
+
     const perAgent: AgentUsageBreakdown[] = perAgentRaw.map((r) => ({
       ...r,
-      estimatedCost: this.estimateCost(r.inputTokens, r.outputTokens, r.thinkingTokens),
+      estimatedCost: roundCents(costByAgent.get(r.agentName) ?? 0),
     }));
 
     const perPhase: PhaseUsageBreakdown[] = perPhaseRaw.map((r) => ({
       ...r,
-      estimatedCost: this.estimateCost(r.inputTokens, r.outputTokens, r.thinkingTokens),
+      estimatedCost: roundCents(costByPhase.get(r.phase) ?? 0),
     }));
 
-    const totalCostEstimate = this.estimateCost(
-      usageSummary.totalInputTokens,
-      usageSummary.totalOutputTokens,
-      usageSummary.totalThinkingTokens,
-    );
+    const totalCostEstimate = roundCents(totalCost);
 
     return {
       usageOverTime,
@@ -74,15 +83,19 @@ export class StatisticsService implements IStatisticsService {
     }
   }
 
-  private estimateCost(inputTokens: number, outputTokens: number, thinkingTokens: number): number {
-    // Use the first entry in the pricing table rather than naming a specific model.
-    // Cost estimation is a best-effort approximation — provider pricing is similar enough
-    // that this gives a useful ballpark regardless of which model was actually used.
-    const defaultPricing = Object.values(MODEL_PRICING)[0];
-    if (!defaultPricing) return 0;
-
-    const inputCost = (inputTokens / 1_000_000) * defaultPricing.inputPer1M;
-    const outputCost = ((outputTokens + thinkingTokens) / 1_000_000) * defaultPricing.outputPer1M;
-    return Math.round((inputCost + outputCost) * 100) / 100;
+  /**
+   * Unrounded cost of one usage group, priced at the model that ran it
+   * (see getModelPricing for how unlisted models are priced). Best-effort:
+   * cache reads/writes are not in the recorded token counts.
+   */
+  private rawCost(row: UsageCostBasisRow): number {
+    const pricing = getModelPricing(row.model);
+    const inputCost = (row.inputTokens / 1_000_000) * pricing.inputPer1M;
+    const outputCost = ((row.outputTokens + row.thinkingTokens) / 1_000_000) * pricing.outputPer1M;
+    return inputCost + outputCost;
   }
+}
+
+function roundCents(value: number): number {
+  return Math.round(value * 100) / 100;
 }

@@ -3,8 +3,10 @@ import { StatisticsService } from './StatisticsService';
 import { makeConversation, makeDb, makeUsage } from '../test/db';
 import { makeFakeFs, type FakeFileSystem } from '../test/fakes';
 
-// Cost model under test: first MODEL_PRICING entry (opus alias: $4/M input, $20/M output)
-// applied to input vs (output + thinking), rounded to cents.
+// Cost model under test: each usage row priced by getModelPricing(model). The seeded
+// 'test-model' has no entry, so it falls back to the first MODEL_PRICING entry
+// (opus alias: $4/M input, $20/M output), applied to input vs (output + thinking),
+// rounded to cents.
 
 let db: ReturnType<typeof makeDb>;
 let fs: FakeFileSystem;
@@ -79,6 +81,29 @@ describe('getStatistics', () => {
 
     const byPhase = Object.fromEntries(perPhase.map((r) => [r.phase, r.estimatedCost]));
     expect(byPhase).toEqual({ pitch: 8, adhoc: 2, 'first-draft': 1.6 });
+  });
+
+  it('prices each model at its own rate, including resolved and legacy IDs', async () => {
+    const a = makeConversation(db, { bookSlug: 'book-a', agentName: 'Spark', pipelinePhase: 'pitch' });
+    const b = makeConversation(db, { bookSlug: 'book-a', agentName: 'Verity', pipelinePhase: 'pitch' });
+    // Opus 5.5 (resolved ID): 1M in → $4
+    makeUsage(db, a.id, { inputTokens: 1_000_000, outputTokens: 0, thinkingTokens: 0, model: 'claude-opus-5-5' });
+    // Sonnet alias: 1M out → $10
+    makeUsage(db, a.id, { inputTokens: 0, outputTokens: 1_000_000, thinkingTokens: 0, model: 'sonnet' });
+    // Haiku 5.5: 1M in + 1M out → $0.60
+    makeUsage(db, b.id, { inputTokens: 1_000_000, outputTokens: 1_000_000, thinkingTokens: 0, model: 'claude-haiku-5-5' });
+    // Legacy Opus 4: 100k in → $1.50
+    makeUsage(db, b.id, { inputTokens: 100_000, outputTokens: 0, thinkingTokens: 0, model: 'claude-opus-4-20250514' });
+
+    const stats = await service.getStatistics();
+
+    expect(stats.totalCostEstimate).toBe(16.1);
+    expect(Object.fromEntries(stats.perAgent.map((r) => [r.agentName, r.estimatedCost]))).toEqual({
+      Spark: 14,
+      Verity: 2.1,
+    });
+    expect(stats.perPhase).toHaveLength(1);
+    expect(stats.perPhase[0]).toMatchObject({ phase: 'pitch', estimatedCost: 16.1 });
   });
 
   it('scopes usage, history, and chapter words to the requested book', async () => {

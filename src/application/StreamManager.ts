@@ -148,7 +148,7 @@ export class StreamManager {
           inputTokens: event.inputTokens,
           outputTokens: event.outputTokens,
           thinkingTokens: event.thinkingTokens,
-          model,
+          model: event.model ?? model,
         });
 
         // End session and clean up
