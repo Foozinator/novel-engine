@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import type { AppSettings } from '@domain/types';
 import type { ISettingsService } from '@domain/interfaces';
 import { DEFAULT_SETTINGS } from '@domain/constants';
+import { migrateClaudeModelAliases } from './claudeModelMigration';
 
 const execFile = promisify(execFileCb);
 
@@ -23,7 +24,18 @@ export class SettingsService implements ISettingsService {
     try {
       const raw = await readFile(this.settingsPath, 'utf-8');
       const stored: Partial<AppSettings> = JSON.parse(raw);
-      this._cache = { ...DEFAULT_SETTINGS, ...stored };
+      const merged: AppSettings = { ...DEFAULT_SETTINGS, ...stored };
+      const migrated = migrateClaudeModelAliases(merged);
+      if (migrated !== merged) {
+        try {
+          await writeFile(this.settingsPath, JSON.stringify(migrated, null, 2), 'utf-8');
+          console.log('[settings] Migrated Claude CLI models to aliases (opus/sonnet/haiku)');
+        } catch (err) {
+          // Keep the migrated values in memory; the write is retried on next load.
+          console.error('[settings] Failed to persist Claude model alias migration:', err);
+        }
+      }
+      this._cache = migrated;
       return this._cache;
     } catch {
       // ENOENT or malformed JSON — use defaults for first launch

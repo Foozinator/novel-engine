@@ -4,6 +4,42 @@ All notable changes to Novel Engine are documented here.
 
 ---
 
+## [2026-11-04] — Claude CLI model aliases replace dated model IDs
+
+### Summary
+
+The built-in Claude models were dated IDs (`claude-opus-4-20250514`, `claude-sonnet-4-20250514`), so new users started on models several releases old. The Claude CLI provider now ships the CLI aliases `opus`, `sonnet` and `haiku`, which the CLI resolves to Anthropic's current recommended models. Saved settings are migrated once on load: legacy built-in IDs are swapped for the aliases, user-added IDs are kept, and `model`/`secondaryModel` move to `opus`/`sonnet` only if they still named a legacy ID. The Fable probe now uses the `fable` alias instead of `claude-fable-5`. Because aliases are always recognized by the CLI, revision-queue sessions honor Forge's `opus`/`sonnet` tier again on the Claude CLI. An error result with `subtype: "success"` and `is_error: true` no longer renders as "Claude CLI run failed (success)". Reference implementation for the intake brief `claude-model-aliases-and-cli-updates.md` (part 1 of 3; the resolved-model display and the CLI update flow are not included).
+
+### Added
+- `src/infrastructure/settings/claudeModelMigration.ts` — `migrateClaudeModelAliases(settings)`. Pure. Returns the same reference when nothing needs migrating.
+- `src/infrastructure/settings/claudeModelMigration.test.ts` — Covers legacy-only lists, a probed `claude-fable-5` entry, user-added IDs and a user-chosen primary, non-Claude primaries, no-op, idempotence and immutability.
+
+### Changed
+- `src/domain/constants.ts` — Added `CLAUDE_CLI_ALIAS_MODELS` (`opus`, `sonnet`, `haiku`) and `LEGACY_CLAUDE_CLI_MODEL_IDS`. `BUILT_IN_PROVIDER_CONFIGS[0].models` is now the alias list with `defaultModel: 'opus'`, so `CLAUDE_CLI_PRIMARY_MODEL`/`CLAUDE_CLI_SECONDARY_MODEL` derive to `opus`/`sonnet`. `FABLE_MODEL_ID` is now `'fable'`. `AVAILABLE_MODELS` (deprecated) lists the aliases. `MODEL_PRICING` gains alias entries first (`opus` $4/$20, `sonnet` $2/$10, `haiku` $0.10/$0.50, `fable` $10/$50 per 1M tokens, as of 2026-10); legacy dated entries are kept after them.
+- `src/infrastructure/settings/SettingsService.ts` — `load()` runs `migrateClaudeModelAliases()` on the merged settings and writes the file back once when it changed.
+- `src/infrastructure/settings/index.ts` — Exports `migrateClaudeModelAliases`.
+- `src/main/index.ts` — `probeFableModel()` probes the `fable` alias. The probed model is labelled "Claude Fable (latest)" and its description notes the separate weekly limit.
+- `src/application/RevisionQueueService.ts` — Added exported `resolveSessionModel(tier, settings)`. `runSession()` uses it instead of always using `settings.model`.
+- `src/application/StatisticsService.test.ts` — Expected costs updated for the new first pricing entry (`opus` $4/$20 instead of Opus 4's $15/$75).
+- `src/domain/constants.test.ts` — Asserts aliases are the built-ins, `best` is absent, `FABLE_MODEL_ID` is `fable`, and the default model is first in `MODEL_PRICING`.
+- `src/infrastructure/settings/SettingsService.test.ts` — Asserts a pre-alias settings file is migrated and persisted, and that a file needing no migration is not rewritten.
+- `src/application/RevisionQueueService.run.test.ts` — Asserts a `sonnet`-tier session runs on `sonnet`, and covers `resolveSessionModel` fallbacks.
+- `src/infrastructure/claude-cli/ClaudeCodeClient.test.ts` — Asserts the `success` + `is_error` label.
+- `docs/architecture/DOMAIN.md`, `docs/architecture/INFRASTRUCTURE.md`, `docs/architecture/APPLICATION.md`, `docs/architecture/ARCHITECTURE.md` — Updated for the above.
+
+### Fixed
+- `src/infrastructure/claude-cli/ClaudeCodeClient.ts` — Error results with `subtype: "success"` and `is_error: true` were labelled "Claude CLI run failed (success)". The subtype is now shown only when it names an error kind.
+
+### Architecture Impact
+- None — no wiring changes. `SettingsService` gains a module-local dependency on `claudeModelMigration.ts`. No new IPC channels or stores.
+
+### Migration Notes
+- `settings.json` is rewritten once on first load after upgrade when the claude-cli provider lists none of the aliases. Legacy dated Claude IDs are removed from that provider; other IDs are kept.
+- Cost estimates drop, because the first `MODEL_PRICING` entry is now `opus` ($4/$20) rather than Opus 4 ($15/$75). Historical usage rows are re-estimated at the new rate.
+- `docs/architecture/DOMAIN.md` still lists `WRANGLER_MODEL`, which no longer exists in `src/domain/constants.ts`. Pre-existing discrepancy, not changed here.
+
+---
+
 ## [2026-07-23] — Auto-draft retries transient audit/fix failures and respects active provider for model resolution
 
 ### Summary

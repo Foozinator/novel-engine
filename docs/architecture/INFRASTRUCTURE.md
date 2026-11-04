@@ -13,6 +13,7 @@ Everything in `src/infrastructure/`. Implements domain interfaces using Node.js 
 | File | Purpose |
 |------|---------|
 | `SettingsService.ts` | Implements `ISettingsService`. JSON at `{userData}/settings.json`. |
+| `claudeModelMigration.ts` | `migrateClaudeModelAliases(settings)`. Pure one-time migration from dated Claude IDs to CLI aliases. |
 | `index.ts` | Barrel export |
 
 Key behavior:
@@ -22,6 +23,7 @@ Key behavior:
 - `detectCodexCli()` runs non-interactive `codex --version` with timeout and persists `hasCodexCli`
 - `detectOllamaCli()` runs `ollama --version` with timeout and persists `hasOllamaCli`
 - Settings merged with `DEFAULT_SETTINGS` on load (forward-compatible)
+- On load, `migrateClaudeModelAliases()` runs. If the saved claude-cli provider lists none of `opus`/`sonnet`/`haiku`, it drops `LEGACY_CLAUDE_CLI_MODEL_IDS` from that provider, prepends the aliases, keeps user-added IDs, and moves `model`/`secondaryModel`/`defaultModel` to `opus`/`sonnet` only where they still name a legacy ID. The migrated settings are written back once. A failed write is logged and retried on the next load.
 
 ### database/ — SQLite Persistence
 
@@ -93,6 +95,7 @@ Key behavior:
 - EPIPE/ERR_STREAM_DESTROYED on stdin logged with diagnostic info (stdinBytes, writableFinished, writableEnded)
 - System prompt size guard: rejects prompts > 500KB with clear error before spawn
 - Max-turns signaling: emits `isMaxTurns: true` on the `error` StreamEvent when the CLI result subtype is `error_max_turns` (vs. `false` for other error subtypes like `error_during_execution`)
+- Error label: `Claude CLI run failed (<subtype>): <result>`. The subtype is omitted when it is `success`, because a result can carry `subtype: "success"` with `is_error: true` (e.g. an API 400 "this CLI version does not support the model").
 
 
 ### codex-cli/ — Codex CLI Provider

@@ -474,9 +474,14 @@ export class ClaudeCodeClient implements IClaudeClient, IModelProvider {
       if (isErrorResult) {
         tracker.markErrorResult();
         const errorResultText = typeof event.result === 'string' ? event.result.trim() : '';
-        const message = errorResultText
-          ? `Claude CLI run failed (${subtype ?? 'error'}): ${errorResultText}`
-          : `Claude CLI run failed (${subtype ?? 'error'})`;
+        // A result can carry subtype "success" with is_error: true (e.g. an API
+        // 400 such as "this CLI version does not support the model"). Showing
+        // "(success)" in a failure label reads as nonsense, so only include
+        // the subtype when it actually names an error kind.
+        const label = subtype && subtype !== 'success'
+          ? `Claude CLI run failed (${subtype})`
+          : 'Claude CLI run failed';
+        const message = errorResultText ? `${label}: ${errorResultText}` : label;
         console.error(
           `[ClaudeCodeClient] Error result event: subtype=${subtype ?? '(none)'}, ` +
           `is_error=${event.is_error === true}`,

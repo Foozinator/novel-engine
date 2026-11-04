@@ -259,7 +259,7 @@ Dependencies: `IFileSystemService`, `IProviderRegistry`, `IAgentService`, `IData
 |--------|-------------|
 | `loadPlan(bookSlug)` | Reads revision-prompts.md + project-tasks.md → sends to Wrangler for parsing → returns `RevisionPlan` |
 | `clearCache(bookSlug)` | Removes cached parse from disk |
-| `runSession(planId, sessionId)` | Sends session prompt to Verity, streams response, fires events |
+| `runSession(planId, sessionId)` | Sends session prompt to Verity, streams response, fires events. Model comes from `resolveSessionModel(session.model, settings)`: Forge's `opus`/`sonnet` tier when the user's model is a Claude CLI model and the tier alias is listed, else `settings.model`. |
 | `runAll(planId, selectedIds?)` | Runs all pending sessions sequentially (respects mode and pause) |
 | `respondToGate(planId, sessionId, action, message?)` | Author decision at approval gate |
 | `approveSession(planId, sessionId)` | Marks tasks as `[x]` in project-tasks.md |

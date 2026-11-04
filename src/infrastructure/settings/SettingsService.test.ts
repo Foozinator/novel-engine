@@ -45,6 +45,42 @@ describe('load', () => {
     expect(settings.authorName).toBe('Jo');
     expect(settings.maxTokens).toBe(DEFAULT_SETTINGS.maxTokens);
   });
+
+  it('migrates a pre-alias settings file to Claude CLI aliases and persists the result', async () => {
+    const legacyClaude = {
+      ...DEFAULT_SETTINGS.providers[0],
+      models: [
+        { ...DEFAULT_SETTINGS.providers[0].models[0], id: 'claude-opus-4-20250514' },
+        { ...DEFAULT_SETTINGS.providers[0].models[1], id: 'claude-sonnet-4-20250514' },
+      ],
+      defaultModel: 'claude-opus-4-20250514',
+    };
+    await writeFile(
+      join(userDataDir, 'settings.json'),
+      JSON.stringify({
+        model: 'claude-opus-4-20250514',
+        secondaryModel: 'claude-sonnet-4-20250514',
+        providers: [legacyClaude, ...DEFAULT_SETTINGS.providers.slice(1)],
+      }),
+      'utf-8',
+    );
+
+    const settings = await service.load();
+    expect(settings.model).toBe('opus');
+    expect(settings.secondaryModel).toBe('sonnet');
+    expect(settings.providers[0].models.map((m) => m.id)).toEqual(['opus', 'sonnet', 'haiku']);
+
+    const raw = JSON.parse(await readFile(join(userDataDir, 'settings.json'), 'utf-8'));
+    expect(raw.model).toBe('opus');
+    expect(raw.providers[0].defaultModel).toBe('opus');
+  });
+
+  it('does not rewrite the settings file when no migration is needed', async () => {
+    const original = JSON.stringify({ theme: 'light' });
+    await writeFile(join(userDataDir, 'settings.json'), original, 'utf-8');
+    await service.load();
+    expect(await readFile(join(userDataDir, 'settings.json'), 'utf-8')).toBe(original);
+  });
 });
 
 describe('update', () => {

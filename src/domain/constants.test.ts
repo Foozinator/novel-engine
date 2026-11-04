@@ -8,6 +8,8 @@ import {
   BUILT_IN_PROVIDER_CONFIGS,
   CHARS_PER_TOKEN,
   CLAUDE_CLI_PRIMARY_MODEL,
+  FABLE_MODEL_ID,
+  LEGACY_CLAUDE_CLI_MODEL_IDS,
   CLAUDE_CLI_PROVIDER_ID,
   CLAUDE_CLI_SECONDARY_MODEL,
   CONTEXT_RESERVE_TOKENS,
@@ -177,6 +179,24 @@ describe('derived Claude CLI model constants', () => {
       expect(pricing.inputPer1M).toBeGreaterThan(0);
       expect(pricing.outputPer1M).toBeGreaterThan(0);
     }
+  });
+
+  it('ships CLI aliases, not dated model IDs, as the built-in Claude models', () => {
+    const ids = BUILT_IN_PROVIDER_CONFIGS[0].models.map((m) => m.id);
+    expect(ids).toEqual(['opus', 'sonnet', 'haiku']);
+    expect(CLAUDE_CLI_PRIMARY_MODEL).toBe('opus');
+    expect(CLAUDE_CLI_SECONDARY_MODEL).toBe('sonnet');
+    for (const legacy of LEGACY_CLAUDE_CLI_MODEL_IDS) expect(ids).not.toContain(legacy);
+  });
+
+  it('never ships `best` (resolves to Fable) and probes Fable via its alias', () => {
+    expect(BUILT_IN_PROVIDER_CONFIGS[0].models.map((m) => m.id)).not.toContain('best');
+    expect(FABLE_MODEL_ID).toBe('fable');
+    expect(MODEL_PRICING[FABLE_MODEL_ID]).toBeDefined();
+  });
+
+  it('keeps the default model first in MODEL_PRICING (estimateCost uses the first entry)', () => {
+    expect(Object.keys(MODEL_PRICING)[0]).toBe(CLAUDE_CLI_PRIMARY_MODEL);
   });
 });
 

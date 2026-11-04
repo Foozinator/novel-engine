@@ -40,6 +40,7 @@ src/
 ├── infrastructure/                          # LAYER 2: Implements domain interfaces
 │   ├── settings/
 │   │   ├── SettingsService.ts               # CLI detection, preferences, JSON persistence
+│   │   ├── claudeModelMigration.ts          # One-time dated-ID → CLI alias settings migration
 │   │   └── index.ts
 │   ├── database/
 │   │   ├── schema.ts                        # SQLite CREATE TABLE statements, WAL mode, foreign keys

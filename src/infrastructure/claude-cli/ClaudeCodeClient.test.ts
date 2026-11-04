@@ -325,6 +325,22 @@ describe('sendMessage — failure paths', () => {
     expect(errors[0]).toMatchObject({ type: 'error', isMaxTurns: false });
   });
 
+  it('an is_error result with subtype "success" omits the misleading "(success)" label', async () => {
+    const promise = send();
+    const child = await fake.waitForChild();
+
+    const apiError =
+      "API Error: 400 Claude Code 2.1.220 does not support this model; version 2.1.280 or newer is required.";
+    child.pushStdout(ndjson([resultEvent({ subtype: 'success', isError: true, result: apiError })]));
+    child.exit(1);
+
+    await expect(promise).rejects.toThrow();
+    const errors = events.filter((e) => e.type === 'error');
+    expect(errors.length).toBe(1);
+    expect(errors[0].message).toBe(`Claude CLI run failed: ${apiError}`);
+    expect(errors[0].message).not.toContain('(success)');
+  });
+
   it('a failed tool result never counts as a touched file', async () => {
     const promise = send();
     const child = await fake.waitForChild();

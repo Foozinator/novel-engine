@@ -302,7 +302,10 @@ async function fetchLlamaServerModels(baseUrl: string): Promise<ModelInfo[]> {
 // ── Fable Model Probe ─────────────────────────────────────────────
 
 /**
- * Check whether the Claude CLI accepts the `claude-fable-5` model ID.
+ * Check whether the Claude CLI accepts the `fable` model alias.
+ *
+ * Uses the alias rather than a dated ID so the probe keeps working as the CLI
+ * moves the alias to newer Fable releases.
  *
  * The CLI validates model names locally before making any API call, so an
  * unrecognised model ID exits immediately with a human-readable error rather
@@ -463,7 +466,7 @@ async function initializeApp(): Promise<void> {
     claudeConfig ?? BUILT_IN_PROVIDER_CONFIGS[0],
   );
 
-  // Probe for the optional claude-fable-5 model.
+  // Probe for the optional Fable model (via the `fable` CLI alias).
   // The Claude CLI validates model names locally before touching the API, so
   // an unavailable model fails instantly (no tokens spent). Only add the model
   // to the selectable list if the probe confirms access.
@@ -479,8 +482,8 @@ async function initializeApp(): Promise<void> {
               ...existingClaudeConfig.models,
               {
                 id: FABLE_MODEL_ID,
-                label: 'Claude Fable 5',
-                description: 'Next-generation model — available via Claude CLI',
+                label: 'Claude Fable (latest)',
+                description: 'Most capable — separate weekly limit; may use paid credits on some plans',
                 providerId: CLAUDE_CLI_PROVIDER_ID,
                 contextWindow: 200_000,
                 supportsThinking: true,
@@ -490,9 +493,9 @@ async function initializeApp(): Promise<void> {
           });
         }
       }
-      console.log('[startup] claude-fable-5 detected — added to Claude CLI model list');
+      console.log('[startup] Fable detected — added to Claude CLI model list');
     } else {
-      console.log('[startup] claude-fable-5 not available — skipped');
+      console.log('[startup] Fable not available — skipped');
     }
   }
 

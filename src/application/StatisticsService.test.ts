@@ -3,7 +3,7 @@ import { StatisticsService } from './StatisticsService';
 import { makeConversation, makeDb, makeUsage } from '../test/db';
 import { makeFakeFs, type FakeFileSystem } from '../test/fakes';
 
-// Cost model under test: first MODEL_PRICING entry (opus: $15/M input, $75/M output)
+// Cost model under test: first MODEL_PRICING entry (opus alias: $4/M input, $20/M output)
 // applied to input vs (output + thinking), rounded to cents.
 
 let db: ReturnType<typeof makeDb>;
@@ -44,8 +44,8 @@ describe('getStatistics', () => {
 
     expect(stats.totalTokens).toEqual({ input: 1_700_000, output: 140_000, thinking: 100_000 });
     expect(stats.conversationCount).toBe(3);
-    // 1.7M * $15/M + 240k * $75/M = 25.50 + 18.00
-    expect(stats.totalCostEstimate).toBe(43.5);
+    // 1.7M * $4/M + 240k * $20/M = 6.80 + 4.80
+    expect(stats.totalCostEstimate).toBe(11.6);
     expect(stats.usageOverTime).toHaveLength(1); // all seeded today
     expect(stats.usageOverTime[0]).toMatchObject({
       inputTokens: 1_700_000,
@@ -60,16 +60,16 @@ describe('getStatistics', () => {
     const { perAgent } = await service.getStatistics();
 
     expect(perAgent.map((r) => r.agentName)).toEqual(['Spark', 'Verity']);
-    // Spark: 1.2M in → 18.00; (140k + 100k) out+think → 18.00
+    // Spark: 1.2M in → 4.80; (140k + 100k) out+think → 4.80
     expect(perAgent[0]).toMatchObject({
       inputTokens: 1_200_000,
       outputTokens: 140_000,
       thinkingTokens: 100_000,
       conversationCount: 2,
-      estimatedCost: 36,
+      estimatedCost: 9.6,
     });
-    // Verity: 500k in → 7.50
-    expect(perAgent[1]).toMatchObject({ inputTokens: 500_000, estimatedCost: 7.5 });
+    // Verity: 500k in → 2.00
+    expect(perAgent[1]).toMatchObject({ inputTokens: 500_000, estimatedCost: 2 });
   });
 
   it('breaks usage down per phase, bucketing NULL pipeline phase as adhoc', async () => {
@@ -78,7 +78,7 @@ describe('getStatistics', () => {
     const { perPhase } = await service.getStatistics();
 
     const byPhase = Object.fromEntries(perPhase.map((r) => [r.phase, r.estimatedCost]));
-    expect(byPhase).toEqual({ pitch: 30, adhoc: 7.5, 'first-draft': 6 });
+    expect(byPhase).toEqual({ pitch: 8, adhoc: 2, 'first-draft': 1.6 });
   });
 
   it('scopes usage, history, and chapter words to the requested book', async () => {
