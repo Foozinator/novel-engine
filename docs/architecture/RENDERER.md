@@ -264,6 +264,12 @@ File: `stores/cliActivityStore.ts`
 
 Tracks active CLI tool usage for the activity panel. Recovery polling uses module-level timer refs (`_activityRecoveryPollTimer`, `_activityRecoveryTimeout`) to prevent duplicate intervals on rapid view switches. `loadDiagnostics()` passes the call's `conversationId` to `context.getLastDiagnostics()` for per-conversation diagnostic lookup. A `modelResolved` event replaces the call's `model`/`modelLabel` (alias → "Opus 5.5" via `formatModelLabel`) and logs one `Model: …` entry. `useActiveCallSummary()` exposes `modelLabel`, which the StatusBar shows after the agent name.
 
+### cliUpdateStore
+
+File: `stores/cliUpdateStore.ts`
+
+Drives the Claude CLI update banner. `initListener()` subscribes to `chat:streamEvent` (all sources); an `error` whose message matches `parseClaudeCliVersionError` sets a `version-required` prompt (with `conversationId` when `source === 'chat'`, enabling retry). `checkReminder()` asks main via `claudeCli:checkUpdateReminder` and shows a `reminder` prompt when due. `runUpdate()` / `checkNow()` (Settings button → `manual` prompt) call `claudeCli:runUpdate` and store the `ClaudeCliUpdateResult`.
+
 ### fileChangeStore
 
 File: `stores/fileChangeStore.ts`
@@ -410,7 +416,7 @@ Gate: `App.tsx` checks `settings.initialized` — if false, renders `OnboardingW
 
 | File | Purpose |
 |------|---------|
-| `AppLayout.tsx` | Main shell: sidebar + content area, view routing. `StreamManager` component initializes pitchRoomStore and helperStore stream listener lifecycles. Also renders `HelperButton` and `HelperPanel`. |
+| `AppLayout.tsx` | Main shell: sidebar + content area, view routing. Renders `CliUpdateBanner` above `StatusBar`. `StreamManager` component initializes pitchRoomStore and helperStore stream listener lifecycles. Also renders `HelperButton` and `HelperPanel`. |
 | `Sidebar.tsx` | Left panel: BookPanel + PitchHistory (pitch-room only) + bottom nav. No file tree — Explorer tab in FilesView replaces it. |
 | `TitleBar.tsx` | Custom window title bar (traffic lights on macOS, buttons on Windows/Linux) |
 | `ResizeHandle.tsx` | Sidebar resize drag handle |
@@ -557,6 +563,12 @@ Gate: `App.tsx` checks `settings.initialized` — if false, renders `OnboardingW
 |------|---------|
 | `CliActivityPanel.tsx` | Real-time tool-use activity panel |
 | `constants.ts` | Activity display constants |
+
+### CliUpdate/
+
+| File | Purpose |
+|------|---------|
+| `CliUpdateBanner.tsx` | App-wide banner above the StatusBar, mounted in `AppLayout`. Owns the `cliUpdateStore` listener and runs the reminder check on mount. Buttons: Update Claude CLI / Check for updates, Don't remind me (sets `claudeCliUpdateReminder: false`), Try again (`busy`), Retry message (chat only — resends the conversation's last user message, shown only when the CLI is now at or above the required version), Close. Shows `claude update` output in a collapsible block, and the manual command when the update fails or leaves the CLI below the required version. |
 
 ### ErrorBoundary/
 

@@ -4,6 +4,40 @@ All notable changes to Novel Engine are documented here.
 
 ---
 
+## [2026-11-04] — Claude CLI update flow: version-required banner, weekly reminder, Settings toggle
+
+### Summary
+
+Model aliases can move to a model the installed Claude CLI is too old to run. The call then fails with "Claude Code X does not support this model; version Y or newer is required", and because every NE call is a short `-p` process the CLI's own background auto-update may never run. A new app-wide banner above the StatusBar recognises that error from any flow (chat, revision queue, audits, …), explains it plainly, and offers **Update Claude CLI**, which runs `claude update` and shows its output. For a chat message it then offers **Retry message**. At launch, at most once a week, the banner offers to check for updates (reads `claude --version` first; runs `claude update` only when asked). The update is refused while any Claude CLI process is running (on Windows a running `claude.exe` blocks it). When the update fails, or leaves the CLI below the required version, the banner shows the output and the manual command. Settings → Built-in CLI Status gains a toggle for the weekly reminder and a "Check for updates now" button. Reference implementation for the intake brief `claude-model-aliases-and-cli-updates.md` (part 3 of 3).
+
+### Added
+- `src/domain/types.ts` — `ClaudeCliUpdateStatus`, `ClaudeCliUpdateResult`, `ClaudeCliUpdateReminder`. `AppSettings` gains `claudeCliUpdateReminder` (default `true`) and `lastClaudeCliUpdateCheck` (default `null`).
+- `src/domain/constants.ts` — `CLAUDE_CLI_UPDATE_CHECK_INTERVAL_MS` (7 days), `CLAUDE_CLI_MANUAL_UPDATE_COMMAND`, `parseClaudeCliVersion()`, `parseClaudeCliVersionError()`, `isVersionAtLeast()`.
+- `src/domain/interfaces.ts` — `IClaudeCliUpdater`, `IClaudeCliUpdateService`.
+- `src/infrastructure/claude-cli/ClaudeCliUpdater.ts` — `getVersion()` / `update()`.
+- `src/application/ClaudeCliUpdateService.ts` — weekly reminder decision + update.
+- IPC `claudeCli:checkUpdateReminder`, `claudeCli:runUpdate`; preload `window.novelEngine.claudeCli`.
+- `src/renderer/stores/cliUpdateStore.ts`, `src/renderer/components/CliUpdate/CliUpdateBanner.tsx`.
+- Tests: `ClaudeCliUpdater.test.ts`, `ClaudeCliUpdateService.test.ts`, `cliUpdateStore.test.ts`, `CliUpdateBanner.test.tsx`; version-helper cases in `constants.test.ts`.
+
+### Changed
+- `src/main/index.ts` — Constructs `ClaudeCliUpdateService(settings, new ClaudeCliUpdater(() => claudeClient.hasActiveProcesses()))` and passes it to `registerIpcHandlers`.
+- `src/main/ipc/handlers.ts` — `claudeCliUpdate` service + the two handlers.
+- `src/renderer/components/Layout/AppLayout.tsx` — Renders `CliUpdateBanner` above `StatusBar`.
+- `src/renderer/components/Settings/SettingsView.tsx` — `ClaudeCliUpdateControls` in Built-in CLI Status.
+- `src/test/novelEngineMock.ts` — `claudeCli` bridge mock; settings fixture fields.
+- `docs/architecture/DOMAIN.md`, `INFRASTRUCTURE.md`, `APPLICATION.md`, `IPC.md`, `RENDERER.md`, `ARCHITECTURE.md` — Updated for the above.
+
+### Architecture Impact
+- New IPC namespace `claudeCli:*` (2 invoke channels) and preload bridge `claudeCli`. New application service and infrastructure class, wired in the composition root. New renderer store with its own `chat:streamEvent` listener.
+
+### Migration Notes
+- Existing `settings.json` files gain `claudeCliUpdateReminder: true` and `lastClaudeCliUpdateCheck: null` via the defaults merge, so existing users see the reminder on their next launch (if the CLI is installed), then at most weekly.
+- **Retry message** resends the conversation's last user message, so the transcript shows that message twice (the failed attempt and the retry). Other flows show no retry button; the user runs the step again.
+- Live `claude update` was not exercised in development (unit tests mock the CLI); `claude --version` was.
+
+---
+
 ## [2026-11-04] — Show the model a Claude alias resolved to, and price usage per model
 
 ### Summary

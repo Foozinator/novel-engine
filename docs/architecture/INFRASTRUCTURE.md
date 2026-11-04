@@ -80,6 +80,7 @@ Key behavior:
 |------|---------|
 | `ClaudeCodeClient.ts` | Implements `IClaudeClient` and `IModelProvider`. Spawns `claude` CLI as child process, streams NDJSON responses. Exposes `providerId` (`'claude-cli'`) and `capabilities` (`text-completion`, `tool-use`, `thinking`, `streaming`). |
 | `StreamSessionTracker.ts` | Tracks active stream sessions for orphan detection/recovery. |
+| `ClaudeCliUpdater.ts` | Implements `IClaudeCliUpdater`. `getVersion()` parses `claude --version`; `update()` runs `claude update` (180s timeout) and re-reads the version → `updated` / `up-to-date` / `failed` (with stdout+stderr) / `busy` (an injected `isBusy()` — the composition root passes `claudeClient.hasActiveProcesses()`; a running `claude.exe` blocks the update on Windows) / `not-installed`. |
 | `index.ts` | Barrel export |
 
 Key behavior:

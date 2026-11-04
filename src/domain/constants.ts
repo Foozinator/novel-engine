@@ -313,7 +313,47 @@ export const DEFAULT_SETTINGS: AppSettings = {
   activeProviderId: CLAUDE_CLI_PROVIDER_ID,
   completedTours: [],
   savedPrompts: [],
+  claudeCliUpdateReminder: true,
+  lastClaudeCliUpdateCheck: null,
 };
+
+// === Claude CLI Updates ===
+
+/** The launch-time update offer is shown at most once per this interval. */
+export const CLAUDE_CLI_UPDATE_CHECK_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Shown when the in-app update cannot update the install. */
+export const CLAUDE_CLI_MANUAL_UPDATE_COMMAND = 'claude update';
+
+/** Extract the version number from `claude --version` output ("2.1.318 (Claude Code)"). */
+export function parseClaudeCliVersion(output: string): string | null {
+  return /\d+\.\d+\.\d+/.exec(output)?.[0] ?? null;
+}
+
+/** True when dotted version `version` is at least `minimum` (numeric per segment). */
+export function isVersionAtLeast(version: string, minimum: string): boolean {
+  const a = version.split('.').map(Number);
+  const b = minimum.split('.').map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const diff = (a[i] ?? 0) - (b[i] ?? 0);
+    if (diff !== 0) return diff > 0;
+  }
+  return true;
+}
+
+/**
+ * Recognise the API error the CLI reports when an alias resolves to a model
+ * the installed CLI is too old to run, e.g.
+ * "Claude Code 2.1.220 does not support this model; version 2.1.280 or newer is required."
+ */
+export function parseClaudeCliVersionError(
+  message: string,
+): { currentVersion: string | null; requiredVersion: string } | null {
+  const required = /does not support this model;\s*version (\d+\.\d+\.\d+) or newer is required/i.exec(message);
+  if (!required) return null;
+  const current = /Claude Code (\d+\.\d+\.\d+) does not support/i.exec(message);
+  return { currentVersion: current?.[1] ?? null, requiredVersion: required[1] };
+}
 
 // === Agent Quick Actions ===
 // Pre-built prompts shown in a dropdown next to the chat input, per agent.

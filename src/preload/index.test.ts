@@ -31,7 +31,7 @@ describe('bridge surface', () => {
   it('exposes the complete namespace set', () => {
     expect(Object.keys(api).sort()).toEqual(
       [
-        'settings', 'agents', 'books', 'import', 'seriesImport', 'files', 'versions',
+        'settings', 'claudeCli', 'agents', 'books', 'import', 'seriesImport', 'files', 'versions',
         'chat', 'pipeline', 'build', 'catalog', 'pitches', 'pitchRoom', 'verity',
         'hotTake', 'adhocRevision', 'usage', 'revision', 'motifLedger', 'context',
         'shell', 'window', 'models', 'providers', 'series', 'findReplace',

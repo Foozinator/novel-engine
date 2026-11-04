@@ -60,6 +60,8 @@ import type {
   ManuscriptAssembly,
   BookDashboardData,
   BookStatistics,
+  ClaudeCliUpdateReminder,
+  ClaudeCliUpdateResult,
 } from '@domain/types';
 
 const api = {
@@ -74,6 +76,12 @@ const api = {
       ipcRenderer.invoke('settings:saveAuthorProfile', content),
     loadAuthorProfile: (): Promise<string> =>
       ipcRenderer.invoke('settings:loadAuthorProfile'),
+  },
+
+  // Claude CLI updates
+  claudeCli: {
+    checkUpdateReminder: (): Promise<ClaudeCliUpdateReminder> => ipcRenderer.invoke('claudeCli:checkUpdateReminder'),
+    runUpdate: (): Promise<ClaudeCliUpdateResult> => ipcRenderer.invoke('claudeCli:runUpdate'),
   },
 
   // Agents

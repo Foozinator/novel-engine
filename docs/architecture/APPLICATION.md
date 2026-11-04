@@ -237,6 +237,17 @@ Dependencies: `IFileSystemService`, `pandocPath: string`, `booksDir: string`
 4. Report progress via callback
 5. Return `BuildResult` with paths and any errors
 
+### ClaudeCliUpdateService
+
+File: `src/application/ClaudeCliUpdateService.ts`
+
+Dependencies: `ISettingsService`, `IClaudeCliUpdater`, optional clock (`now`)
+
+| Method | What It Does |
+|--------|-------------|
+| `checkReminder()` | Not due when `claudeCliUpdateReminder` is off, `hasClaudeCli` is false, the last offer (`lastClaudeCliUpdateCheck`) was < `CLAUDE_CLI_UPDATE_CHECK_INTERVAL_MS` ago, or `claude --version` doesn't answer. When due, records the offer time first, so dismissing it still waits a week. |
+| `runUpdate()` | Delegates to `IClaudeCliUpdater.update()`; records the check time unless the result is `busy`. |
+
 ### UsageService
 
 File: `src/application/UsageService.ts`

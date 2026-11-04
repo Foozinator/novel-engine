@@ -57,6 +57,7 @@ src/
 │   ├── claude-cli/
 │   │   ├── ClaudeCodeClient.ts              # Spawns `claude` process, streams NDJSON, lifecycle
 │   │   ├── StreamSessionTracker.ts          # Tracks active stream sessions for orphan recovery
+│   │   ├── ClaudeCliUpdater.ts              # `claude --version` / `claude update` (refused while busy)
 │   │   └── index.ts
 │   ├── codex-cli/
 │   │   ├── CodexCliClient.ts                # Spawns `codex exec --json`, streams events, lifecycle
@@ -98,6 +99,7 @@ src/
 │   ├── HelperService.ts                     # In-app help assistant (user guide as context)
 │   ├── FindReplaceService.ts               # Bulk find & replace across chapter drafts; safe revert via snapshots
 │   ├── AutoTurnResumer.ts                  # Decorator: auto-resumes provider calls on max-turns exhaustion
+│   ├── ClaudeCliUpdateService.ts           # Weekly Claude CLI update reminder + runs the update
 │   ├── QueryService.ts                    # Query tracker I/O, target CRUD, AI query letter generation via Quill
 │   ├── import/
 │   │   └── ChapterDetector.ts               # Pure chapter break detection utility
@@ -130,6 +132,7 @@ src/
     │   ├── revisionQueueStore.ts
     │   ├── autoDraftStore.ts
     │   ├── cliActivityStore.ts
+    │   ├── cliUpdateStore.ts              # Claude CLI update banner state
     │   ├── fileChangeStore.ts
     │   ├── modalChatStore.ts
     │   ├── motifLedgerStore.ts
@@ -153,6 +156,7 @@ src/
     │   ├── MotifLedger/                     # MotifLedgerView + tabs (Entries, Systems, Foreshadow, etc.)
     │   ├── Import/                          # ImportWizard, ChapterPreviewList, ImportSeriesWizard, VolumePreviewList
     │   ├── CliActivity/                     # CliActivityPanel
+    │   ├── CliUpdate/                       # CliUpdateBanner
     │   ├── Helper/                          # HelperButton, HelperPanel, HelperMessageList
     │   ├── ErrorBoundary/                   # ErrorBoundary
     │   ├── PipelineSpine/                   # PipelineSpine, PhaseNode, stages

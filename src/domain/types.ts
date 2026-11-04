@@ -372,6 +372,32 @@ export type SavedPrompt = {
   createdAt: string;               // ISO date
 };
 
+// === Claude CLI Updates ===
+
+/**
+ * Outcome of running `claude update`.
+ * - `updated`        — the version changed
+ * - `up-to-date`     — the command succeeded and the version did not change
+ * - `failed`         — the command failed (e.g. a package-manager install it cannot update)
+ * - `busy`           — refused because a Claude CLI process is running
+ * - `not-installed`  — `claude --version` did not answer before or after
+ */
+export type ClaudeCliUpdateStatus = 'updated' | 'up-to-date' | 'failed' | 'busy' | 'not-installed';
+
+export type ClaudeCliUpdateResult = {
+  status: ClaudeCliUpdateStatus;
+  output: string;                  // combined stdout/stderr of `claude update` (empty when not run)
+  versionBefore: string | null;
+  versionAfter: string | null;
+  manualCommand: string;           // what to run by hand when the in-app update can't
+};
+
+/** Whether the weekly "check for Claude CLI updates" offer should be shown now. */
+export type ClaudeCliUpdateReminder = {
+  due: boolean;
+  version: string | null;          // installed version, when due
+};
+
 // === Settings ===
 
 export type AppSettings = {
@@ -397,6 +423,9 @@ export type AppSettings = {
   completedTours: TourId[];             // which tours the user has finished
   // Saved prompt library
   savedPrompts: SavedPrompt[];          // user-saved prompt entries
+  // Claude CLI update reminder
+  claudeCliUpdateReminder: boolean;     // offer a CLI update check at launch, at most weekly
+  lastClaudeCliUpdateCheck: string | null; // ISO date the reminder was last offered (or an update ran)
 };
 
 // === Token Usage ===

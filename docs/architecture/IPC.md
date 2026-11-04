@@ -21,6 +21,13 @@ Everything in `src/main/ipc/` and `src/preload/`. Thin adapter layer between app
 | `settings:saveAuthorProfile` | invoke | `fs.writeFile(profilePath, content)` | `void` |
 | `settings:loadAuthorProfile` | invoke | `fs.readFile(profilePath)` | `string` |
 
+### claudeCli:*
+
+| Channel | Direction | Handler | Returns |
+|---------|-----------|---------|---------|
+| `claudeCli:checkUpdateReminder` | invoke | `claudeCliUpdate.checkReminder()` — due when the reminder is on, the CLI is installed, and the last offer was ≥ 7 days ago (records the offer time) | `ClaudeCliUpdateReminder` |
+| `claudeCli:runUpdate` | invoke | `claudeCliUpdate.runUpdate()` — runs `claude update` unless a Claude CLI process is active (`busy`) | `ClaudeCliUpdateResult` |
+
 ### providers:*
 
 | Channel | Direction | Handler | Returns |
@@ -312,6 +319,11 @@ window.novelEngine: {
     update(partial: Partial<AppSettings>): Promise<void>
     saveAuthorProfile(content: string): Promise<void>
     loadAuthorProfile(): Promise<string>
+  }
+
+  claudeCli: {
+    checkUpdateReminder(): Promise<ClaudeCliUpdateReminder>
+    runUpdate(): Promise<ClaudeCliUpdateResult>
   }
 
   agents: {

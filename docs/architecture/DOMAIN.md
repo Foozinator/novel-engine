@@ -98,7 +98,7 @@ Everything in `src/domain/`. Pure TypeScript declarations — zero imports from 
 
 | Type | Shape | Used By |
 |------|-------|---------|
-| `AppSettings` | `{ hasClaudeCli, hasOllamaCli, hasCodexCli, model, secondaryModel, maxTokens, enableThinking, thinkingBudget, overrideThinkingBudget, autoCollapseThinking, enableNotifications, theme, initialized, authorName, providers, activeProviderId, completedTours, savedPrompts }` | SettingsService, SettingsView, tourStore |
+| `AppSettings` | `{ hasClaudeCli, hasOllamaCli, hasCodexCli, model, secondaryModel, maxTokens, enableThinking, thinkingBudget, overrideThinkingBudget, autoCollapseThinking, enableNotifications, theme, initialized, authorName, providers, activeProviderId, completedTours, savedPrompts, claudeCliUpdateReminder, lastClaudeCliUpdateCheck }` | SettingsService, SettingsView, tourStore, ClaudeCliUpdateService |
 
 ### Token Usage
 
@@ -106,6 +106,8 @@ Everything in `src/domain/`. Pure TypeScript declarations — zero imports from 
 |------|-------|---------|
 | `UsageRecord` | `{ conversationId, inputTokens, outputTokens, thinkingTokens, model, timestamp }` | UsageService |
 | `UsageSummary` | `{ totalInputTokens, totalOutputTokens, totalThinkingTokens, conversationCount }` | SettingsView |
+| `ClaudeCliUpdateResult` | `{ status: 'updated' \| 'up-to-date' \| 'failed' \| 'busy' \| 'not-installed', output, versionBefore, versionAfter, manualCommand }` | Claude CLI update flow |
+| `ClaudeCliUpdateReminder` | `{ due, version }` | Weekly update offer |
 | `UsageCostBasisRow` | `{ agentName, phase, model, inputTokens, outputTokens, thinkingTokens }` | StatisticsService (per-model pricing) |
 
 ### Revision Queue
@@ -240,6 +242,20 @@ Everything in `src/domain/`. Pure TypeScript declarations — zero imports from 
 ---
 
 ## Interfaces
+
+### IClaudeCliUpdater
+
+| Method | Signature | Notes |
+|--------|-----------|-------|
+| `getVersion` | `() => Promise<string \| null>` | Parsed `claude --version`; null when the CLI doesn't answer |
+| `update` | `() => Promise<ClaudeCliUpdateResult>` | Runs `claude update`; `busy` while a Claude CLI process is active |
+
+### IClaudeCliUpdateService
+
+| Method | Signature | Notes |
+|--------|-----------|-------|
+| `checkReminder` | `() => Promise<ClaudeCliUpdateReminder>` | Weekly launch-time offer; records the offer time when due |
+| `runUpdate` | `() => Promise<ClaudeCliUpdateResult>` | Runs the update; records the check time unless `busy` |
 
 ### ISettingsService
 
@@ -653,6 +669,11 @@ Implemented by: `QueryService` (`src/application/QueryService.ts`)
 | `CLAUDE_CLI_SECONDARY_MODEL` | `'sonnet'` | First Claude model that differs from the primary |
 | `MODEL_PRICING` | `Record<string, ModelPricing>` | USD per 1M tokens. Alias entries first (`opus` $4/$20, `sonnet` $2/$10, `haiku` $0.10/$0.50, `fable` $10/$50, as of 2026-10), then the full IDs they resolved to (`claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1`), then legacy dated IDs. The first entry is the fallback price. |
 | `getModelPricing(modelId)` | `(string) => ModelPricing` | Exact entry → family alias for an unlisted `claude-<family>-N[-M]` ID → first entry. Used by `StatisticsService`. |
+| `CLAUDE_CLI_UPDATE_CHECK_INTERVAL_MS` | `number` | 7 days — minimum gap between launch-time update offers |
+| `CLAUDE_CLI_MANUAL_UPDATE_COMMAND` | `'claude update'` | Shown when the in-app update can't update the install |
+| `parseClaudeCliVersion(output)` | `(string) => string \| null` | Version from `claude --version` output |
+| `parseClaudeCliVersionError(message)` | `(string) => { currentVersion, requiredVersion } \| null` | Recognises "… does not support this model; version X or newer is required" |
+| `isVersionAtLeast(version, minimum)` | `(string, string) => boolean` | Numeric dotted-version comparison |
 | `formatModelLabel(modelId)` | `(string) => string` | `claude-opus-5-5` → "Opus 5.5", `claude-opus-4-20250514` → "Opus 4"; anything else unchanged. Renderer-safe (pure). |
 | `FILE_MANIFEST_KEYS` | 13-element array | Canonical file paths for context |
 | `VERITY_PHASE_FILES` | Partial record | Maps pipeline phases to Verity sub-prompt filenames |

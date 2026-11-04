@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isVersionAtLeast,
+  parseClaudeCliVersion,
+  parseClaudeCliVersionError,
   formatModelLabel,
   getModelPricing,
   AGENT_MULTI_CALL_STEPS,
@@ -335,5 +338,36 @@ describe('formatModelLabel', () => {
 
   it.each(['opus', 'llama3.2', 'gpt-4o', 'claude-3-5-sonnet-20241022'])('leaves %s unchanged', (id) => {
     expect(formatModelLabel(id)).toBe(id);
+  });
+});
+
+describe('Claude CLI version helpers', () => {
+  it('parseClaudeCliVersion reads `claude --version` output', () => {
+    expect(parseClaudeCliVersion('2.1.318 (Claude Code)\n')).toBe('2.1.318');
+    expect(parseClaudeCliVersion('')).toBeNull();
+  });
+
+  it('parseClaudeCliVersionError recognises the CLI-too-old API error inside NE\'s error label', () => {
+    const message =
+      "Claude CLI run failed: API Error: 400 Claude Code 2.1.220 does not support this model; version 2.1.280 or newer is required. Run 'claude update', or update the Claude desktop app, then try again.";
+    expect(parseClaudeCliVersionError(message)).toEqual({ currentVersion: '2.1.220', requiredVersion: '2.1.280' });
+  });
+
+  it('parseClaudeCliVersionError tolerates a missing current version and ignores other errors', () => {
+    expect(parseClaudeCliVersionError('does not support this model; version 3.0.0 or newer is required')).toEqual({
+      currentVersion: null,
+      requiredVersion: '3.0.0',
+    });
+    expect(parseClaudeCliVersionError('Claude CLI run failed (error_max_turns)')).toBeNull();
+  });
+
+  it.each([
+    ['2.1.280', '2.1.280', true],
+    ['2.1.318', '2.1.280', true],
+    ['2.10.0', '2.9.9', true],
+    ['2.1.220', '2.1.280', false],
+    ['1.99.99', '2.0.0', false],
+  ])('isVersionAtLeast(%s, %s) → %s', (v, min, expected) => {
+    expect(isVersionAtLeast(v, min)).toBe(expected);
   });
 });

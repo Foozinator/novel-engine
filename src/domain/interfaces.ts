@@ -1,5 +1,7 @@
 import type {
   ActiveStreamInfo,
+  ClaudeCliUpdateReminder,
+  ClaudeCliUpdateResult,
   Agent,
   AgentName,
   AppSettings,
@@ -70,6 +72,24 @@ import type {
   UsageSummary,
   WordCountSnapshot,
 } from './types';
+
+/** Reads the installed Claude CLI version and runs `claude update`. */
+export interface IClaudeCliUpdater {
+  getVersion(): Promise<string | null>;
+  /** Runs `claude update` unless a Claude CLI process is active (→ `busy`). */
+  update(): Promise<ClaudeCliUpdateResult>;
+}
+
+export interface IClaudeCliUpdateService {
+  /**
+   * Whether to offer a CLI update check now: the reminder is on, the CLI is
+   * installed, and the last offer was at least a week ago. Records the offer
+   * time when due, so dismissing it still waits a week.
+   */
+  checkReminder(): Promise<ClaudeCliUpdateReminder>;
+  /** Runs the update and records the check time. */
+  runUpdate(): Promise<ClaudeCliUpdateResult>;
+}
 
 export interface ISettingsService {
   load(): Promise<AppSettings>;

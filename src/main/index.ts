@@ -53,7 +53,7 @@ import { SettingsService } from '@infra/settings';
 import { DatabaseService } from '@infra/database';
 import { AgentService } from '@infra/agents';
 import { FileSystemService, BookWatcher, BooksDirWatcher } from '@infra/filesystem';
-import { ClaudeCodeClient } from '@infra/claude-cli';
+import { ClaudeCodeClient, ClaudeCliUpdater } from '@infra/claude-cli';
 import { CodexCliClient } from '@infra/codex-cli';
 import { OllamaCodeClient, OllamaCliRunner } from '@infra/ollama-cli';
 import { LlamaServerClient } from '@infra/llama-server';
@@ -84,6 +84,7 @@ import { SeriesImportService } from '@app/SeriesImportService';
 import { FindReplaceService } from '@app/FindReplaceService';
 import { DashboardService } from '@app/DashboardService';
 import { StatisticsService } from '@app/StatisticsService';
+import { ClaudeCliUpdateService } from '@app/ClaudeCliUpdateService';
 import { QueryService } from '@app/QueryService';
 import { AutoTurnResumer } from '@app/AutoTurnResumer';
 
@@ -649,6 +650,11 @@ async function initializeApp(): Promise<void> {
   const helper = new HelperService(settings, agents, db, fs, providers, streamManager, userDataPath);
   const dashboard = new DashboardService(db, fs, pipeline);
   const statistics = new StatisticsService(db, fs);
+  // `claude update` is refused while any Claude CLI process is running.
+  const claudeCliUpdate = new ClaudeCliUpdateService(
+    settings,
+    new ClaudeCliUpdater(() => claudeClient.hasActiveProcesses()),
+  );
   const queryService = new QueryService(fs, chat);
   const notifications = new NotificationManager(settings);
 
@@ -746,7 +752,7 @@ async function initializeApp(): Promise<void> {
 
   // 8. Register IPC handlers (with hook to switch watcher on book change)
   registerIpcHandlers(
-    { settings, agents, db, fs, chat, audit, pipeline, build, usage, revisionQueue, motifLedger, notifications, version, providerRegistry: providers, manuscriptImport, sourceGeneration, series, seriesImport, helper, findReplace, dashboard, statistics, query: queryService },
+    { settings, agents, db, fs, chat, audit, pipeline, build, usage, revisionQueue, motifLedger, notifications, version, providerRegistry: providers, manuscriptImport, sourceGeneration, series, seriesImport, helper, findReplace, dashboard, statistics, query: queryService, claudeCliUpdate },
     { userDataPath, booksDir },
     {
       onActiveBookChanged: (slug: string) => {
