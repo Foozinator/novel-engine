@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isVersionAtLeast,
+  parseClaudeCliVersion,
+  parseClaudeCliVersionError,
+  formatModelLabel,
+  getModelPricing,
   AGENT_MULTI_CALL_STEPS,
   AGENT_QUICK_ACTIONS,
   AGENT_READ_GUIDANCE,
@@ -8,6 +13,8 @@ import {
   BUILT_IN_PROVIDER_CONFIGS,
   CHARS_PER_TOKEN,
   CLAUDE_CLI_PRIMARY_MODEL,
+  FABLE_MODEL_ID,
+  LEGACY_CLAUDE_CLI_MODEL_IDS,
   CLAUDE_CLI_PROVIDER_ID,
   CLAUDE_CLI_SECONDARY_MODEL,
   CONTEXT_RESERVE_TOKENS,
@@ -178,6 +185,24 @@ describe('derived Claude CLI model constants', () => {
       expect(pricing.outputPer1M).toBeGreaterThan(0);
     }
   });
+
+  it('ships CLI aliases, not dated model IDs, as the built-in Claude models', () => {
+    const ids = BUILT_IN_PROVIDER_CONFIGS[0].models.map((m) => m.id);
+    expect(ids).toEqual(['opus', 'sonnet', 'haiku']);
+    expect(CLAUDE_CLI_PRIMARY_MODEL).toBe('opus');
+    expect(CLAUDE_CLI_SECONDARY_MODEL).toBe('sonnet');
+    for (const legacy of LEGACY_CLAUDE_CLI_MODEL_IDS) expect(ids).not.toContain(legacy);
+  });
+
+  it('never ships `best` (resolves to Fable) and probes Fable via its alias', () => {
+    expect(BUILT_IN_PROVIDER_CONFIGS[0].models.map((m) => m.id)).not.toContain('best');
+    expect(FABLE_MODEL_ID).toBe('fable');
+    expect(MODEL_PRICING[FABLE_MODEL_ID]).toBeDefined();
+  });
+
+  it('keeps the default model first in MODEL_PRICING (estimateCost uses the first entry)', () => {
+    expect(Object.keys(MODEL_PRICING)[0]).toBe(CLAUDE_CLI_PRIMARY_MODEL);
+  });
 });
 
 describe('DEFAULT_SETTINGS', () => {
@@ -280,5 +305,69 @@ describe('AGENT_MULTI_CALL_STEPS', () => {
         expect(step.promptTemplate).toContain('{{CHAPTER_LIST}}');
       }
     }
+  });
+});
+
+describe('getModelPricing', () => {
+  it('returns the exact entry for listed aliases and full IDs', () => {
+    expect(getModelPricing('sonnet')).toBe(MODEL_PRICING['sonnet']);
+    expect(getModelPricing('claude-haiku-5-5')).toBe(MODEL_PRICING['claude-haiku-5-5']);
+    expect(getModelPricing('claude-opus-4-20250514')).toBe(MODEL_PRICING['claude-opus-4-20250514']);
+  });
+
+  it('prices an unlisted full Claude ID by its family alias', () => {
+    expect(getModelPricing('claude-sonnet-5-6')).toBe(MODEL_PRICING['sonnet']);
+    expect(getModelPricing('claude-fable-6')).toBe(MODEL_PRICING['fable']);
+  });
+
+  it('falls back to the first entry for anything else', () => {
+    expect(getModelPricing('llama3.2')).toBe(Object.values(MODEL_PRICING)[0]);
+  });
+});
+
+describe('formatModelLabel', () => {
+  it.each([
+    ['claude-opus-5-5', 'Opus 5.5'],
+    ['claude-fable-5-1', 'Fable 5.1'],
+    ['claude-haiku-5-5', 'Haiku 5.5'],
+    ['claude-opus-4-20250514', 'Opus 4'],
+    ['claude-sonnet-4-5-20250929', 'Sonnet 4.5'],
+  ])('%s → %s', (id, label) => {
+    expect(formatModelLabel(id)).toBe(label);
+  });
+
+  it.each(['opus', 'llama3.2', 'gpt-4o', 'claude-3-5-sonnet-20241022'])('leaves %s unchanged', (id) => {
+    expect(formatModelLabel(id)).toBe(id);
+  });
+});
+
+describe('Claude CLI version helpers', () => {
+  it('parseClaudeCliVersion reads `claude --version` output', () => {
+    expect(parseClaudeCliVersion('2.1.318 (Claude Code)\n')).toBe('2.1.318');
+    expect(parseClaudeCliVersion('')).toBeNull();
+  });
+
+  it('parseClaudeCliVersionError recognises the CLI-too-old API error inside NE\'s error label', () => {
+    const message =
+      "Claude CLI run failed: API Error: 400 Claude Code 2.1.220 does not support this model; version 2.1.280 or newer is required. Run 'claude update', or update the Claude desktop app, then try again.";
+    expect(parseClaudeCliVersionError(message)).toEqual({ currentVersion: '2.1.220', requiredVersion: '2.1.280' });
+  });
+
+  it('parseClaudeCliVersionError tolerates a missing current version and ignores other errors', () => {
+    expect(parseClaudeCliVersionError('does not support this model; version 3.0.0 or newer is required')).toEqual({
+      currentVersion: null,
+      requiredVersion: '3.0.0',
+    });
+    expect(parseClaudeCliVersionError('Claude CLI run failed (error_max_turns)')).toBeNull();
+  });
+
+  it.each([
+    ['2.1.280', '2.1.280', true],
+    ['2.1.318', '2.1.280', true],
+    ['2.10.0', '2.9.9', true],
+    ['2.1.220', '2.1.280', false],
+    ['1.99.99', '2.0.0', false],
+  ])('isVersionAtLeast(%s, %s) → %s', (v, min, expected) => {
+    expect(isVersionAtLeast(v, min)).toBe(expected);
   });
 });

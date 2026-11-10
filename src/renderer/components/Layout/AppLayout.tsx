@@ -19,6 +19,7 @@ import { StatisticsView } from '../Statistics/StatisticsView';
 import { ChatModal } from '../Chat/ChatModal';
 import { CliActivityListener } from '../CliActivity/CliActivityPanel';
 import { StatusBar } from '../StatusBar/StatusBar';
+import { CliUpdateBanner } from '../CliUpdate/CliUpdateBanner';
 import { ActivityDrawer } from '../StatusBar/ActivityDrawer';
 import { GuidedTourOverlay } from '../common/GuidedTourOverlay';
 import { HelperPanel } from '../Helper/HelperPanel';
@@ -228,6 +229,7 @@ export function AppLayout(): React.ReactElement {
         </main>
       </div>
       <ActivityDrawer />
+      <CliUpdateBanner />
       <StatusBar />
       {isModalOpen && <ChatModal />}
       <CommandPalette />

@@ -134,6 +134,38 @@ describe('sendMessage — happy path', () => {
     });
   });
 
+  it('reports the model an alias resolved to from the init event, once, and on done', async () => {
+    const promise = send({ model: 'opus' });
+    const child = await fake.waitForChild();
+
+    child.pushStdout(
+      ndjson([
+        { ...initEvent, model: 'claude-opus-5-5' },
+        { ...initEvent, model: 'claude-opus-5-5' }, // repeated init must not re-emit
+        assistantText('Hi.'),
+        resultEvent({ result: 'Hi.', inputTokens: 1, outputTokens: 1 }),
+      ])
+    );
+    child.exit(0);
+    await promise;
+
+    expect(events.filter((e) => e.type === 'modelResolved')).toEqual([
+      { type: 'modelResolved', model: 'claude-opus-5-5' },
+    ]);
+    expect(events.find((e) => e.type === 'done')).toMatchObject({ model: 'claude-opus-5-5' });
+  });
+
+  it('leaves done.model unset when the init event names no model', async () => {
+    const promise = send();
+    const child = await fake.waitForChild();
+    child.pushStdout(ndjson([initEvent, resultEvent({ result: 'ok' })]));
+    child.exit(0);
+    await promise;
+
+    expect(events.some((e) => e.type === 'modelResolved')).toBe(false);
+    expect(events.find((e) => e.type === 'done')).not.toHaveProperty('model');
+  });
+
   it('separates multiple assistant text turns with a paragraph break', async () => {
     const promise = send();
     const child = await fake.waitForChild();
@@ -323,6 +355,22 @@ describe('sendMessage — failure paths', () => {
     const errors = events.filter((e) => e.type === 'error');
     expect(errors.length).toBe(1);
     expect(errors[0]).toMatchObject({ type: 'error', isMaxTurns: false });
+  });
+
+  it('an is_error result with subtype "success" omits the misleading "(success)" label', async () => {
+    const promise = send();
+    const child = await fake.waitForChild();
+
+    const apiError =
+      "API Error: 400 Claude Code 2.1.220 does not support this model; version 2.1.280 or newer is required.";
+    child.pushStdout(ndjson([resultEvent({ subtype: 'success', isError: true, result: apiError })]));
+    child.exit(1);
+
+    await expect(promise).rejects.toThrow();
+    const errors = events.filter((e) => e.type === 'error');
+    expect(errors.length).toBe(1);
+    expect(errors[0].message).toBe(`Claude CLI run failed: ${apiError}`);
+    expect(errors[0].message).not.toContain('(success)');
   });
 
   it('a failed tool result never counts as a touched file', async () => {

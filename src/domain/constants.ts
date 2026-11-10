@@ -3,7 +3,7 @@
  * (value imports, not type-only). Permitted for pure data constants
  * with zero Node.js dependencies. See docs/architecture/ARCHITECTURE.md.
  */
-import type { AgentName, AgentMeta, AuditSeverity, CreativeAgentName, PipelinePhaseId, AppSettings, ProviderId, ProviderConfig } from './types';
+import type { AgentName, AgentMeta, AuditSeverity, CreativeAgentName, PipelinePhaseId, AppSettings, ProviderId, ProviderConfig, ModelInfo } from './types';
 
 // === Per-Agent Read Guidance ===
 
@@ -139,8 +139,9 @@ export const PHASE_OUTPUT_CONTENT_MARKERS: Partial<Record<PipelinePhaseId, RegEx
  * compatibility until the renderer SettingsView is updated.
  */
 export const AVAILABLE_MODELS = [
-  { id: 'claude-opus-4-20250514',   label: 'Claude Opus 4',   description: 'Best quality — recommended for all agents' },
-  { id: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4', description: 'Faster and cheaper — good for copy editing' },
+  { id: 'opus',   label: 'Claude Opus (latest)',   description: 'Best quality — recommended for all agents' },
+  { id: 'sonnet', label: 'Claude Sonnet (latest)', description: 'Faster and cheaper — good for copy editing' },
+  { id: 'haiku',  label: 'Claude Haiku (latest)',  description: 'Fastest and cheapest — lightweight passes' },
 ] as const;
 
 /** The built-in Claude CLI provider ID. Always present, cannot be removed. */
@@ -159,11 +160,56 @@ export const LLAMA_SERVER_PROVIDER_ID: ProviderId = 'llama-server';
 export const CODEX_CLI_PROVIDER_ID: ProviderId = 'codex-cli';
 
 /**
- * Model ID for Claude Fable 5.
+ * Claude CLI alias for the current Fable model.
  * Not included in BUILT_IN_PROVIDER_CONFIGS — probed at startup and added
- * to the Claude CLI model list only if the CLI accepts this model ID.
+ * to the Claude CLI model list only if the CLI accepts it. Fable has its own
+ * weekly limit (and paid usage credits on some plans), so it is never a default.
+ * Likewise the CLI's `best` alias is deliberately not offered: it resolves to
+ * Fable wherever Fable is available.
  */
-export const FABLE_MODEL_ID = 'claude-fable-5';
+export const FABLE_MODEL_ID = 'fable';
+
+/**
+ * Model IDs that earlier releases shipped as Claude CLI built-ins (or added
+ * via the Fable probe). Saved settings that still reference them are migrated
+ * to the CLI aliases on load — see `migrateClaudeModelAliases`.
+ */
+export const LEGACY_CLAUDE_CLI_MODEL_IDS: readonly string[] = [
+  'claude-opus-4-20250514',
+  'claude-sonnet-4-20250514',
+  'claude-fable-5',
+];
+
+/** Claude CLI model aliases shipped as the built-in Claude models. */
+export const CLAUDE_CLI_ALIAS_MODELS: ModelInfo[] = [
+  {
+    id: 'opus',
+    label: 'Claude Opus (latest)',
+    description: 'Best quality — recommended for all agents',
+    providerId: CLAUDE_CLI_PROVIDER_ID,
+    contextWindow: 200_000,
+    supportsThinking: true,
+    supportsToolUse: true,
+  },
+  {
+    id: 'sonnet',
+    label: 'Claude Sonnet (latest)',
+    description: 'Faster and cheaper — good for copy editing',
+    providerId: CLAUDE_CLI_PROVIDER_ID,
+    contextWindow: 200_000,
+    supportsThinking: true,
+    supportsToolUse: true,
+  },
+  {
+    id: 'haiku',
+    label: 'Claude Haiku (latest)',
+    description: 'Fastest and cheapest — lightweight passes',
+    providerId: CLAUDE_CLI_PROVIDER_ID,
+    contextWindow: 200_000,
+    supportsThinking: true,
+    supportsToolUse: true,
+  },
+];
 
 /** Default provider configurations shipped with the app. */
 export const BUILT_IN_PROVIDER_CONFIGS: ProviderConfig[] = [
@@ -174,26 +220,12 @@ export const BUILT_IN_PROVIDER_CONFIGS: ProviderConfig[] = [
     enabled: true,
     isBuiltIn: true,
     models: [
-      {
-        id: 'claude-opus-4-20250514',
-        label: 'Claude Opus 4',
-        description: 'Best quality — recommended for all agents',
-        providerId: CLAUDE_CLI_PROVIDER_ID,
-        contextWindow: 200_000,
-        supportsThinking: true,
-        supportsToolUse: true,
-      },
-      {
-        id: 'claude-sonnet-4-20250514',
-        label: 'Claude Sonnet 4',
-        description: 'Faster and cheaper — good for copy editing',
-        providerId: CLAUDE_CLI_PROVIDER_ID,
-        contextWindow: 200_000,
-        supportsThinking: true,
-        supportsToolUse: true,
-      },
+      // CLI aliases: the Claude CLI resolves each to Anthropic's current
+      // recommended model, so this list never goes stale. Users who want to
+      // pin a version can still add a full model ID in Settings.
+      ...CLAUDE_CLI_ALIAS_MODELS,
     ],
-    defaultModel: 'claude-opus-4-20250514',
+    defaultModel: 'opus',
     capabilities: ['text-completion', 'tool-use', 'thinking', 'streaming'],
   },
   {
@@ -281,7 +313,47 @@ export const DEFAULT_SETTINGS: AppSettings = {
   activeProviderId: CLAUDE_CLI_PROVIDER_ID,
   completedTours: [],
   savedPrompts: [],
+  claudeCliUpdateReminder: true,
+  lastClaudeCliUpdateCheck: null,
 };
+
+// === Claude CLI Updates ===
+
+/** The launch-time update offer is shown at most once per this interval. */
+export const CLAUDE_CLI_UPDATE_CHECK_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Shown when the in-app update cannot update the install. */
+export const CLAUDE_CLI_MANUAL_UPDATE_COMMAND = 'claude update';
+
+/** Extract the version number from `claude --version` output ("2.1.318 (Claude Code)"). */
+export function parseClaudeCliVersion(output: string): string | null {
+  return /\d+\.\d+\.\d+/.exec(output)?.[0] ?? null;
+}
+
+/** True when dotted version `version` is at least `minimum` (numeric per segment). */
+export function isVersionAtLeast(version: string, minimum: string): boolean {
+  const a = version.split('.').map(Number);
+  const b = minimum.split('.').map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const diff = (a[i] ?? 0) - (b[i] ?? 0);
+    if (diff !== 0) return diff > 0;
+  }
+  return true;
+}
+
+/**
+ * Recognise the API error the CLI reports when an alias resolves to a model
+ * the installed CLI is too old to run, e.g.
+ * "Claude Code 2.1.220 does not support this model; version 2.1.280 or newer is required."
+ */
+export function parseClaudeCliVersionError(
+  message: string,
+): { currentVersion: string | null; requiredVersion: string } | null {
+  const required = /does not support this model;\s*version (\d+\.\d+\.\d+) or newer is required/i.exec(message);
+  if (!required) return null;
+  const current = /Claude Code (\d+\.\d+\.\d+) does not support/i.exec(message);
+  return { currentVersion: current?.[1] ?? null, requiredVersion: required[1] };
+}
 
 // === Agent Quick Actions ===
 // Pre-built prompts shown in a dropdown next to the chat input, per agent.
@@ -390,10 +462,54 @@ export type ModelPricing = {
   outputPer1M: number;
 };
 
+// Alias entries reflect the model each Claude CLI alias resolved to as of
+// 2026-10 (Opus 5.5, Sonnet 5.5, Haiku 5.5 at <=100K-token prompts, Fable 5.1).
+// When an alias moves to a new model these become approximate. Order matters:
+// the FIRST entry is the fallback price for models with no entry (see
+// getModelPricing), so the default model (`opus`) stays first.
 export const MODEL_PRICING: Record<string, ModelPricing> = {
+  'opus': { inputPer1M: 4, outputPer1M: 20 },
+  'sonnet': { inputPer1M: 2, outputPer1M: 10 },
+  'haiku': { inputPer1M: 0.1, outputPer1M: 0.5 },
+  'fable': { inputPer1M: 10, outputPer1M: 50 },
+  // Full IDs the aliases resolved to as of 2026-10 (recorded when the CLI's
+  // init event reports the resolved model)
+  'claude-opus-5-5': { inputPer1M: 4, outputPer1M: 20 },
+  'claude-sonnet-5-5': { inputPer1M: 2, outputPer1M: 10 },
+  'claude-haiku-5-5': { inputPer1M: 0.1, outputPer1M: 0.5 },
+  'claude-fable-5-1': { inputPer1M: 10, outputPer1M: 50 },
+  // Legacy dated IDs (pre-alias settings, historical usage rows)
   'claude-opus-4-20250514': { inputPer1M: 15, outputPer1M: 75 },
   'claude-sonnet-4-20250514': { inputPer1M: 3, outputPer1M: 15 },
 };
+
+const CLAUDE_FAMILY_PATTERN = /^claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/;
+
+/**
+ * Price for a model ID: an exact MODEL_PRICING entry, else the family alias
+ * price for an unlisted full Claude ID (e.g. a future `claude-opus-5-6` is
+ * priced as `opus`), else the first entry as a ballpark fallback.
+ */
+export function getModelPricing(modelId: string): ModelPricing {
+  const exact = MODEL_PRICING[modelId];
+  if (exact) return exact;
+  const family = CLAUDE_FAMILY_PATTERN.exec(modelId)?.[1];
+  if (family && MODEL_PRICING[family]) return MODEL_PRICING[family];
+  return Object.values(MODEL_PRICING)[0];
+}
+
+/**
+ * Short display label for a full Claude model ID:
+ * `claude-opus-5-5` → "Opus 5.5", `claude-opus-4-20250514` → "Opus 4".
+ * Anything else (aliases, non-Claude models) is returned unchanged.
+ */
+export function formatModelLabel(modelId: string): string {
+  const match = CLAUDE_FAMILY_PATTERN.exec(modelId);
+  if (!match) return modelId;
+  const [, family, major, minor] = match;
+  const name = family.charAt(0).toUpperCase() + family.slice(1);
+  return minor !== undefined ? `${name} ${major}.${minor}` : `${name} ${major}`;
+}
 
 // === Dynamic Turn Budget ===
 

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RevisionPlan, RevisionQueueEvent, StreamEvent } from '@domain/types';
-import { RevisionQueueService } from './RevisionQueueService';
+import { RevisionQueueService, resolveSessionModel } from './RevisionQueueService';
 import { makeDb } from '../test/db';
 import {
   makeFakeAgents,
@@ -139,6 +139,35 @@ describe('runSession', () => {
 
     expect(plan.sessions[0].status).toBe('rejected');
     expect(events.some((e) => e.type === 'error' && e.message === 'CLI crashed')).toBe(true);
+  });
+});
+
+describe('session model tier', () => {
+  it('honors Forge\'s tier on the Claude CLI: the sonnet session runs on `sonnet`', async () => {
+    const plan = await loadPlan();
+    provider.scriptNext(reply(FINAL_REPLY));
+
+    await service.runSession(plan.id, plan.sessions[1].id);
+
+    expect(plan.sessions[1].model).toBe('sonnet');
+    expect(provider.calls[0].model).toBe('sonnet');
+  });
+
+  describe('resolveSessionModel', () => {
+    it('returns the tier when the configured model and the tier are both Claude CLI models', () => {
+      expect(resolveSessionModel('sonnet', { ...DEFAULT_SETTINGS, model: 'opus' })).toBe('sonnet');
+      expect(resolveSessionModel('opus', { ...DEFAULT_SETTINGS, model: 'sonnet' })).toBe('opus');
+    });
+
+    it('falls back to settings.model when the user is on another provider', () => {
+      expect(resolveSessionModel('sonnet', { ...DEFAULT_SETTINGS, model: 'llama3.2' })).toBe('llama3.2');
+    });
+
+    it('falls back to settings.model when the Claude list lacks the tier alias', () => {
+      const claude = { ...DEFAULT_SETTINGS.providers[0], models: DEFAULT_SETTINGS.providers[0].models.filter((m) => m.id === 'opus') };
+      const settings = { ...DEFAULT_SETTINGS, model: 'opus', providers: [claude] };
+      expect(resolveSessionModel('sonnet', settings)).toBe('opus');
+    });
   });
 });
 

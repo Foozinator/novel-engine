@@ -474,9 +474,14 @@ export class ClaudeCodeClient implements IClaudeClient, IModelProvider {
       if (isErrorResult) {
         tracker.markErrorResult();
         const errorResultText = typeof event.result === 'string' ? event.result.trim() : '';
-        const message = errorResultText
-          ? `Claude CLI run failed (${subtype ?? 'error'}): ${errorResultText}`
-          : `Claude CLI run failed (${subtype ?? 'error'})`;
+        // A result can carry subtype "success" with is_error: true (e.g. an API
+        // 400 such as "this CLI version does not support the model"). Showing
+        // "(success)" in a failure label reads as nonsense, so only include
+        // the subtype when it actually names an error kind.
+        const label = subtype && subtype !== 'success'
+          ? `Claude CLI run failed (${subtype})`
+          : 'Claude CLI run failed';
+        const message = errorResultText ? `${label}: ${errorResultText}` : label;
         console.error(
           `[ClaudeCodeClient] Error result event: subtype=${subtype ?? '(none)'}, ` +
           `is_error=${event.is_error === true}`,
@@ -505,12 +510,14 @@ export class ClaudeCodeClient implements IClaudeClient, IModelProvider {
         onEvent({ type: 'progressStage', stage: stageChange });
       }
 
+      const resolvedModel = tracker.getResolvedModel();
       onEvent({
         type: 'done',
         inputTokens,
         outputTokens,
         thinkingTokens,
         filesTouched: tracker.getFileTouches(),
+        ...(resolvedModel ? { model: resolvedModel } : {}),
       });
       return;
     }
@@ -672,7 +679,14 @@ export class ClaudeCodeClient implements IClaudeClient, IModelProvider {
 
     // === system — CLI initialization info (useful for diagnostics) ===
     if (eventType === 'system') {
-      // We don't emit a stream event for system init, but it confirms the CLI is running
+      // The init event names the concrete model an alias resolved to
+      // (`opus` → `claude-opus-5-5`). Report it once so the UI can show it and
+      // usage can be priced against it.
+      const model = event.model;
+      if (event.subtype === 'init' && typeof model === 'string' && model && !tracker.getResolvedModel()) {
+        tracker.setResolvedModel(model);
+        onEvent({ type: 'modelResolved', model });
+      }
       return;
     }
 

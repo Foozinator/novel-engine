@@ -267,6 +267,12 @@ export type StreamEventSource = 'chat' | 'auto-draft' | 'hot-take' | 'adhoc-revi
  *
  * `maxTurnsResume` is emitted by the auto-resume wrapper to notify the UI
  * that a re-spawn is happening (attempt number + new turn budget).
+ *
+ * `modelResolved` reports the concrete model a provider is running when the
+ * requested ID was an alias (Claude CLI: `opus` → `claude-opus-5-5`, read from
+ * the CLI's system init event). `done.model` carries the same value so usage
+ * is recorded against the model that actually ran. Both are optional — a
+ * provider that cannot tell leaves them out and callers keep the requested ID.
  */
 export type StreamEvent =
   | { type: 'callStart'; agentName: AgentName; model: string; bookSlug: string }
@@ -277,7 +283,8 @@ export type StreamEvent =
   | { type: 'blockEnd'; blockType: StreamBlockType }
   | { type: 'toolUse'; tool: ToolUseInfo }
   | { type: 'filesChanged'; paths: string[] }
-  | { type: 'done'; inputTokens: number; outputTokens: number; thinkingTokens: number; filesTouched: FileTouchMap; isMaxTurns?: boolean }
+  | { type: 'modelResolved'; model: string }
+  | { type: 'done'; inputTokens: number; outputTokens: number; thinkingTokens: number; filesTouched: FileTouchMap; isMaxTurns?: boolean; model?: string }
   | { type: 'progressStage'; stage: ProgressStage }
   | { type: 'thinkingSummary'; summary: ThinkingSummary }
   | { type: 'toolDuration'; tool: TimestampedToolUse }
@@ -365,6 +372,32 @@ export type SavedPrompt = {
   createdAt: string;               // ISO date
 };
 
+// === Claude CLI Updates ===
+
+/**
+ * Outcome of running `claude update`.
+ * - `updated`        — the version changed
+ * - `up-to-date`     — the command succeeded and the version did not change
+ * - `failed`         — the command failed (e.g. a package-manager install it cannot update)
+ * - `busy`           — refused because a Claude CLI process is running
+ * - `not-installed`  — `claude --version` did not answer before or after
+ */
+export type ClaudeCliUpdateStatus = 'updated' | 'up-to-date' | 'failed' | 'busy' | 'not-installed';
+
+export type ClaudeCliUpdateResult = {
+  status: ClaudeCliUpdateStatus;
+  output: string;                  // combined stdout/stderr of `claude update` (empty when not run)
+  versionBefore: string | null;
+  versionAfter: string | null;
+  manualCommand: string;           // what to run by hand when the in-app update can't
+};
+
+/** Whether the weekly "check for Claude CLI updates" offer should be shown now. */
+export type ClaudeCliUpdateReminder = {
+  due: boolean;
+  version: string | null;          // installed version, when due
+};
+
 // === Settings ===
 
 export type AppSettings = {
@@ -390,6 +423,9 @@ export type AppSettings = {
   completedTours: TourId[];             // which tours the user has finished
   // Saved prompt library
   savedPrompts: SavedPrompt[];          // user-saved prompt entries
+  // Claude CLI update reminder
+  claudeCliUpdateReminder: boolean;     // offer a CLI update check at launch, at most weekly
+  lastClaudeCliUpdateCheck: string | null; // ISO date the reminder was last offered (or an update ran)
 };
 
 // === Token Usage ===
@@ -401,6 +437,16 @@ export type UsageRecord = {
   thinkingTokens: number;
   model: string;
   timestamp: string;
+};
+
+/** One row of token usage grouped by agent, pipeline phase and model. */
+export type UsageCostBasisRow = {
+  agentName: string;
+  phase: string;                  // pipeline phase, or 'adhoc'
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  thinkingTokens: number;
 };
 
 export type UsageSummary = {

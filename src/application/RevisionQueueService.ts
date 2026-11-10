@@ -24,6 +24,7 @@ import type {
 } from '@domain/interfaces';
 import {
   AGENT_REGISTRY,
+  CLAUDE_CLI_PROVIDER_ID,
   MULTI_CALL_MAX_RETRIES,
   MULTI_CALL_RETRY_EXTRA_TURNS,
 } from '@domain/constants';
@@ -639,13 +640,12 @@ export class RevisionQueueService implements IRevisionQueueService {
     const verity = await this.agents.load('Verity' as AgentName);
     const appSettings = await this.settings.load();
 
-    // Use the user's configured model — never resolve to a specific model ID the
-    // account may not have access to. The Wrangler's 'sonnet' tier designation is
-    // a cost-efficiency preference, but forcing a model the CLI doesn't recognise
-    // causes a silent exit-code-1 with no diagnostics. The user's settings.model
-    // is the only guaranteed-accessible model. See: loadPlan() for the same fix
-    // applied to the Wrangler call.
-    const model = appSettings.model;
+    // Honor Forge's opus/sonnet tier when the user is on the Claude CLI and the
+    // tier is available as a CLI alias. Aliases are always recognized by the
+    // CLI, so this no longer risks the silent exit-code-1 that dated IDs caused.
+    // Any other provider (or a Claude list without the alias) falls back to the
+    // user's configured model.
+    const model = resolveSessionModel(session.model, appSettings);
 
     const conversation = this.db.createConversation({
       id: nanoid(),
@@ -1048,4 +1048,19 @@ export class RevisionQueueService implements IRevisionQueueService {
     if (!contentHash) return; // No hash means plan was never loaded — nothing to persist
     await this.writeState(plan.bookSlug, plan, contentHash);
   }
+}
+
+/**
+ * Pick the model for a revision session.
+ *
+ * Returns Forge's tier (`'opus'` / `'sonnet'`) when the user's configured model
+ * belongs to the Claude CLI provider and that provider lists the tier as a
+ * model (the CLI aliases). Otherwise returns `settings.model` unchanged.
+ */
+export function resolveSessionModel(tier: RevisionSession['model'], settings: AppSettings): string {
+  const claude = settings.providers?.find((p) => p.id === CLAUDE_CLI_PROVIDER_ID);
+  if (!claude) return settings.model;
+  const modelIds = new Set(claude.models.map((m) => m.id));
+  if (!modelIds.has(settings.model)) return settings.model;
+  return modelIds.has(tier) ? tier : settings.model;
 }

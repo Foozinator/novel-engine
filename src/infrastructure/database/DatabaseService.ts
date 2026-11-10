@@ -15,6 +15,7 @@ import type {
   Message,
   MessageRole,
   StreamSessionRecord,
+  UsageCostBasisRow,
   UsageRecord,
   UsageSummary,
   UsageTimePoint,
@@ -68,6 +69,8 @@ export class DatabaseService implements IDatabaseService {
   private stmtGetUsageByAgentByBook: Database.Statement;
   private stmtGetUsageByPhaseAll: Database.Statement;
   private stmtGetUsageByPhaseByBook: Database.Statement;
+  private stmtGetUsageCostBasisAll: Database.Statement;
+  private stmtGetUsageCostBasisByBook: Database.Statement;
   private stmtRecordWordCountSnapshot: Database.Statement;
   private stmtGetWordCountHistoryAll: Database.Statement;
   private stmtGetWordCountHistoryByBook: Database.Statement;
@@ -311,6 +314,24 @@ export class DatabaseService implements IDatabaseService {
       GROUP BY COALESCE(c.pipeline_phase, 'adhoc')
       ORDER BY SUM(tu.input_tokens + tu.output_tokens + tu.thinking_tokens) DESC
     `);
+
+    const usageCostBasisSelect = `
+      SELECT
+        c.agent_name,
+        COALESCE(c.pipeline_phase, 'adhoc') AS phase,
+        tu.model,
+        COALESCE(SUM(tu.input_tokens), 0)    AS input_tokens,
+        COALESCE(SUM(tu.output_tokens), 0)   AS output_tokens,
+        COALESCE(SUM(tu.thinking_tokens), 0) AS thinking_tokens
+      FROM token_usage tu
+      JOIN conversations c ON c.id = tu.conversation_id`;
+    const usageCostBasisGroup = `
+      GROUP BY c.agent_name, COALESCE(c.pipeline_phase, 'adhoc'), tu.model`;
+    this.stmtGetUsageCostBasisAll = this.db.prepare(usageCostBasisSelect + usageCostBasisGroup);
+    this.stmtGetUsageCostBasisByBook = this.db.prepare(
+      usageCostBasisSelect + `
+      WHERE c.book_slug = ?` + usageCostBasisGroup,
+    );
 
     this.stmtRecordWordCountSnapshot = this.db.prepare(`
       INSERT INTO word_count_snapshots (book_slug, word_count, chapter_count, recorded_at)
@@ -664,6 +685,20 @@ export class DatabaseService implements IDatabaseService {
     }));
   }
 
+  getUsageCostBasis(bookSlug?: string): UsageCostBasisRow[] {
+    const rows = bookSlug
+      ? (this.stmtGetUsageCostBasisByBook.all(bookSlug) as UsageCostBasisDbRow[])
+      : (this.stmtGetUsageCostBasisAll.all() as UsageCostBasisDbRow[]);
+    return rows.map((r) => ({
+      agentName: r.agent_name,
+      phase: r.phase,
+      model: r.model,
+      inputTokens: r.input_tokens,
+      outputTokens: r.output_tokens,
+      thinkingTokens: r.thinking_tokens,
+    }));
+  }
+
   recordWordCountSnapshot(bookSlug: string, wordCount: number, chapterCount: number): void {
     this.stmtRecordWordCountSnapshot.run(bookSlug, wordCount, chapterCount);
   }
@@ -757,6 +792,15 @@ type UsageByPhaseRow = {
   output_tokens: number;
   thinking_tokens: number;
   conversation_count: number;
+};
+
+type UsageCostBasisDbRow = {
+  agent_name: string;
+  phase: string;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  thinking_tokens: number;
 };
 
 type WordCountSnapshotRow = {

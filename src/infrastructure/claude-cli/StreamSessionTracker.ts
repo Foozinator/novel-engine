@@ -28,6 +28,7 @@ export class StreamSessionTracker {
   private currentBlockType: StreamBlockType | null = null;
   private hasEmittedText = false;
   private hasErrorResult = false;
+  private resolvedModel: string | undefined;
   private currentToolName = '';
   private currentToolId = '';
   private toolInputBuffer = '';
@@ -62,6 +63,15 @@ export class StreamSessionTracker {
 
   markErrorResult(): void {
     this.hasErrorResult = true;
+  }
+
+  /** Concrete model reported by the CLI's system init event (e.g. `claude-opus-5-5`). */
+  getResolvedModel(): string | undefined {
+    return this.resolvedModel;
+  }
+
+  setResolvedModel(model: string): void {
+    this.resolvedModel = model;
   }
 
   getCurrentToolName(): string {

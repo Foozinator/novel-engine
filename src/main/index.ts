@@ -53,7 +53,7 @@ import { SettingsService } from '@infra/settings';
 import { DatabaseService } from '@infra/database';
 import { AgentService } from '@infra/agents';
 import { FileSystemService, BookWatcher, BooksDirWatcher } from '@infra/filesystem';
-import { ClaudeCodeClient } from '@infra/claude-cli';
+import { ClaudeCodeClient, ClaudeCliUpdater } from '@infra/claude-cli';
 import { CodexCliClient } from '@infra/codex-cli';
 import { OllamaCodeClient, OllamaCliRunner } from '@infra/ollama-cli';
 import { LlamaServerClient } from '@infra/llama-server';
@@ -84,6 +84,7 @@ import { SeriesImportService } from '@app/SeriesImportService';
 import { FindReplaceService } from '@app/FindReplaceService';
 import { DashboardService } from '@app/DashboardService';
 import { StatisticsService } from '@app/StatisticsService';
+import { ClaudeCliUpdateService } from '@app/ClaudeCliUpdateService';
 import { QueryService } from '@app/QueryService';
 import { AutoTurnResumer } from '@app/AutoTurnResumer';
 
@@ -302,7 +303,10 @@ async function fetchLlamaServerModels(baseUrl: string): Promise<ModelInfo[]> {
 // ── Fable Model Probe ─────────────────────────────────────────────
 
 /**
- * Check whether the Claude CLI accepts the `claude-fable-5` model ID.
+ * Check whether the Claude CLI accepts the `fable` model alias.
+ *
+ * Uses the alias rather than a dated ID so the probe keeps working as the CLI
+ * moves the alias to newer Fable releases.
  *
  * The CLI validates model names locally before making any API call, so an
  * unrecognised model ID exits immediately with a human-readable error rather
@@ -463,7 +467,7 @@ async function initializeApp(): Promise<void> {
     claudeConfig ?? BUILT_IN_PROVIDER_CONFIGS[0],
   );
 
-  // Probe for the optional claude-fable-5 model.
+  // Probe for the optional Fable model (via the `fable` CLI alias).
   // The Claude CLI validates model names locally before touching the API, so
   // an unavailable model fails instantly (no tokens spent). Only add the model
   // to the selectable list if the probe confirms access.
@@ -479,8 +483,8 @@ async function initializeApp(): Promise<void> {
               ...existingClaudeConfig.models,
               {
                 id: FABLE_MODEL_ID,
-                label: 'Claude Fable 5',
-                description: 'Next-generation model — available via Claude CLI',
+                label: 'Claude Fable (latest)',
+                description: 'Most capable — separate weekly limit; may use paid credits on some plans',
                 providerId: CLAUDE_CLI_PROVIDER_ID,
                 contextWindow: 200_000,
                 supportsThinking: true,
@@ -490,9 +494,9 @@ async function initializeApp(): Promise<void> {
           });
         }
       }
-      console.log('[startup] claude-fable-5 detected — added to Claude CLI model list');
+      console.log('[startup] Fable detected — added to Claude CLI model list');
     } else {
-      console.log('[startup] claude-fable-5 not available — skipped');
+      console.log('[startup] Fable not available — skipped');
     }
   }
 
@@ -646,6 +650,11 @@ async function initializeApp(): Promise<void> {
   const helper = new HelperService(settings, agents, db, fs, providers, streamManager, userDataPath);
   const dashboard = new DashboardService(db, fs, pipeline);
   const statistics = new StatisticsService(db, fs);
+  // `claude update` is refused while any Claude CLI process is running.
+  const claudeCliUpdate = new ClaudeCliUpdateService(
+    settings,
+    new ClaudeCliUpdater(() => claudeClient.hasActiveProcesses()),
+  );
   const queryService = new QueryService(fs, chat);
   const notifications = new NotificationManager(settings);
 
@@ -743,7 +752,7 @@ async function initializeApp(): Promise<void> {
 
   // 8. Register IPC handlers (with hook to switch watcher on book change)
   registerIpcHandlers(
-    { settings, agents, db, fs, chat, audit, pipeline, build, usage, revisionQueue, motifLedger, notifications, version, providerRegistry: providers, manuscriptImport, sourceGeneration, series, seriesImport, helper, findReplace, dashboard, statistics, query: queryService },
+    { settings, agents, db, fs, chat, audit, pipeline, build, usage, revisionQueue, motifLedger, notifications, version, providerRegistry: providers, manuscriptImport, sourceGeneration, series, seriesImport, helper, findReplace, dashboard, statistics, query: queryService, claudeCliUpdate },
     { userDataPath, booksDir },
     {
       onActiveBookChanged: (slug: string) => {

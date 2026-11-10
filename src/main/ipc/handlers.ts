@@ -26,6 +26,7 @@ import type {
   IFindReplaceService,
   IDashboardService,
   IStatisticsService,
+  IClaudeCliUpdateService,
   IQueryService,
 } from '@domain/interfaces';
 import type {
@@ -96,6 +97,7 @@ export function registerIpcHandlers(services: {
   dashboard: IDashboardService;
   statistics: IStatisticsService;
   query: IQueryService;
+  claudeCliUpdate: IClaudeCliUpdateService;
 }, paths: {
   userDataPath: string;
   booksDir: string;
@@ -123,6 +125,12 @@ export function registerIpcHandlers(services: {
   ipcMain.handle('settings:detectClaudeCli', () => services.settings.detectClaudeCli());
 
   ipcMain.handle('settings:detectCodexCli', () => services.settings.detectCodexCli());
+
+  // === Claude CLI updates ===
+
+  ipcMain.handle('claudeCli:checkUpdateReminder', () => services.claudeCliUpdate.checkReminder());
+
+  ipcMain.handle('claudeCli:runUpdate', () => services.claudeCliUpdate.runUpdate());
 
   ipcMain.handle('settings:detectOllamaCli', () => services.settings.detectOllamaCli());
 

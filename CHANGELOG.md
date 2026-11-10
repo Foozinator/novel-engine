@@ -24,6 +24,115 @@ Upstream is frozen, so the Foozinator fork is now the project. A CI workflow run
 
 ---
 
+## [2026-11-04] — Claude CLI update flow: version-required banner, weekly reminder, Settings toggle
+
+### Summary
+
+Model aliases can move to a model the installed Claude CLI is too old to run. The call then fails with "Claude Code X does not support this model; version Y or newer is required", and because every NE call is a short `-p` process the CLI's own background auto-update may never run. A new app-wide banner above the StatusBar recognises that error from any flow (chat, revision queue, audits, …), explains it plainly, and offers **Update Claude CLI**, which runs `claude update` and shows its output. For a chat message it then offers **Retry message**. At launch, at most once a week, the banner offers to check for updates (reads `claude --version` first; runs `claude update` only when asked). The update is refused while any Claude CLI process is running (on Windows a running `claude.exe` blocks it). When the update fails, or leaves the CLI below the required version, the banner shows the output and the manual command. Settings → Built-in CLI Status gains a toggle for the weekly reminder and a "Check for updates now" button. Reference implementation for the intake brief `claude-model-aliases-and-cli-updates.md` (part 3 of 3).
+
+### Added
+- `src/domain/types.ts` — `ClaudeCliUpdateStatus`, `ClaudeCliUpdateResult`, `ClaudeCliUpdateReminder`. `AppSettings` gains `claudeCliUpdateReminder` (default `true`) and `lastClaudeCliUpdateCheck` (default `null`).
+- `src/domain/constants.ts` — `CLAUDE_CLI_UPDATE_CHECK_INTERVAL_MS` (7 days), `CLAUDE_CLI_MANUAL_UPDATE_COMMAND`, `parseClaudeCliVersion()`, `parseClaudeCliVersionError()`, `isVersionAtLeast()`.
+- `src/domain/interfaces.ts` — `IClaudeCliUpdater`, `IClaudeCliUpdateService`.
+- `src/infrastructure/claude-cli/ClaudeCliUpdater.ts` — `getVersion()` / `update()`.
+- `src/application/ClaudeCliUpdateService.ts` — weekly reminder decision + update.
+- IPC `claudeCli:checkUpdateReminder`, `claudeCli:runUpdate`; preload `window.novelEngine.claudeCli`.
+- `src/renderer/stores/cliUpdateStore.ts`, `src/renderer/components/CliUpdate/CliUpdateBanner.tsx`.
+- Tests: `ClaudeCliUpdater.test.ts`, `ClaudeCliUpdateService.test.ts`, `cliUpdateStore.test.ts`, `CliUpdateBanner.test.tsx`; version-helper cases in `constants.test.ts`.
+
+### Changed
+- `src/main/index.ts` — Constructs `ClaudeCliUpdateService(settings, new ClaudeCliUpdater(() => claudeClient.hasActiveProcesses()))` and passes it to `registerIpcHandlers`.
+- `src/main/ipc/handlers.ts` — `claudeCliUpdate` service + the two handlers.
+- `src/renderer/components/Layout/AppLayout.tsx` — Renders `CliUpdateBanner` above `StatusBar`.
+- `src/renderer/components/Settings/SettingsView.tsx` — `ClaudeCliUpdateControls` in Built-in CLI Status.
+- `src/test/novelEngineMock.ts` — `claudeCli` bridge mock; settings fixture fields.
+- `docs/architecture/DOMAIN.md`, `INFRASTRUCTURE.md`, `APPLICATION.md`, `IPC.md`, `RENDERER.md`, `ARCHITECTURE.md` — Updated for the above.
+
+### Architecture Impact
+- New IPC namespace `claudeCli:*` (2 invoke channels) and preload bridge `claudeCli`. New application service and infrastructure class, wired in the composition root. New renderer store with its own `chat:streamEvent` listener.
+
+### Migration Notes
+- Existing `settings.json` files gain `claudeCliUpdateReminder: true` and `lastClaudeCliUpdateCheck: null` via the defaults merge, so existing users see the reminder on their next launch (if the CLI is installed), then at most weekly.
+- **Retry message** resends the conversation's last user message, so the transcript shows that message twice (the failed attempt and the retry). Other flows show no retry button; the user runs the step again.
+- Live `claude update` was not exercised in development (unit tests mock the CLI); `claude --version` was.
+
+---
+
+## [2026-11-04] — Show the model a Claude alias resolved to, and price usage per model
+
+### Summary
+
+The Claude CLI's `system`/`init` stream event names the concrete model an alias resolved to (`opus` → `claude-opus-5-5`). NE ignored it. `ClaudeCodeClient` now emits it as a new `modelResolved` stream event and attaches it to `done` as `model`, so usage rows record the model that actually ran. The CLI Activity panel and the StatusBar show it as "Opus 5.5". Statistics no longer apply the first pricing entry to every call: usage is grouped by agent, phase and model and each group is priced at its own model's rate. Reference implementation for the intake brief `claude-model-aliases-and-cli-updates.md` (part 2 of 3; the CLI update flow is not included).
+
+### Added
+- `src/domain/constants.ts` — `getModelPricing(modelId)` (exact entry → family alias for an unlisted `claude-<family>-N[-M]` ID → first entry) and `formatModelLabel(modelId)` (`claude-opus-5-5` → "Opus 5.5"). `MODEL_PRICING` gains the resolved full IDs `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1`.
+- `src/domain/types.ts` — `StreamEvent` variant `{ type: 'modelResolved'; model }`; optional `model` on `done`; `UsageCostBasisRow`.
+- `src/domain/interfaces.ts`, `src/infrastructure/database/DatabaseService.ts` — `getUsageCostBasis(bookSlug?)`: token totals grouped by agent, phase (null → `adhoc`) and model.
+
+### Changed
+- `src/infrastructure/claude-cli/ClaudeCodeClient.ts` — Reads `model` from the `init` event once per process, emits `modelResolved`, and sets `done.model`.
+- `src/infrastructure/claude-cli/StreamSessionTracker.ts` — `getResolvedModel()` / `setResolvedModel()`.
+- `src/application/AutoTurnResumer.ts` — Carries the resolved model (from `modelResolved` or an intermediate `done.model`) onto every merged `done`.
+- `src/application/StreamManager.ts`, `src/application/AuditService.ts` — `recordUsage` uses `event.model ?? <requested model>`.
+- `src/application/StatisticsService.ts` — Per-agent, per-phase and total cost estimates are summed from `getUsageCostBasis()` rows priced with `getModelPricing()`. Rounding happens after summing.
+- `src/renderer/stores/cliActivityStore.ts` — Handles `modelResolved` (updates `callMeta.model`/`modelLabel`, logs `Model: …` once). `getModelLabel` uses `formatModelLabel` for full Claude IDs (previously `claude-opus-5-5` → "Opus 5 5"). `ActiveCallSummary` gains `modelLabel`.
+- `src/renderer/components/StatusBar/StatusBar.tsx` — Shows the model label after the agent name.
+- `docs/architecture/DOMAIN.md`, `docs/architecture/INFRASTRUCTURE.md`, `docs/architecture/APPLICATION.md`, `docs/architecture/RENDERER.md` — Updated for the above.
+
+### Tests
+- `ClaudeCodeClient.test.ts` — init event → one `modelResolved` + `done.model`; no model when init has none.
+- `AutoTurnResumer.test.ts` — resolved model survives a max-turns resume onto the merged `done`.
+- `StreamManager.test.ts` — usage recorded against `done.model`.
+- `StatisticsService.test.ts` — mixed models (resolved ID, alias, Haiku, legacy Opus 4) priced per model, per agent and per phase.
+- `DatabaseService.usage.test.ts` — `getUsageCostBasis` grouping and book filter.
+- `cliActivityStore.test.ts` — `modelResolved` relabels the call once.
+- `constants.test.ts` — `getModelPricing` and `formatModelLabel` cases.
+
+### Architecture Impact
+- New `StreamEvent` variant `modelResolved`. It flows through the existing stream IPC unchanged; consumers that don't handle it ignore it. New `IDatabaseService` method. No new IPC channels, stores or DI wiring.
+
+### Migration Notes
+- No schema change. Existing usage rows keep the model they were recorded with (aliases or legacy IDs) and are priced by that entry. New rows from the Claude CLI record the resolved full ID.
+- Cost estimates remain best-effort: `done.inputTokens` is the CLI result's `usage.input_tokens`, which excludes cache reads and cache writes. With Claude Code's large cached context that is most of the input, so estimates still undercount. Not changed here.
+
+---
+
+## [2026-11-04] — Claude CLI model aliases replace dated model IDs
+
+### Summary
+
+The built-in Claude models were dated IDs (`claude-opus-4-20250514`, `claude-sonnet-4-20250514`), so new users started on models several releases old. The Claude CLI provider now ships the CLI aliases `opus`, `sonnet` and `haiku`, which the CLI resolves to Anthropic's current recommended models. Saved settings are migrated once on load: legacy built-in IDs are swapped for the aliases, user-added IDs are kept, and `model`/`secondaryModel` move to `opus`/`sonnet` only if they still named a legacy ID. The Fable probe now uses the `fable` alias instead of `claude-fable-5`. Because aliases are always recognized by the CLI, revision-queue sessions honor Forge's `opus`/`sonnet` tier again on the Claude CLI. An error result with `subtype: "success"` and `is_error: true` no longer renders as "Claude CLI run failed (success)". Reference implementation for the intake brief `claude-model-aliases-and-cli-updates.md` (part 1 of 3; the resolved-model display and the CLI update flow are not included).
+
+### Added
+- `src/infrastructure/settings/claudeModelMigration.ts` — `migrateClaudeModelAliases(settings)`. Pure. Returns the same reference when nothing needs migrating.
+- `src/infrastructure/settings/claudeModelMigration.test.ts` — Covers legacy-only lists, a probed `claude-fable-5` entry, user-added IDs and a user-chosen primary, non-Claude primaries, no-op, idempotence and immutability.
+
+### Changed
+- `src/domain/constants.ts` — Added `CLAUDE_CLI_ALIAS_MODELS` (`opus`, `sonnet`, `haiku`) and `LEGACY_CLAUDE_CLI_MODEL_IDS`. `BUILT_IN_PROVIDER_CONFIGS[0].models` is now the alias list with `defaultModel: 'opus'`, so `CLAUDE_CLI_PRIMARY_MODEL`/`CLAUDE_CLI_SECONDARY_MODEL` derive to `opus`/`sonnet`. `FABLE_MODEL_ID` is now `'fable'`. `AVAILABLE_MODELS` (deprecated) lists the aliases. `MODEL_PRICING` gains alias entries first (`opus` $4/$20, `sonnet` $2/$10, `haiku` $0.10/$0.50, `fable` $10/$50 per 1M tokens, as of 2026-10); legacy dated entries are kept after them.
+- `src/infrastructure/settings/SettingsService.ts` — `load()` runs `migrateClaudeModelAliases()` on the merged settings and writes the file back once when it changed.
+- `src/infrastructure/settings/index.ts` — Exports `migrateClaudeModelAliases`.
+- `src/main/index.ts` — `probeFableModel()` probes the `fable` alias. The probed model is labelled "Claude Fable (latest)" and its description notes the separate weekly limit.
+- `src/application/RevisionQueueService.ts` — Added exported `resolveSessionModel(tier, settings)`. `runSession()` uses it instead of always using `settings.model`.
+- `src/application/StatisticsService.test.ts` — Expected costs updated for the new first pricing entry (`opus` $4/$20 instead of Opus 4's $15/$75).
+- `src/domain/constants.test.ts` — Asserts aliases are the built-ins, `best` is absent, `FABLE_MODEL_ID` is `fable`, and the default model is first in `MODEL_PRICING`.
+- `src/infrastructure/settings/SettingsService.test.ts` — Asserts a pre-alias settings file is migrated and persisted, and that a file needing no migration is not rewritten.
+- `src/application/RevisionQueueService.run.test.ts` — Asserts a `sonnet`-tier session runs on `sonnet`, and covers `resolveSessionModel` fallbacks.
+- `src/infrastructure/claude-cli/ClaudeCodeClient.test.ts` — Asserts the `success` + `is_error` label.
+- `docs/architecture/DOMAIN.md`, `docs/architecture/INFRASTRUCTURE.md`, `docs/architecture/APPLICATION.md`, `docs/architecture/ARCHITECTURE.md` — Updated for the above.
+
+### Fixed
+- `src/infrastructure/claude-cli/ClaudeCodeClient.ts` — Error results with `subtype: "success"` and `is_error: true` were labelled "Claude CLI run failed (success)". The subtype is now shown only when it names an error kind.
+
+### Architecture Impact
+- None — no wiring changes. `SettingsService` gains a module-local dependency on `claudeModelMigration.ts`. No new IPC channels or stores.
+
+### Migration Notes
+- `settings.json` is rewritten once on first load after upgrade when the claude-cli provider lists none of the aliases. Legacy dated Claude IDs are removed from that provider; other IDs are kept.
+- Cost estimates drop, because the first `MODEL_PRICING` entry is now `opus` ($4/$20) rather than Opus 4 ($15/$75). Historical usage rows are re-estimated at the new rate.
+- `docs/architecture/DOMAIN.md` still lists `WRANGLER_MODEL`, which no longer exists in `src/domain/constants.ts`. Pre-existing discrepancy, not changed here.
+
+---
+
 ## [2026-07-23] — Auto-draft retries transient audit/fix failures and respects active provider for model resolution
 
 ### Summary

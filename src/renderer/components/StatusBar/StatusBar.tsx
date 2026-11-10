@@ -55,6 +55,7 @@ export function StatusBar(): React.ReactElement {
             </span>
             <span className="truncate">
               <span className="font-medium text-ne-ink">{summary.agentName}</span>
+              {summary.modelLabel && <span className="text-ne-ink-faint"> ({summary.modelLabel})</span>}
               {summary.toolLabel && <span> · {summary.toolLabel}</span>}
               {summary.filePath && (
                 <span className="font-ne-mono text-ne-ink-faint"> {summary.filePath}</span>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { marked } from 'marked';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useCliUpdateStore } from '../../stores/cliUpdateStore';
 import { useBookStore } from '../../stores/bookStore';
 import { useModalChatStore } from '../../stores/modalChatStore';
 import type { ModelInfo, TourId, UsageSummary } from '@domain/types';
@@ -108,7 +109,44 @@ function BuiltInCliStatusSection(): React.ReactElement {
           </div>
         ))}
       </div>
+      <ClaudeCliUpdateControls />
     </section>
+  );
+}
+
+/** Weekly update reminder toggle and a manual "check now" (result shows in the app-wide banner). */
+function ClaudeCliUpdateControls(): React.ReactElement {
+  const { settings, update } = useSettingsStore();
+  const checkNow = useCliUpdateStore((s) => s.checkNow);
+  const running = useCliUpdateStore((s) => s.running);
+  const reminderOn = settings?.claudeCliUpdateReminder ?? true;
+
+  return (
+    <div className="space-y-2 pt-1">
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="flex cursor-pointer items-center gap-3">
+          <input
+            type="checkbox"
+            checked={reminderOn}
+            onChange={(e) => update({ claudeCliUpdateReminder: e.target.checked })}
+            className="h-4 w-4 rounded border-zinc-300 dark:border-zinc-600 bg-zinc-100 dark:bg-zinc-800 text-blue-500 focus:ring-2 focus:ring-blue-500 focus:ring-offset-0"
+          />
+          <span className="text-sm text-zinc-700 dark:text-zinc-300">
+            Offer to check for Claude CLI updates at launch (at most weekly)
+          </span>
+        </label>
+        <button
+          onClick={() => void checkNow()}
+          disabled={running || !(settings?.hasClaudeCli ?? false)}
+          className="ml-auto rounded-md border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-300 transition-colors hover:bg-zinc-200 dark:hover:bg-zinc-700 disabled:opacity-50"
+        >
+          {running ? 'Updating...' : 'Check for updates now'}
+        </button>
+      </div>
+      <HelpText>
+        Runs `claude update`. Model aliases can move to a model an older CLI can&apos;t run, and Novel Engine&apos;s short CLI calls may not give the CLI&apos;s own auto-update a chance to run.
+      </HelpText>
+    </div>
   );
 }
 

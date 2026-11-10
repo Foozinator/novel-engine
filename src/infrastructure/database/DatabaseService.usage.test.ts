@@ -132,6 +132,27 @@ describe('getUsageByPhase', () => {
   });
 });
 
+describe('getUsageCostBasis', () => {
+  it('groups by agent, phase and model, and filters by book', () => {
+    const spark = makeConversation(db, { agentName: 'Spark', pipelinePhase: 'pitch' });
+    const verity = makeConversation(db, { agentName: 'Verity', pipelinePhase: null });
+    makeUsage(db, spark.id, { inputTokens: 10, outputTokens: 1, thinkingTokens: 0, model: 'opus' });
+    makeUsage(db, spark.id, { inputTokens: 5, outputTokens: 1, thinkingTokens: 2, model: 'opus' });
+    makeUsage(db, spark.id, { inputTokens: 7, outputTokens: 0, thinkingTokens: 0, model: 'claude-opus-5-5' });
+    makeUsage(db, verity.id, { inputTokens: 3, outputTokens: 0, thinkingTokens: 0, model: 'sonnet' });
+
+    const rows = db.getUsageCostBasis('test-book');
+    const key = (r: { agentName: string; phase: string; model: string }) => `${r.agentName}|${r.phase}|${r.model}`;
+    expect(Object.fromEntries(rows.map((r) => [key(r), [r.inputTokens, r.outputTokens, r.thinkingTokens]]))).toEqual({
+      'Spark|pitch|opus': [15, 2, 2],
+      'Spark|pitch|claude-opus-5-5': [7, 0, 0],
+      'Verity|adhoc|sonnet': [3, 0, 0],
+    });
+    expect(db.getUsageCostBasis()).toHaveLength(3);
+    expect(db.getUsageCostBasis('unknown-book')).toEqual([]);
+  });
+});
+
 describe('getLastConversation', () => {
   it('returns the agent, title, and timestamp for the book, or null', () => {
     expect(db.getLastConversation('empty-book')).toBeNull();

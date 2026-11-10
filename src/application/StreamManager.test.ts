@@ -101,6 +101,12 @@ describe('stream lifecycle', () => {
     expect(forwarded.at(-1)?.type).toBe('done'); // still forwarded to caller
   });
 
+  it('records usage against the resolved model when done carries one', () => {
+    const stream = start();
+    stream.onEvent({ ...(doneEvent({}) as StreamEvent & { type: 'done' }), model: 'claude-opus-5-5' });
+    expect(usageRecords.at(-1)).toMatchObject({ model: 'claude-opus-5-5' });
+  });
+
   it('error ends the session without saving a message and invokes onError with the partial buffer', async () => {
     const onError = vi.fn(async () => undefined);
     const stream = start({ onError });

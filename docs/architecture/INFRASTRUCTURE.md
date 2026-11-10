@@ -13,6 +13,7 @@ Everything in `src/infrastructure/`. Implements domain interfaces using Node.js 
 | File | Purpose |
 |------|---------|
 | `SettingsService.ts` | Implements `ISettingsService`. JSON at `{userData}/settings.json`. |
+| `claudeModelMigration.ts` | `migrateClaudeModelAliases(settings)`. Pure one-time migration from dated Claude IDs to CLI aliases. |
 | `index.ts` | Barrel export |
 
 Key behavior:
@@ -22,6 +23,7 @@ Key behavior:
 - `detectCodexCli()` runs non-interactive `codex --version` with timeout and persists `hasCodexCli`
 - `detectOllamaCli()` runs `ollama --version` with timeout and persists `hasOllamaCli`
 - Settings merged with `DEFAULT_SETTINGS` on load (forward-compatible)
+- On load, `migrateClaudeModelAliases()` runs. If the saved claude-cli provider lists none of `opus`/`sonnet`/`haiku`, it drops `LEGACY_CLAUDE_CLI_MODEL_IDS` from that provider, prepends the aliases, keeps user-added IDs, and moves `model`/`secondaryModel`/`defaultModel` to `opus`/`sonnet` only where they still name a legacy ID. The migrated settings are written back once. A failed write is logged and retried on the next load.
 
 ### database/ — SQLite Persistence
 
@@ -78,6 +80,7 @@ Key behavior:
 |------|---------|
 | `ClaudeCodeClient.ts` | Implements `IClaudeClient` and `IModelProvider`. Spawns `claude` CLI as child process, streams NDJSON responses. Exposes `providerId` (`'claude-cli'`) and `capabilities` (`text-completion`, `tool-use`, `thinking`, `streaming`). |
 | `StreamSessionTracker.ts` | Tracks active stream sessions for orphan detection/recovery. |
+| `ClaudeCliUpdater.ts` | Implements `IClaudeCliUpdater`. `getVersion()` parses `claude --version`; `update()` runs `claude update` (180s timeout) and re-reads the version → `updated` / `up-to-date` / `failed` (with stdout+stderr) / `busy` (an injected `isBusy()` — the composition root passes `claudeClient.hasActiveProcesses()`; a running `claude.exe` blocks the update on Windows) / `not-installed`. |
 | `index.ts` | Barrel export |
 
 Key behavior:
@@ -86,6 +89,7 @@ Key behavior:
 - Working directory set to book directory (CLI tools operate on book files)
 - Parses NDJSON line-by-line from stdout
 - Maps CLI events to `StreamEvent` union variants
+- Resolved model: the `system`/`init` event's `model` (e.g. `opus` → `claude-opus-5-5`) is stored on the `StreamSessionTracker`, emitted once as `modelResolved`, and attached to `done` as `model`
 - `abortStream` sends SIGTERM, then SIGKILL after 2s grace period
 - `isAvailable()` caches result of `claude --version` check
 - Persists stream events to SQLite in batches (100ms flush interval, max 20, critical events flush immediately) for reduced I/O pressure
@@ -93,6 +97,7 @@ Key behavior:
 - EPIPE/ERR_STREAM_DESTROYED on stdin logged with diagnostic info (stdinBytes, writableFinished, writableEnded)
 - System prompt size guard: rejects prompts > 500KB with clear error before spawn
 - Max-turns signaling: emits `isMaxTurns: true` on the `error` StreamEvent when the CLI result subtype is `error_max_turns` (vs. `false` for other error subtypes like `error_during_execution`)
+- Error label: `Claude CLI run failed (<subtype>): <result>`. The subtype is omitted when it is `success`, because a result can carry `subtype: "success"` with `is_error: true` (e.g. an API 400 "this CLI version does not support the model").
 
 
 ### codex-cli/ — Codex CLI Provider

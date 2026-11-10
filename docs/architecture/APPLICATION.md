@@ -145,7 +145,7 @@ Owns the `activeStreams` map and the repetitive stream lifecycle pattern used by
 2. Emit `callStart` event
 3. Accumulate `textDelta` / `thinkingDelta` into buffers
 4. Track `progressStage` and `toolDuration` on active stream
-5. On `done`: save assistant message, record usage, end session, delete active stream, call optional `onDone` hook
+5. On `done`: save assistant message, record usage (against `done.model` when the provider reported a resolved model, else the requested model), end session, delete active stream, call optional `onDone` hook
 6. On `error`: end session as idle, delete active stream
 7. Forward all events to caller's `onEvent`
 
@@ -237,6 +237,17 @@ Dependencies: `IFileSystemService`, `pandocPath: string`, `booksDir: string`
 4. Report progress via callback
 5. Return `BuildResult` with paths and any errors
 
+### ClaudeCliUpdateService
+
+File: `src/application/ClaudeCliUpdateService.ts`
+
+Dependencies: `ISettingsService`, `IClaudeCliUpdater`, optional clock (`now`)
+
+| Method | What It Does |
+|--------|-------------|
+| `checkReminder()` | Not due when `claudeCliUpdateReminder` is off, `hasClaudeCli` is false, the last offer (`lastClaudeCliUpdateCheck`) was < `CLAUDE_CLI_UPDATE_CHECK_INTERVAL_MS` ago, or `claude --version` doesn't answer. When due, records the offer time first, so dismissing it still waits a week. |
+| `runUpdate()` | Delegates to `IClaudeCliUpdater.update()`; records the check time unless the result is `busy`. |
+
 ### UsageService
 
 File: `src/application/UsageService.ts`
@@ -259,7 +270,7 @@ Dependencies: `IFileSystemService`, `IProviderRegistry`, `IAgentService`, `IData
 |--------|-------------|
 | `loadPlan(bookSlug)` | Reads revision-prompts.md + project-tasks.md → sends to Wrangler for parsing → returns `RevisionPlan` |
 | `clearCache(bookSlug)` | Removes cached parse from disk |
-| `runSession(planId, sessionId)` | Sends session prompt to Verity, streams response, fires events |
+| `runSession(planId, sessionId)` | Sends session prompt to Verity, streams response, fires events. Model comes from `resolveSessionModel(session.model, settings)`: Forge's `opus`/`sonnet` tier when the user's model is a Claude CLI model and the tier alias is listed, else `settings.model`. |
 | `runAll(planId, selectedIds?)` | Runs all pending sessions sequentially (respects mode and pause) |
 | `respondToGate(planId, sessionId, action, message?)` | Author decision at approval gate |
 | `approveSession(planId, sessionId)` | Marks tasks as `[x]` in project-tasks.md |
@@ -513,6 +524,7 @@ Key behaviors:
 - `callStart` forwarded only from the first attempt (suppressed on resumes)
 - Token usage (`inputTokens`, `outputTokens`, `thinkingTokens`) and `filesTouched` accumulated across all attempts into the final merged `done` event
 - Intermediate `done`/`error` events are suppressed (never forwarded to the caller)
+- The resolved model (from `modelResolved` or an intermediate `done.model`) is carried onto every merged `done` as `model`
 - `MAX_RESUME_ATTEMPTS` and `NO_PROGRESS_LIMIT` are exported constants — tests reference them by name
 - Hard cap fires at the top of the loop on entry to attempt `MAX_RESUME_ATTEMPTS + 1` (after `MAX_RESUME_ATTEMPTS` re-spawns)
 - No-progress guard compares `partialText.length` and `Object.keys(allFilesTouched).length` against the previous attempt's values; resets to 0 on real progress

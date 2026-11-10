@@ -80,6 +80,8 @@ export function makeAppSettings(overrides: Partial<AppSettings> = {}): AppSettin
     activeProviderId: 'claude-cli',
     completedTours: [],
     savedPrompts: [],
+    claudeCliUpdateReminder: false,
+    lastClaudeCliUpdateCheck: null,
     ...overrides,
   };
 }
@@ -263,6 +265,16 @@ export function installNovelEngineMock(overrides: BridgeOverrides = {}): NovelEn
       update: vi.fn(async () => undefined),
       saveAuthorProfile: vi.fn(async () => undefined),
       loadAuthorProfile: vi.fn(async () => ''),
+    },
+    claudeCli: {
+      checkUpdateReminder: vi.fn(async () => ({ due: false, version: null })),
+      runUpdate: vi.fn(async () => ({
+        status: 'up-to-date' as const,
+        output: '',
+        versionBefore: '2.1.300',
+        versionAfter: '2.1.300',
+        manualCommand: 'claude update',
+      })),
     },
     agents: {
       list: vi.fn(async () => []),
