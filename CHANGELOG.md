@@ -11,7 +11,7 @@ All notable changes to Novel Engine are documented here.
 Upstream is frozen, so the Foozinator fork is now the project. A CI workflow runs the type check and the test suite on Linux and Windows for pushes to `main` and for pull requests. Before this, the only workflow was the tag-triggered release build, so nothing checked a change before it landed. `CLAUDE.md` now imports `AGENTS.MD`, so its changelog and architecture-doc rule loads automatically, and it documents the fork's branching, labels and ground rules.
 
 ### Added
-- `.github/workflows/ci.yml` — `npm ci`, `npm run lint` and `npm test` on `ubuntu-latest` and `windows-latest` with Node 20. Runs on pushes to `main` and on pull requests. Read-only `contents` permission.
+- `.github/workflows/ci.yml` — `npm ci`, `npm run lint` and `npm test` on `ubuntu-latest` and `windows-latest` with Node 20. Runs on pushes to `main` and on pull requests. Read-only `contents` permission. Uses `actions/checkout@v5` and `actions/setup-node@v5` (Node 24 action runtime).
 
 ### Changed
 - `CLAUDE.md` — Added an `@AGENTS.MD` import and a "Fork conventions" section (ground rules, branch and PR flow, labels, verify commands). The maintainer's existing sections are unchanged.

@@ -58,7 +58,7 @@ This repo is a fork of `john-paul-ruf/novel-engine`. Upstream is frozen: the mai
 
 ### Issues and labels
 
-- Type labels: `feature`, `bug`, `chore`, `spike`. Area labels: `area:platform`, `area:security`, `area:workflow`.
+- Type labels: `feature`, `enhancement` (improvements to existing behavior), `bug`, `chore`, `spike`. Area labels: `area:platform`, `area:security`, `area:workflow`.
 - Spike issues have six parts: Question · Why it matters · Timebox · Method · Exit criteria · Output. The output is a findings comment plus proposed fork issues, or a stated reason for proposing none. Working notes go in `notes/<spike>.md`, which is untracked.
 
 ### Verify
