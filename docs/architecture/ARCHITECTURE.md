@@ -1,6 +1,6 @@
 # Architecture — Novel Engine
 
-> Last updated: 2026-07-23 (program-030)
+> Last updated: 2026-11-12 (program-030)
 
 Electron + React 18 + TypeScript 5 + Tailwind v4 + Zustand + better-sqlite3 + Claude Code CLI + Codex CLI + Ollama CLI + Pandoc
 
@@ -58,6 +58,7 @@ src/
 │   │   ├── ClaudeCodeClient.ts              # Spawns `claude` process, streams NDJSON, lifecycle
 │   │   ├── StreamSessionTracker.ts          # Tracks active stream sessions for orphan recovery
 │   │   ├── ClaudeCliUpdater.ts              # `claude --version` / `claude update` (refused while busy)
+│   │   ├── FableProbe.ts                    # On-demand minimal request to the `fable` alias
 │   │   └── index.ts
 │   ├── codex-cli/
 │   │   ├── CodexCliClient.ts                # Spawns `codex exec --json`, streams events, lifecycle
@@ -100,6 +101,7 @@ src/
 │   ├── FindReplaceService.ts               # Bulk find & replace across chapter drafts; safe revert via snapshots
 │   ├── AutoTurnResumer.ts                  # Decorator: auto-resumes provider calls on max-turns exhaustion
 │   ├── ClaudeCliUpdateService.ts           # Weekly Claude CLI update reminder + runs the update
+│   ├── FableAccessService.ts               # On-demand Fable access check; adds Fable to Claude models
 │   ├── QueryService.ts                    # Query tracker I/O, target CRUD, AI query letter generation via Quill
 │   ├── import/
 │   │   └── ChapterDetector.ts               # Pure chapter break detection utility
@@ -263,6 +265,11 @@ QueryService
 
 NotificationManager
 └── ISettingsService (SettingsService)
+
+FableAccessService
+├── ISettingsService (SettingsService)
+├── IFableProbe (FableProbe)
+└── IProviderRegistry (ProviderRegistry)
 
 BookWatcher(booksDir, callback)
 BooksDirWatcher(booksDir, callback)

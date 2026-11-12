@@ -27,6 +27,7 @@ import type {
   IDashboardService,
   IStatisticsService,
   IClaudeCliUpdateService,
+  IFableAccessService,
   IQueryService,
 } from '@domain/interfaces';
 import type {
@@ -98,6 +99,7 @@ export function registerIpcHandlers(services: {
   statistics: IStatisticsService;
   query: IQueryService;
   claudeCliUpdate: IClaudeCliUpdateService;
+  fableAccess: IFableAccessService;
 }, paths: {
   userDataPath: string;
   booksDir: string;
@@ -131,6 +133,9 @@ export function registerIpcHandlers(services: {
   ipcMain.handle('claudeCli:checkUpdateReminder', () => services.claudeCliUpdate.checkReminder());
 
   ipcMain.handle('claudeCli:runUpdate', () => services.claudeCliUpdate.runUpdate());
+
+  // On demand only — a successful probe is a billed Fable request.
+  ipcMain.handle('claudeCli:checkFableAccess', () => services.fableAccess.check());
 
   ipcMain.handle('settings:detectOllamaCli', () => services.settings.detectOllamaCli());
 

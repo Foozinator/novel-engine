@@ -194,13 +194,25 @@ export const CODEX_CLI_PROVIDER_ID: ProviderId = 'codex-cli';
 
 /**
  * Claude CLI alias for the current Fable model.
- * Not included in BUILT_IN_PROVIDER_CONFIGS — probed at startup and added
- * to the Claude CLI model list only if the CLI accepts it. Fable has its own
+ * Not included in BUILT_IN_PROVIDER_CONFIGS — added to the Claude CLI model
+ * list only after the user runs the Fable access check in Settings and it
+ * succeeds. The check is never run at launch because it is a billed request. Fable has its own
  * weekly limit (and paid usage credits on some plans), so it is never a default.
  * Likewise the CLI's `best` alias is deliberately not offered: it resolves to
  * Fable wherever Fable is available.
  */
 export const FABLE_MODEL_ID = 'fable';
+
+/** Model entry added to the Claude CLI provider when the Fable check succeeds. */
+export const FABLE_MODEL_INFO: ModelInfo = {
+  id: FABLE_MODEL_ID,
+  label: 'Claude Fable (latest)',
+  description: 'Most capable — separate weekly limit; may use paid credits on some plans',
+  providerId: CLAUDE_CLI_PROVIDER_ID,
+  contextWindow: 200_000,
+  supportsThinking: true,
+  supportsToolUse: true,
+};
 
 /**
  * Model IDs that earlier releases shipped as Claude CLI built-ins (or added
@@ -348,6 +360,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   savedPrompts: [],
   claudeCliUpdateReminder: true,
   lastClaudeCliUpdateCheck: null,
+  lastFableProbe: null,
 };
 
 // === Claude CLI Updates ===

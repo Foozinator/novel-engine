@@ -250,6 +250,18 @@ Dependencies: `ISettingsService`, `IClaudeCliUpdater`, optional clock (`now`)
 | `checkReminder()` | Not due when `claudeCliUpdateReminder` is off, `hasClaudeCli` is false, the last offer (`lastClaudeCliUpdateCheck`) was < `CLAUDE_CLI_UPDATE_CHECK_INTERVAL_MS` ago, or `claude --version` doesn't answer. When due, records the offer time first, so dismissing it still waits a week. |
 | `runUpdate()` | Delegates to `IClaudeCliUpdater.update()`; records the check time unless the result is `busy`. |
 
+### FableAccessService
+
+File: `src/application/FableAccessService.ts`
+
+Dependencies: `ISettingsService`, `IFableProbe`, `IProviderRegistry`, optional clock (`now`)
+
+| Method | What It Does |
+|--------|-------------|
+| `check()` | Runs the probe, saves `{ status, checkedAt, detail? }` to `lastFableProbe`. On `available`, appends `FABLE_MODEL_INFO` to the `claude-cli` provider's models via `updateProviderConfig` (persisted) unless already listed. Never removes Fable on a negative result. |
+
+Only the Settings button calls it. Nothing probes at launch: a successful probe is a billed Fable request.
+
 ### UsageService
 
 File: `src/application/UsageService.ts`

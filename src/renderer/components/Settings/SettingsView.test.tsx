@@ -41,6 +41,24 @@ describe('SettingsView', () => {
     expect(screen.queryByText('Built-in CLI Status')).not.toBeInTheDocument();
   });
 
+  it('offers an on-demand Fable check and never probes on its own', async () => {
+    const { bridge } = renderSettings();
+    const button = await screen.findByRole('button', { name: 'Check for Fable access' });
+    expect(bridge.claudeCli.checkFableAccess).not.toHaveBeenCalled();
+
+    fireEvent.click(button);
+    await waitFor(() => expect(bridge.claudeCli.checkFableAccess).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(bridge.models.getAvailable).toHaveBeenCalledTimes(2));
+  });
+
+  it('hides the Fable check once Fable is listed', async () => {
+    renderSettings({
+      bridge: { models: { getAvailable: vi.fn(async () => [...MODELS, model('fable', 'claude-cli')]) } },
+    });
+    await screen.findAllByText('FABLE');
+    expect(screen.queryByRole('button', { name: 'Check for Fable access' })).not.toBeInTheDocument();
+  });
+
   it('selecting a primary model saves it and switches the active provider', async () => {
     const { bridge } = renderSettings();
     await screen.findAllByText('MODEL-B');

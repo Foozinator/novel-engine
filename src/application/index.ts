@@ -8,3 +8,4 @@ export { MotifLedgerService } from './MotifLedgerService';
 export { QueryService } from './QueryService';
 export { AutoTurnResumer } from './AutoTurnResumer';
 export { ClaudeCliUpdateService } from './ClaudeCliUpdateService';
+export { FableAccessService } from './FableAccessService';

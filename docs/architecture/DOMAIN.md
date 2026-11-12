@@ -98,7 +98,9 @@ Everything in `src/domain/`. Pure TypeScript declarations — zero imports from 
 
 | Type | Shape | Used By |
 |------|-------|---------|
-| `AppSettings` | `{ hasClaudeCli, hasOllamaCli, hasCodexCli, model, secondaryModel, maxTokens, enableThinking, thinkingBudget, overrideThinkingBudget, autoCollapseThinking, enableNotifications, theme, initialized, authorName, providers, activeProviderId, completedTours, savedPrompts, claudeCliUpdateReminder, lastClaudeCliUpdateCheck }` | SettingsService, SettingsView, tourStore, ClaudeCliUpdateService |
+| `AppSettings` | `{ hasClaudeCli, hasOllamaCli, hasCodexCli, model, secondaryModel, maxTokens, enableThinking, thinkingBudget, overrideThinkingBudget, autoCollapseThinking, enableNotifications, theme, initialized, authorName, providers, activeProviderId, completedTours, savedPrompts, claudeCliUpdateReminder, lastClaudeCliUpdateCheck, lastFableProbe }` | SettingsService, SettingsView, tourStore, ClaudeCliUpdateService, FableAccessService |
+| `FableProbeStatus` | `'available' \| 'unavailable' \| 'error'` | FableProbe, FableAccessService |
+| `FableProbeResult` | `{ status: FableProbeStatus, checkedAt, detail? }` | `AppSettings.lastFableProbe`, `claudeCli:checkFableAccess` |
 
 ### Token Usage
 
@@ -256,6 +258,22 @@ Everything in `src/domain/`. Pure TypeScript declarations — zero imports from 
 |--------|-----------|-------|
 | `checkReminder` | `() => Promise<ClaudeCliUpdateReminder>` | Weekly launch-time offer; records the offer time when due |
 | `runUpdate` | `() => Promise<ClaudeCliUpdateResult>` | Runs the update; records the check time unless `busy` |
+
+### IFableProbe
+
+Implemented by: `FableProbe` (`src/infrastructure/claude-cli/`)
+
+| Method | Signature | Notes |
+|--------|-----------|-------|
+| `probe` | `() => Promise<{ status: FableProbeStatus; detail? }>` | One minimal request to the `fable` alias. Billed when it succeeds. |
+
+### IFableAccessService
+
+Implemented by: `FableAccessService` (`src/application/`)
+
+| Method | Signature | Notes |
+|--------|-----------|-------|
+| `check` | `() => Promise<FableProbeResult>` | On demand only. Records `lastFableProbe`; on `available` adds `FABLE_MODEL_INFO` to the Claude CLI models. Never removes Fable. |
 
 ### ISettingsService
 
@@ -667,7 +685,8 @@ Implemented by: `QueryService` (`src/application/QueryService.ts`)
 | `CODEX_CLI_PROVIDER_ID` | `'codex-cli'` | Built-in Codex CLI provider ID |
 | `CLAUDE_CLI_ALIAS_MODELS` | `ModelInfo[]` (3 elements) | Claude CLI aliases `opus`, `sonnet`, `haiku`. The CLI resolves each to the current recommended model. `best` is deliberately excluded (it resolves to Fable). |
 | `BUILT_IN_PROVIDER_CONFIGS` | `ProviderConfig[]` (4 elements) | Built-in Claude, Ollama, llama-server, and Codex configs. Claude ships `CLAUDE_CLI_ALIAS_MODELS` with `defaultModel: 'opus'`. Codex includes fallback `gpt-5.3-codex`. |
-| `FABLE_MODEL_ID` | `'fable'` | CLI alias probed at startup; added to the Claude model list only if accessible. Never a default. |
+| `FABLE_MODEL_ID` | `'fable'` | CLI alias. Added to the Claude model list only after the on-demand Settings check succeeds. Never a default; never probed at launch. |
+| `FABLE_MODEL_INFO` | `ModelInfo` | The Fable entry `FableAccessService` adds to the `claude-cli` provider. |
 | `LEGACY_CLAUDE_CLI_MODEL_IDS` | `readonly string[]` | Dated IDs shipped by earlier releases (`claude-opus-4-20250514`, `claude-sonnet-4-20250514`, `claude-fable-5`). Replaced on load by `migrateClaudeModelAliases`. |
 | `CLAUDE_CLI_PRIMARY_MODEL` | `'opus'` | Derived from the Claude config's `defaultModel` |
 | `CLAUDE_CLI_SECONDARY_MODEL` | `'sonnet'` | First Claude model that differs from the primary |

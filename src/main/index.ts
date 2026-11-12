@@ -53,14 +53,14 @@ import { SettingsService } from '@infra/settings';
 import { DatabaseService } from '@infra/database';
 import { AgentService } from '@infra/agents';
 import { FileSystemService, BookWatcher, BooksDirWatcher } from '@infra/filesystem';
-import { ClaudeCodeClient, ClaudeCliUpdater } from '@infra/claude-cli';
+import { ClaudeCodeClient, ClaudeCliUpdater, FableProbe } from '@infra/claude-cli';
 import { CodexCliClient } from '@infra/codex-cli';
 import { OllamaCodeClient, OllamaCliRunner } from '@infra/ollama-cli';
 import { LlamaServerClient } from '@infra/llama-server';
 import { ProviderRegistry, OpenAiCompatibleProvider } from '@infra/providers';
 import { resolvePandocPath } from '@infra/pandoc';
 import { SeriesService } from '@infra/series';
-import { BUILT_IN_PROVIDER_CONFIGS, OLLAMA_CLI_PROVIDER_ID, LLAMA_SERVER_PROVIDER_ID, CLAUDE_CLI_PROVIDER_ID, CODEX_CLI_PROVIDER_ID, FABLE_MODEL_ID } from '@domain/constants';
+import { BUILT_IN_PROVIDER_CONFIGS, OLLAMA_CLI_PROVIDER_ID, LLAMA_SERVER_PROVIDER_ID, CODEX_CLI_PROVIDER_ID } from '@domain/constants';
 import type { ModelInfo } from '@domain/types';
 
 // Application
@@ -85,6 +85,7 @@ import { FindReplaceService } from '@app/FindReplaceService';
 import { DashboardService } from '@app/DashboardService';
 import { StatisticsService } from '@app/StatisticsService';
 import { ClaudeCliUpdateService } from '@app/ClaudeCliUpdateService';
+import { FableAccessService } from '@app/FableAccessService';
 import { QueryService } from '@app/QueryService';
 import { AutoTurnResumer } from '@app/AutoTurnResumer';
 
@@ -300,44 +301,6 @@ async function fetchLlamaServerModels(baseUrl: string): Promise<ModelInfo[]> {
   }
 }
 
-// ── Fable Model Probe ─────────────────────────────────────────────
-
-/**
- * Check whether the Claude CLI accepts the `fable` model alias.
- *
- * Uses the alias rather than a dated ID so the probe keeps working as the CLI
- * moves the alias to newer Fable releases.
- *
- * The CLI validates model names locally before making any API call, so an
- * unrecognised model ID exits immediately with a human-readable error rather
- * than spending tokens. For a valid model the probe sends a single-character
- * prompt (minimal cost) to confirm the model is accessible to this account.
- *
- * Returns true  → fable is available; add it to the selectable model list.
- * Returns false → fable is unknown or not accessible; skip silently.
- */
-async function probeFableModel(): Promise<boolean> {
-  try {
-    const { stdout, stderr } = await execFileAsync(
-      'claude',
-      ['-p', '.', '--model', FABLE_MODEL_ID, '--output-format', 'json'],
-      { timeout: 10_000 },
-    );
-    const combined = stdout + stderr;
-    // The CLI rejects unknown / inaccessible models with a recognisable message
-    // before touching the API — so this branch is fast and free.
-    if (
-      combined.includes('issue with the selected model') ||
-      combined.includes('may not exist or you may not have access')
-    ) {
-      return false;
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 // ── Window ─────────────────────────────────────────────────────────
 
 function createWindow(): void {
@@ -466,40 +429,6 @@ async function initializeApp(): Promise<void> {
     claudeClient,
     claudeConfig ?? BUILT_IN_PROVIDER_CONFIGS[0],
   );
-
-  // Probe for the optional Fable model (via the `fable` CLI alias).
-  // The Claude CLI validates model names locally before touching the API, so
-  // an unavailable model fails instantly (no tokens spent). Only add the model
-  // to the selectable list if the probe confirms access.
-  {
-    const fableAvailable = await probeFableModel();
-    if (fableAvailable) {
-      const existingClaudeConfig = providerRegistry.getProviderConfig(CLAUDE_CLI_PROVIDER_ID);
-      if (existingClaudeConfig) {
-        const alreadyListed = existingClaudeConfig.models.some(m => m.id === FABLE_MODEL_ID);
-        if (!alreadyListed) {
-          providerRegistry.updateProviderConfig(CLAUDE_CLI_PROVIDER_ID, {
-            models: [
-              ...existingClaudeConfig.models,
-              {
-                id: FABLE_MODEL_ID,
-                label: 'Claude Fable (latest)',
-                description: 'Most capable — separate weekly limit; may use paid credits on some plans',
-                providerId: CLAUDE_CLI_PROVIDER_ID,
-                contextWindow: 200_000,
-                supportsThinking: true,
-                supportsToolUse: true,
-              },
-            ],
-          });
-        }
-      }
-      console.log('[startup] Fable detected — added to Claude CLI model list');
-    } else {
-      console.log('[startup] Fable not available — skipped');
-    }
-  }
-
 
   // Register the built-in Codex CLI provider (always registered so the user
   // can see and configure it even if the CLI is not installed yet)
@@ -655,6 +584,8 @@ async function initializeApp(): Promise<void> {
     settings,
     new ClaudeCliUpdater(() => claudeClient.hasActiveProcesses()),
   );
+  // Fable access is checked only on demand from Settings: the probe is billed.
+  const fableAccess = new FableAccessService(settings, new FableProbe(), providerRegistry);
   const queryService = new QueryService(fs, chat);
   const notifications = new NotificationManager(settings);
 
@@ -752,7 +683,7 @@ async function initializeApp(): Promise<void> {
 
   // 8. Register IPC handlers (with hook to switch watcher on book change)
   registerIpcHandlers(
-    { settings, agents, db, fs, chat, audit, pipeline, build, usage, revisionQueue, motifLedger, notifications, version, providerRegistry: providers, manuscriptImport, sourceGeneration, series, seriesImport, helper, findReplace, dashboard, statistics, query: queryService, claudeCliUpdate },
+    { settings, agents, db, fs, chat, audit, pipeline, build, usage, revisionQueue, motifLedger, notifications, version, providerRegistry: providers, manuscriptImport, sourceGeneration, series, seriesImport, helper, findReplace, dashboard, statistics, query: queryService, claudeCliUpdate, fableAccess },
     { userDataPath, booksDir },
     {
       onActiveBookChanged: (slug: string) => {
