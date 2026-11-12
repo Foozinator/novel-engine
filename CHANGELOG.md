@@ -4,6 +4,29 @@ All notable changes to Novel Engine are documented here.
 
 ---
 
+## [2026-11-12] — Revision Queue panel resizes horizontally (#12)
+
+### Summary
+
+The expanded Revision Queue panel was fixed at `w-[600px] max-w-[50vw]`. With a session open, the 208 px session list left the conversation about 390 px wide, while the main chat area behind it sat unused. The panel now has a drag handle on its left edge. It reuses the existing `useResizeHandle` hook and `ResizeHandle` component that `PipelineSpine` uses. Width ranges from 480 px to the viewport minus 32 px, defaults to 600 px, persists in renderer localStorage, and resets on double-click. All extra width goes to `RevisionSessionPanel`; the session list stays `w-52`.
+
+### Changed
+- `src/renderer/components/RevisionQueue/RevisionQueueModal.tsx` — `ExpandedModal` split into an unclipped outer frame (fixed position, inline `width` from `useResizeHandle`, CSS `maxWidth: calc(100vw - 32px)` so a saved width never overflows a smaller window) holding a left-side `ResizeHandle`, and an inner `overflow-hidden` rounded card with the unchanged content. Added `RQ_DEFAULT`, `RQ_MIN`, `RQ_VIEWPORT_GUTTER`, `RQ_STORAGE_KEY`. Outer frame has `data-testid="revision-queue-panel"`.
+- `src/renderer/components/RevisionQueue/RevisionQueueModal.test.tsx` — Resize tests: default width, drag-to-widen with persistence, mouseup-before-render persistence, min and viewport clamps, persisted-width restore, double-click reset.
+- `docs/architecture/RENDERER.md` — `RevisionQueueModal.tsx` row; `ResizeHandle.tsx` and `useResizeHandle.ts` rows now name both users.
+
+### Fixed
+- `src/renderer/hooks/useResizeHandle.ts` — `widthRef` was only synced in a post-render effect, so a mouseup that landed before React committed the last move persisted the previous width. `onMouseMove` now updates the ref directly. Also affects `PipelineSpine`.
+- `docs/architecture/RENDERER.md` — The `RevisionQueue/` table listed `RevisionQueueView.tsx`, which no longer exists. Replaced with `RevisionQueueModal.tsx`.
+
+### Architecture Impact
+- None — no wiring changes. Reuses `useResizeHandle` / `ResizeHandle`.
+
+### Migration Notes
+- None. New renderer localStorage key `novel-engine:revision-queue-width`; no settings or schema change.
+
+---
+
 ## [2026-11-12] — Fable access check runs on demand only, never at launch (#16)
 
 ### Summary
