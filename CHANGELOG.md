@@ -49,8 +49,74 @@ Changes:
 - No new IPC channels, stores or DI wiring.
 
 ### Migration Notes
-- Agent prompts are copied into `{userData}/agents/` once and never overwritten. Existing installs keep their old `VERITY-LEDGER.md` until it is deleted or replaced by hand. The code-level `## Tool Use` section carries the same batching rule regardless.
+- Agent prompts are copied into `{userData}/custom-agents/` once and never overwritten. Existing installs keep their old `VERITY-LEDGER.md` until it is deleted or replaced by hand. The code-level `## Tool Use` section carries the same batching rule regardless.
 - No schema or settings changes.
+
+---
+
+## [2026-11-12] — Ghostlight reads the voice profile after the read (#25)
+
+### Summary
+
+Spike #22's best-rated reader report came from a run that read `source/voice-profile.md` and compared the author's stated intent with how the chapters read. NE put the voice profile on Ghostlight's Skip list, and the synthesis task forbade any file beyond the batch trackers, even though `GHOSTLIGHT.md` already describes a post-read "Reader vs. Author Intent" section. `ReadGuidance` gains an optional `readAfter` tier for files read only after the agent's main pass. Ghostlight's voice profile moves there. Multi-call read steps still hide it. The synthesis task now reads the trackers first, then the voice profile if present, and ends the report with a short "Intent vs. experience" section.
+
+### Changed
+- `src/domain/constants.ts` — `ReadGuidance.readAfter?: string[]`. Ghostlight: `source/voice-profile.md` moved from `neverRead` to `readAfter`; pitch, outline, story bible, author profile, dev report and chapter notes stay in `neverRead`. `ghostlight-synthesis` prompt: trackers first ("Step 1"), then the voice profile if it is in the manifest ("Step 2"), plus an "Intent vs. experience" output item rated match / partial / mismatch, written last and only when the profile exists.
+- `src/application/ContextBuilder.ts` — `buildReadGuidance()` renders `readAfter` as "**Read only after your main pass is done** (the author's stated intent, to check your findings against, not a guide to read by)".
+- `src/application/context/readRules.ts` — Added `readAfterRules`, `isSkippedDuringRead`, `filterForReadStep` (`neverRead` + `readAfter`).
+- `src/application/MultiCallOrchestrator.ts` — `buildLightweightSystemPrompt()` filters with `filterForReadStep` and adds a "**Not in this step**" line naming `readAfter` files.
+- `agents/GHOSTLIGHT.md` — Reference-docs intro now says the reader lacks the voice profile *while reading*, not at all. The "Reader vs. Author Intent" block says to keep it short, omit it without a profile, and not revise earlier sections after reading it. Bundled prompt only: `ensureAgents()` never overwrites existing `custom-agents/` copies, so existing installs keep their current file. The behavior change ships through the guidance and synthesis task, not this file.
+- `src/domain/constants.test.ts`, `src/application/ContextBuilder.test.ts`, `src/application/context/readRules.test.ts`, `src/application/MultiCallOrchestrator.test.ts` — Disjointness covers `readAfter`; Ghostlight guidance, rendering, read-step filtering, and synthesis ordering tests.
+- `docs/architecture/APPLICATION.md`, `docs/architecture/DOMAIN.md`, `docs/architecture/ARCHITECTURE.md` — Documented the above.
+
+### Architecture Impact
+- None — no wiring changes. New optional field on `ReadGuidance`.
+
+### Migration Notes
+- None.
+
+---
+
+## [2026-11-12] — Multi-call synthesis gets the agent prompt; read steps keep the agent's reading rules (#23)
+
+### Summary
+
+Ghostlight's, Lumen's and Sable's multi-call runs wrote their final reports under a generic ~1 KB "careful manuscript reader" prompt, because the synthesis steps were marked `lightweightPrompt`. Spike #22 measured every such spawn at 1,090 bytes. The synthesis steps now get the agent's full prompt through `ContextBuilder`. Read steps keep the light prompt but now carry the agent's own reading rules. Ghostlight's read step had opened chapter `notes.md` files, which a cold reader must never see, and Lumen's never read the notes its prompt requires. Chapter notes are now in `AGENT_READ_GUIDANCE`, filtered out of Ghostlight's file list, and listed next to each draft for Lumen and Sable.
+
+### Added
+- `src/application/context/readRules.ts` — `matchesReadRule`, `getReadGuidance`, `isNeverRead`, `filterNeverRead`, `chapterNotesRule`. Path matching for `AGENT_READ_GUIDANCE` entries (exact, `dir/` prefix, `*` single segment).
+- `src/application/context/readRules.test.ts` — Matcher and per-agent rule tests.
+
+### Changed
+- `src/domain/constants.ts` — Added `CHAPTER_NOTES_PATTERN` (`'chapters/*/notes.md'`): in Ghostlight's `neverRead`, in Lumen's and Sable's `readIfRelevant`. Removed `lightweightPrompt: true` from `sable-synthesis`, `lumen-synthesis` and `ghostlight-synthesis`. Lumen and Sable read-step prompts now say to read "the chapter files and notes listed above". Ghostlight read-step prompts add "Do NOT open any `notes.md` file".
+- `src/domain/types.ts` — `MultiCallStep.lightweightPrompt` doc comment: read steps only.
+- `src/application/MultiCallOrchestrator.ts` — `buildLightweightSystemPrompt(manifest, agent)` names the agent and role, drops `neverRead` files from "Available Files", and adds a `## Reading Rules` section. `computeChapterBatches()` takes the agent name and lists each chapter's `notes.md` under its draft when the agent's guidance reads notes. New `buildStepInstructions()` is passed as `purposeInstructions` to every full-prompt step (analysis and synthesis). It says the step's file list overrides the agent's standalone workflow, that no author is present to approve writes, and which file the step must write. This also applies to the lens/analysis steps and Forge's steps, which already had the full prompt.
+- `src/application/MultiCallOrchestrator.test.ts` — Tests that synthesis steps for Ghostlight, Lumen and Sable carry the agent prompt and step instructions, that Ghostlight's read step neither lists nor names chapter notes, and that Lumen's and Sable's read steps list them.
+- `src/application/ContextBuilder.test.ts` — The chapter-notes rule renders in chat read guidance.
+- `src/domain/constants.test.ts` — Invariant: only dynamic read steps may be lightweight; no synthesis step is.
+- `docs/architecture/APPLICATION.md`, `docs/architecture/DOMAIN.md`, `docs/architecture/ARCHITECTURE.md` — Documented the above.
+
+### Architecture Impact
+- New application helper module: `MultiCallOrchestrator` → `context/readRules` → `AGENT_READ_GUIDANCE`.
+- Chat context for Ghostlight, Lumen and Sable now includes the chapter-notes rule in "Context Loading Guidance".
+- No IPC, schema or DI changes.
+
+### Migration Notes
+- None. Synthesis spawns grow from ~1 KB to the agent prompt's size (~16–22 KB plus manifest), so they cost more input tokens per run.
+## [2026-11-12] — Worktree rule for Claude Code sessions
+
+### Summary
+
+Several Claude Code sessions run against this repo at once. Without worktrees they share one checkout, so a branch switch in one session moves every other session onto that branch, and their uncommitted changes mix. `CLAUDE.md` now requires each code-change session to work in its own worktree and keeps the root checkout on `main`.
+
+### Changed
+- `CLAUDE.md` — Added "Worktrees (required for code changes)" under Fork conventions: call `EnterWorktree` before the first edit, rename its `worktree-<name>` branch to the branch convention, never switch the root checkout, ask before the first push, no bare `git stash`, and a separate `npm ci` per worktree (better-sqlite3 is built per ABI, so `node_modules` isn't shared).
+
+### Architecture Impact
+- None — no wiring changes.
+
+### Migration Notes
+- None.
 
 ---
 

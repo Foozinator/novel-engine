@@ -181,6 +181,7 @@ export class ContextBuilder {
     const guidance = {
       alwaysRead: render(raw.alwaysRead),
       readIfRelevant: render(raw.readIfRelevant),
+      readAfter: render(raw.readAfter ?? []),
       neverRead: render(raw.neverRead),
     };
 
@@ -195,6 +196,9 @@ export class ContextBuilder {
     }
     if (guidance.readIfRelevant.length > 0) {
       lines.push(`- **Read if relevant to this task**: ${guidance.readIfRelevant.join(', ')}`);
+    }
+    if (guidance.readAfter.length > 0) {
+      lines.push(`- **Read only after your main pass is done** (the author's stated intent, to check your findings against, not a guide to read by): ${guidance.readAfter.join(', ')}`);
     }
     if (guidance.neverRead.length > 0) {
       lines.push(`- **Skip** (not your domain): ${guidance.neverRead.join(', ')}`);

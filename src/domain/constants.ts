@@ -7,10 +7,26 @@ import type { AgentName, AgentMeta, AuditSeverity, CreativeAgentName, PipelinePh
 
 // === Per-Agent Read Guidance ===
 
+/**
+ * Path pattern for per-chapter author notes. Used in AGENT_READ_GUIDANCE:
+ * Ghostlight must never see them (cold read); Lumen and Sable read them
+ * to absorb intentional choices and known issues. The multi-call read
+ * steps list matching files alongside each chapter draft for agents
+ * whose guidance allows them.
+ */
+export const CHAPTER_NOTES_PATTERN = 'chapters/*/notes.md';
+
 export type ReadGuidance = {
   alwaysRead: string[];
   readIfRelevant: string[];
   neverRead: string[];
+  /**
+   * Files read only after the agent's main pass is done, as a check on its
+   * findings rather than input to them. Ghostlight reads the voice profile
+   * only after the reader experience is recorded. Multi-call read steps are
+   * still mid-pass, so they treat these files like neverRead.
+   */
+  readAfter?: string[];
 };
 
 export const AGENT_READ_GUIDANCE: Record<CreativeAgentName, ReadGuidance> = {
@@ -27,16 +43,17 @@ export const AGENT_READ_GUIDANCE: Record<CreativeAgentName, ReadGuidance> = {
   Ghostlight: {
     alwaysRead: [],
     readIfRelevant: ['series-bible.md'],
-    neverRead: ['source/pitch.md', 'source/scene-outline.md', 'source/story-bible.md', 'author-profile.md', 'source/voice-profile.md', 'source/dev-report.md'],
+    neverRead: ['source/pitch.md', 'source/scene-outline.md', 'source/story-bible.md', 'author-profile.md', 'source/dev-report.md', CHAPTER_NOTES_PATTERN],
+    readAfter: ['source/voice-profile.md'],
   },
   Lumen: {
     alwaysRead: ['source/reader-report.md'],
-    readIfRelevant: ['source/scene-outline.md', 'source/story-bible.md', 'source/pitch.md', 'source/motif-ledger.json', 'series-bible.md'],
+    readIfRelevant: [CHAPTER_NOTES_PATTERN, 'source/scene-outline.md', 'source/story-bible.md', 'source/pitch.md', 'source/motif-ledger.json', 'series-bible.md'],
     neverRead: ['author-profile.md', 'source/revision-prompts.md'],
   },
   Sable: {
     alwaysRead: ['source/style-sheet.md', 'source/story-bible.md'],
-    readIfRelevant: ['source/motif-ledger.json', 'series-bible.md'],
+    readIfRelevant: [CHAPTER_NOTES_PATTERN, 'source/motif-ledger.json', 'series-bible.md'],
     neverRead: ['source/scene-outline.md', 'source/pitch.md', 'author-profile.md', 'source/reader-report.md', 'source/dev-report.md'],
   },
   Forge: {
@@ -743,7 +760,7 @@ For each chapter, track these copy-edit observations in concise bullet form:
 
 **IMPORTANT: You MUST use the Write tool to create \`source/.scratch/sable-read-1.md\` before finishing.** Do not end without writing the file.
 
-Do NOT read any reference docs (story-bible, voice-profile, etc.) — focus only on the chapters listed above.
+Do NOT read any reference docs (story-bible, voice-profile, etc.) — focus only on the chapter files and notes listed above.
 Do NOT write any analysis, audit report, or style sheet yet — this is a reading pass only.`,
     scratchFile: 'source/.scratch/sable-read-1.md',
     maxTurns: 15,
@@ -774,7 +791,7 @@ For each chapter, track these copy-edit observations in concise bullet form:
 
 **IMPORTANT: You MUST use the Write tool to create \`source/.scratch/sable-read-2.md\` before finishing.** Do not end without writing the file.
 
-Do NOT read any reference docs or other files — focus only on the chapters listed above and the prior batch tracker.
+Do NOT read any reference docs or other files — focus only on the chapter files and notes listed above and the prior batch tracker.
 Do NOT write any analysis, audit report, or style sheet yet — this is a reading pass only.`,
     scratchFile: 'source/.scratch/sable-read-2.md',
     maxTurns: 15,
@@ -884,7 +901,6 @@ Do NOT produce the final audit report yet — this is analysis pass 3 of 3.`,
   {
     id: 'sable-synthesis',
     label: 'Synthesize Audit Report',
-    lightweightPrompt: true,
     promptTemplate: `Synthesize the final Copy Edit Audit Report.
 
 **CRITICAL RULES — read carefully before doing anything:**
@@ -950,7 +966,7 @@ For each chapter, track these structural elements in concise bullet form:
 
 **IMPORTANT: You MUST use the Write tool to create \`source/.scratch/lumen-read-1.md\` before finishing.** Do not end without writing the file.
 
-Do NOT read any reference docs (pitch, story-bible, etc.) — focus only on the chapters listed above.
+Do NOT read any reference docs (pitch, story-bible, etc.) — focus only on the chapter files and notes listed above.
 Do NOT write any analysis or dev report yet — this is a reading pass only.`,
     scratchFile: 'source/.scratch/lumen-read-1.md',
     maxTurns: 15,
@@ -983,7 +999,7 @@ For each chapter, track in concise bullet form:
 
 **IMPORTANT: You MUST use the Write tool to create \`source/.scratch/lumen-read-2.md\` before finishing.** Do not end without writing the file.
 
-Do NOT read any reference docs or other files — focus only on the chapters listed above and the prior batch tracker.
+Do NOT read any reference docs or other files — focus only on the chapter files and notes listed above and the prior batch tracker.
 Do NOT write any analysis or dev report yet — this is a reading pass only.`,
     scratchFile: 'source/.scratch/lumen-read-2.md',
     maxTurns: 15,
@@ -1069,7 +1085,6 @@ Do NOT produce the final dev report yet — this is lens group 3 of 3.`,
   {
     id: 'lumen-synthesis',
     label: 'Synthesize Dev Report',
-    lightweightPrompt: true,
     promptTemplate: `Synthesize the final Developmental Assessment Report.
 
 **CRITICAL RULES — read carefully before doing anything:**
@@ -1125,6 +1140,7 @@ Track your real-time experience for each chapter:
 
 **IMPORTANT: You MUST use the Write tool to create \`source/.scratch/ghostlight-read-1.md\` before finishing.** Do not end without writing the file.
 
+Do NOT open any \`notes.md\` file — a first reader never sees the author's notes.
 Do NOT write the reader report yet — this is batch 1 of 2.`,
     scratchFile: 'source/.scratch/ghostlight-read-1.md',
     maxTurns: 15,
@@ -1155,6 +1171,7 @@ Continue tracking for each chapter:
 
 **IMPORTANT: You MUST use the Write tool to create \`source/.scratch/ghostlight-read-2.md\` before finishing.** Do not end without writing the file.
 
+Do NOT open any \`notes.md\` file — a first reader never sees the author's notes.
 Do NOT write the reader report yet — this is batch 2 of 2.`,
     scratchFile: 'source/.scratch/ghostlight-read-2.md',
     maxTurns: 15,
@@ -1166,16 +1183,19 @@ Do NOT write the reader report yet — this is batch 2 of 2.`,
   {
     id: 'ghostlight-synthesis',
     label: 'Synthesize Reader Report',
-    lightweightPrompt: true,
     promptTemplate: `Synthesize the final Reader Report from your reading experience.
 
 **CRITICAL RULES — read carefully before doing anything:**
-1. You have EXACTLY {{BATCH_COUNT}} files to read. Do NOT read anything else — no chapters, no manuscript files.
-2. After reading all files, write the report IMMEDIATELY. Do not re-read files.
-3. If you are tempted to read a file not listed below, STOP and write the report instead.
+1. You have EXACTLY {{BATCH_COUNT}} files to read, plus at most one more: \`source/voice-profile.md\` (step 2 below). Do NOT read anything else — no chapters, no manuscript files, no notes, outline, story bible, or pitch.
+2. After reading these files, write the report IMMEDIATELY. Do not re-read files.
+3. If you are tempted to read a file not listed here, STOP and write the report instead.
 
-Read these {{BATCH_COUNT}} files (use the Read tool on each):
+**Step 1.** Read these {{BATCH_COUNT}} files (use the Read tool on each):
 {{BATCH_TRACKER_FILES}}
+
+Settle your reader verdict from these trackers before going further. Your experience is fixed now.
+
+**Step 2.** If \`source/voice-profile.md\` is in the file manifest, read it. It is the author's stated intent. Use it only to check your experience against; do not let it change what you report you felt. If it does not exist, skip this step.
 
 Then IMMEDIATELY write the final report to source/reader-report.md with:
 - Chapter-by-chapter engagement map (merge all batches)
@@ -1183,7 +1203,8 @@ Then IMMEDIATELY write the final report to source/reader-report.md with:
 - Running questions resolved and unresolved
 - Prediction log
 - Strongest and weakest moments
-- Overall reader verdict`,
+- Overall reader verdict
+- Intent vs. experience (last section, short; only if the voice profile exists): intended tone and emotional temperature vs. what you actually experienced, each rated match / partial / mismatch, plus 2–4 specific notes on the biggest gaps. Write every section above it from the trackers alone.`,
     scratchFile: null,
     outputFile: 'source/reader-report.md',
     maxTurns: 15,

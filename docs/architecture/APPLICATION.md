@@ -495,6 +495,20 @@ Per-agent rules from `AGENT_READ_GUIDANCE` in constants:
 - `alwaysRead`: files always included in context
 - `readIfRelevant`: files included when they exist
 - `neverRead`: files explicitly excluded
+- `readAfter` (optional): files read only after the agent's main pass, as a check on its findings. Rendered in chat guidance as "**Read only after your main pass is done**". Only Ghostlight uses it (`source/voice-profile.md`).
+
+File: `src/application/context/readRules.ts` — `matchesReadRule(path, rule)` (exact, `dir/` prefix, `*` = one segment), `getReadGuidance`, `isNeverRead`, `filterNeverRead`, `chapterNotesRule(agent)` → `'read' | 'never' | 'unspecified'`, `readAfterRules(agent)`, `isSkippedDuringRead` / `filterForReadStep` (`neverRead` + `readAfter`, for multi-call read steps).
+
+### Multi-Call Step Prompts
+
+`MultiCallOrchestrator.runSingleStep()` picks the system prompt per step:
+
+- **Read steps** (`lightweightPrompt: true`, dynamic chapter batches only): `buildLightweightSystemPrompt(manifest, agent)`. Names the agent and role, lists manifest files minus the agent's `neverRead` and `readAfter` (`filterForReadStep`), and adds a `## Reading Rules` section (never-read list, a "Not in this step" line for `readAfter` files, and the chapter-notes rule). For agents whose `chapterNotesRule` is `'read'` (Lumen, Sable), `computeChapterBatches()` lists each chapter's `notes.md` under its draft when one exists. Ghostlight's batches list drafts only.
+- **Analysis and synthesis steps**: full `ContextBuilder.build()` with the agent's system prompt, plus `buildStepInstructions()` as `purposeInstructions`. That section says the step's own file list overrides the agent's standalone reading workflow, that no author is present to approve writes, and names the file the step must write.
+
+Ghostlight's synthesis task reads the batch trackers, settles the reader verdict, then reads `source/voice-profile.md` if it exists and ends the report with a short "Intent vs. experience" section (#25).
+
+`lightweightPrompt` is for read steps only; `src/domain/constants.test.ts` enforces that no synthesis step sets it.
 
 ### Conversation Compaction
 

@@ -177,9 +177,10 @@ export type MultiCallStep = {
   /** Override the agent's default thinking budget for this step.
    *  0 = no extended thinking (fast). undefined = use agent default. */
   thinkingBudgetOverride?: number;
-  /** When true, skip the full agent system prompt and use a minimal one.
-   *  Used for mechanical read-and-track steps that don't need the full
-   *  developmental editing framework — just tool access and basic instructions. */
+  /** When true, skip the full agent system prompt and use a minimal one
+   *  that still carries the agent's reading rules (never-read list,
+   *  chapter-notes rule). For chapter read steps ONLY — never set it on
+   *  analysis or synthesis steps, which need the agent's full prompt. */
   lightweightPrompt?: boolean;
 };
 

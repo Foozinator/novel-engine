@@ -629,7 +629,9 @@ Implemented by: `QueryService` (`src/application/QueryService.ts`)
 
 ### AGENT_READ_GUIDANCE
 
-`Record<CreativeAgentName, ReadGuidance>` — per-agent file access rules (alwaysRead, readIfRelevant, neverRead).
+`Record<CreativeAgentName, ReadGuidance>` — per-agent file access rules (alwaysRead, readIfRelevant, neverRead, optional readAfter). `readAfter` files are read only after the agent's main pass; multi-call read steps treat them as never-read. Ghostlight: `readAfter: ['source/voice-profile.md']` (the author's stated intent, compared against the reader experience after the read). Entries are exact paths, directory prefixes (trailing `/`), or `*` single-segment patterns.
+
+`CHAPTER_NOTES_PATTERN` (`'chapters/*/notes.md'`) — per-chapter author notes. In Ghostlight's `neverRead` (a cold reader never sees them); in Lumen's and Sable's `readIfRelevant`. The multi-call read steps use it to decide whether to list each chapter's notes next to its draft.
 
 ### AGENT_QUICK_ACTIONS
 
