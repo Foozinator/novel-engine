@@ -328,16 +328,19 @@ After Forge creates a revision plan, the **Revision Queue** lets you execute it 
 
 ### Execution Modes
 
-- **Manual** — You approve each session before the next one starts. Best for careful oversight.
-- **Auto-Approve** — Sessions run back-to-back automatically. Best for when you trust the plan.
+- **Manual** — The queue pauses every time Verity stops. Best for careful oversight.
+- **Auto-Approve** — Sessions run back-to-back. Yes/no stops ("Shall I proceed?") are approved for you. Questions with options still pause for your answer.
+- **Auto-Skip** — Like Auto-Approve, but yes/no stops are answered with "skip this task". Questions with options still pause.
 - **Selective** — Choose which sessions to run and skip the rest.
 
 ### Approval Gates
 
-In manual mode, after each session completes, you see the result and choose:
-- **Approve** — Accept the changes, mark tasks complete, proceed.
-- **Reject** — Discard the changes, optionally re-run.
-- **Skip** — Move past this session without changes.
+A session finishes only when Verity says every task is done. Whenever she stops for any other reason, the queue pauses and shows a gate bar:
+- **Approve** — Accept and let her continue with the next task.
+- **Approve All** — Approve this and the session's later yes/no stops. Questions with options still pause.
+- **Mark Complete** — Verity is done; mark the session complete without another call.
+- **Skip** — Tell her to skip the current task.
+- **Type an answer** — Send your own reply. When Verity asks you to choose ("A or B?", "Which version do you prefer?"), Approve and Approve All are hidden and typing an answer is the way forward.
 
 ### Monitoring Progress
 

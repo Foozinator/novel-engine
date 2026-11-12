@@ -98,11 +98,12 @@ describe('useRevisionQueueEvents', () => {
   it('surfaces approval gates for the gated session', () => {
     const { emit } = mountHook();
 
-    emit({ type: 'session:gate', sessionId: 's1', gateText: 'Shall I proceed?' });
+    emit({ type: 'session:gate', sessionId: 's1', gateText: 'Shall I proceed?', gateKind: 'choice' });
 
     const state = useRevisionQueueStore.getState();
     expect(state.gateSessionId).toBe('s1');
     expect(state.gateText).toBe('Shall I proceed?');
+    expect(state.gateKind).toBe('choice');
     expect(state.viewingSessionId).toBe('s1');
   });
 

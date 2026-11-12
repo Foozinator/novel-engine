@@ -202,7 +202,7 @@ Everything in `src/main/ipc/` and `src/preload/`. Thin adapter layer between app
 | `revision:clearCache` | invoke | `revisionQueue.clearCache(bookSlug)` | `void` |
 | `revision:runSession` | invoke | `revisionQueue.runSession(planId, sessionId)` | `void` |
 | `revision:runAll` | invoke | `revisionQueue.runAll(planId, selectedIds?)` | `void` |
-| `revision:respondToGate` | invoke | `revisionQueue.respondToGate(planId, sessionId, action, message?)` | `void` |
+| `revision:respondToGate` | invoke | `revisionQueue.respondToGate(planId, sessionId, action, message?)` — `action`: `approve`, `approve-all`, `reply`, `complete`, `skip`, `retry` | `void` |
 | `revision:approveSession` | invoke | `revisionQueue.approveSession(planId, sessionId)` | `void` |
 | `revision:rejectSession` | invoke | `revisionQueue.rejectSession(planId, sessionId)` | `void` |
 | `revision:skipSession` | invoke | `revisionQueue.skipSession(planId, sessionId)` | `void` |
