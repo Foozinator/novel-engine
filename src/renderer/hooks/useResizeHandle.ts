@@ -94,6 +94,9 @@ export function useResizeHandle({
           : startWidth + delta;
 
       const clamped = Math.max(minWidth, Math.min(maxWidth, newWidth));
+      // Update the ref now, not after render: a mouseup that lands before
+      // React commits would otherwise persist the previous width.
+      widthRef.current = clamped;
       setWidth(clamped);
     };
 

@@ -1,6 +1,6 @@
 # Renderer — Stores, Components, Views
 
-> Last updated: 2026-07-23 (program-030)
+> Last updated: 2026-11-12 (#12)
 
 Everything in `src/renderer/`. React + Zustand UI layer. Talks to backend only through `window.novelEngine`.
 
@@ -419,7 +419,7 @@ Gate: `App.tsx` checks `settings.initialized` — if false, renders `OnboardingW
 | `AppLayout.tsx` | Main shell: sidebar + content area, view routing. Renders `CliUpdateBanner` above `StatusBar`. `StreamManager` component initializes pitchRoomStore and helperStore stream listener lifecycles. Also renders `HelperButton` and `HelperPanel`. |
 | `Sidebar.tsx` | Left panel: BookPanel + PitchHistory (pitch-room only) + bottom nav. No file tree — Explorer tab in FilesView replaces it. |
 | `TitleBar.tsx` | Custom window title bar (traffic lights on macOS, buttons on Windows/Linux) |
-| `ResizeHandle.tsx` | Sidebar resize drag handle |
+| `ResizeHandle.tsx` | Vertical-edge drag handle (`side: left \| right`). Used by `PipelineSpine` and `RevisionQueueModal`. |
 
 ### Helper/
 
@@ -517,7 +517,7 @@ Gate: `App.tsx` checks `settings.initialized` — if false, renders `OnboardingW
 
 | File | Purpose |
 |------|---------|
-| `RevisionQueueView.tsx` | Main revision queue container |
+| `RevisionQueueModal.tsx` | Floating revision queue panel (expanded / minimized bar / other-book badge). Expanded panel is anchored right and resizable from its left edge via `useResizeHandle` (480 px min, viewport − 32 px max, default 600 px, persisted under `novel-engine:revision-queue-width`; double-click resets). |
 | `SessionCard.tsx` | Individual revision session display |
 | `TaskProgress.tsx` | Task completion progress bar |
 | `RevisionSessionPanel.tsx` | Expanded session detail panel |
@@ -582,7 +582,7 @@ Gate: `App.tsx` checks `settings.initialized` — if false, renders `OnboardingW
 
 | File | Purpose |
 |------|---------|
-| `useResizeHandle.ts` | Horizontal drag-to-resize for sidebar |
+| `useResizeHandle.ts` | Horizontal drag-to-resize with min/max clamp and localStorage persistence. Used by `PipelineSpine` and `RevisionQueueModal`. |
 | `useVerticalResize.ts` | Vertical drag-to-resize for panels |
 | `useRevisionQueueEvents.ts` | Subscribes to revision queue IPC events |
 | `useRotatingStatus.ts` | Rotates fun status messages on an interval |

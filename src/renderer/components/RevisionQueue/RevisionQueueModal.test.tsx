@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { RevisionQueueModal } from './RevisionQueueModal';
 import { useRevisionQueueStore } from '../../stores/revisionQueueStore';
@@ -126,5 +126,69 @@ describe('RevisionQueueModal', () => {
     expect(screen.getByText('No plan found')).toBeInTheDocument();
     // Auto-load kicked in because no plan is cached
     await waitFor(() => expect(switchToBook).toHaveBeenCalledWith('test-book'));
+  });
+
+  describe('horizontal resize', () => {
+    const STORAGE_KEY = 'novel-engine:revision-queue-width';
+
+    beforeEach(() => {
+      localStorage.clear();
+    });
+
+    function drag(fromX: number, toX: number): void {
+      fireEvent.mouseDown(screen.getByTitle('Drag to resize · Double-click to reset'), { clientX: fromX });
+      fireEvent.mouseMove(document, { clientX: toX });
+      fireEvent.mouseUp(document);
+    }
+
+    const panel = (): HTMLElement => screen.getByTestId('revision-queue-panel');
+
+    it('starts at the default width with a left-edge handle', () => {
+      renderApp(<RevisionQueueModal />, { stores: seedOpenModal() });
+
+      expect(panel().style.width).toBe('600px');
+      expect(screen.getByTitle('Drag to resize · Double-click to reset')).toBeInTheDocument();
+    });
+
+    it('dragging the left edge leftward widens the panel and persists the width', () => {
+      renderApp(<RevisionQueueModal />, { stores: seedOpenModal() });
+
+      drag(1000, 800);
+
+      expect(panel().style.width).toBe('800px');
+      expect(localStorage.getItem(STORAGE_KEY)).toBe('800');
+    });
+
+    it('persists the final width when mouseup lands before React re-renders', () => {
+      renderApp(<RevisionQueueModal />, { stores: seedOpenModal() });
+
+      fireEvent.mouseDown(screen.getByTitle('Drag to resize · Double-click to reset'), { clientX: 1000 });
+      // Native events outside act(): mouseup fires before the move's render commits.
+      document.dispatchEvent(new MouseEvent('mousemove', { clientX: 900 }));
+      document.dispatchEvent(new MouseEvent('mouseup', { clientX: 900 }));
+
+      expect(localStorage.getItem(STORAGE_KEY)).toBe('700');
+    });
+
+    it('clamps to the minimum and to the viewport', () => {
+      renderApp(<RevisionQueueModal />, { stores: seedOpenModal() });
+
+      drag(1000, 1400);
+      expect(panel().style.width).toBe('480px');
+
+      drag(1000, -5000);
+      expect(panel().style.width).toBe(`${window.innerWidth - 32}px`);
+    });
+
+    it('restores a persisted width and resets on double-click', () => {
+      localStorage.setItem(STORAGE_KEY, '720');
+      renderApp(<RevisionQueueModal />, { stores: seedOpenModal() });
+
+      expect(panel().style.width).toBe('720px');
+
+      fireEvent.doubleClick(screen.getByTitle('Drag to resize · Double-click to reset'));
+      expect(panel().style.width).toBe('600px');
+      expect(localStorage.getItem(STORAGE_KEY)).toBe('600');
+    });
   });
 });
