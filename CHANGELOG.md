@@ -30,6 +30,20 @@ Ghostlight's, Lumen's and Sable's multi-call runs wrote their final reports unde
 
 ### Migration Notes
 - None. Synthesis spawns grow from ~1 KB to the agent prompt's size (~16–22 KB plus manifest), so they cost more input tokens per run.
+## [2026-11-12] — Worktree rule for Claude Code sessions
+
+### Summary
+
+Several Claude Code sessions run against this repo at once. Without worktrees they share one checkout, so a branch switch in one session moves every other session onto that branch, and their uncommitted changes mix. `CLAUDE.md` now requires each code-change session to work in its own worktree and keeps the root checkout on `main`.
+
+### Changed
+- `CLAUDE.md` — Added "Worktrees (required for code changes)" under Fork conventions: call `EnterWorktree` before the first edit, rename its `worktree-<name>` branch to the branch convention, never switch the root checkout, ask before the first push, no bare `git stash`, and a separate `npm ci` per worktree (better-sqlite3 is built per ABI, so `node_modules` isn't shared).
+
+### Architecture Impact
+- None — no wiring changes.
+
+### Migration Notes
+- None.
 
 ---
 

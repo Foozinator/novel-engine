@@ -56,6 +56,16 @@ This repo is a fork of `john-paul-ruf/novel-engine`. Upstream is frozen: the mai
 - `upstream` stays as a read-only remote. Don't merge from it unless asked; an occasional `git fetch upstream` is enough to notice activity.
 - Code branches follow AGENTS.MD: a CHANGELOG entry plus updates to the affected `docs/architecture/*.md`.
 
+### Worktrees (required for code changes)
+
+- Before the first edit of a code-change task, call `EnterWorktree`, named after the branch (e.g. `feat-25-ghostlight-voice-profile`). All edits, tests and commits happen inside it.
+- `EnterWorktree` creates the branch as `worktree-<name>`. Rename it to the branch convention above (`git branch -m feat/25-ghostlight-voice-profile`).
+- The root checkout stays on `main`. Never `git switch` or `git checkout` it; several sessions share it.
+- Ask before the first push (ground rule 3), then push early. An unpushed branch dies with its worktree.
+- Never use bare `git stash`/`pop`. All worktrees share one stash.
+- Run `npm ci` in each new worktree. Don't share `node_modules`: better-sqlite3 is built per ABI (Node for tests, Electron for `npm start`).
+- Read-only questions and investigations don't need a worktree.
+
 ### Issues and labels
 
 - Type labels: `feature`, `enhancement` (improvements to existing behavior), `bug`, `chore`, `spike`. Area labels: `area:platform`, `area:security`, `area:workflow`.
