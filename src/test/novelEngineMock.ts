@@ -82,6 +82,7 @@ export function makeAppSettings(overrides: Partial<AppSettings> = {}): AppSettin
     savedPrompts: [],
     claudeCliUpdateReminder: false,
     lastClaudeCliUpdateCheck: null,
+    lastFableProbe: null,
     ...overrides,
   };
 }
@@ -274,6 +275,10 @@ export function installNovelEngineMock(overrides: BridgeOverrides = {}): NovelEn
         versionBefore: '2.1.300',
         versionAfter: '2.1.300',
         manualCommand: 'claude update',
+      })),
+      checkFableAccess: vi.fn(async () => ({
+        status: 'unavailable' as const,
+        checkedAt: '2026-11-12T12:00:00.000Z',
       })),
     },
     agents: {

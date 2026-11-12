@@ -27,6 +27,7 @@ Everything in `src/main/ipc/` and `src/preload/`. Thin adapter layer between app
 |---------|-----------|---------|---------|
 | `claudeCli:checkUpdateReminder` | invoke | `claudeCliUpdate.checkReminder()` — due when the reminder is on, the CLI is installed, and the last offer was ≥ 7 days ago (records the offer time) | `ClaudeCliUpdateReminder` |
 | `claudeCli:runUpdate` | invoke | `claudeCliUpdate.runUpdate()` — runs `claude update` unless a Claude CLI process is active (`busy`) | `ClaudeCliUpdateResult` |
+| `claudeCli:checkFableAccess` | invoke | `fableAccess.check()` — on-demand Fable probe (billed when it succeeds); adds Fable to the Claude CLI models when available | `FableProbeResult` |
 
 ### providers:*
 
@@ -324,6 +325,7 @@ window.novelEngine: {
   claudeCli: {
     checkUpdateReminder(): Promise<ClaudeCliUpdateReminder>
     runUpdate(): Promise<ClaudeCliUpdateResult>
+    checkFableAccess(): Promise<FableProbeResult>
   }
 
   agents: {

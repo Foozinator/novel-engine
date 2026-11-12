@@ -4,6 +4,45 @@ All notable changes to Novel Engine are documented here.
 
 ---
 
+## [2026-11-12] — Fable access check runs on demand only, never at launch (#16)
+
+### Summary
+
+`probeFableModel()` in `src/main/index.ts` sent a real prompt to the `fable` alias on every launch and cached nothing. On accounts with access the request is billed, and Fable can draw paid credits. The 10 s timeout made it worse: a full Claude Code system prompt plus a Fable reply could outlast it, so the probe paid, returned false, never listed Fable, and ran again on the next launch. The launch probe is gone. Settings → Model Selection now has a "Check for Fable access" button, shown when the Claude CLI is installed and Fable isn't listed. It records the last result in settings. The probe now replaces the default system prompt and loads no tools, MCP servers, hooks or settings, runs from the temp dir, and allows 60 s so a billed answer isn't thrown away.
+
+### Added
+- `src/infrastructure/claude-cli/FableProbe.ts` — `FableProbe` (implements `IFableProbe`), `FABLE_PROBE_ARGS`, `classifyFableProbeOutput()` → `available` / `unavailable` / `error`.
+- `src/infrastructure/claude-cli/FableProbe.test.ts` — Output classification, argument set, timeout and missing-CLI mapping.
+- `src/application/FableAccessService.ts` — `check()`: probe, save `lastFableProbe`, add `FABLE_MODEL_INFO` to the `claude-cli` provider on `available`. Never removes Fable.
+- `src/application/FableAccessService.test.ts` — Records each status; adds Fable once; leaves models alone on `unavailable`/`error`.
+
+### Changed
+- `src/domain/types.ts` — Added `FableProbeStatus`, `FableProbeResult`; `AppSettings.lastFableProbe`.
+- `src/domain/constants.ts` — Added `FABLE_MODEL_INFO` (moved from the inline entry in `main/index.ts`); `DEFAULT_SETTINGS.lastFableProbe = null`; `FABLE_MODEL_ID` doc comment.
+- `src/domain/interfaces.ts` — Added `IFableProbe`, `IFableAccessService`.
+- `src/infrastructure/claude-cli/index.ts`, `src/application/index.ts` — Barrel exports.
+- `src/main/index.ts` — Removed `probeFableModel()` and the startup probe block. Wires `FableAccessService(settings, new FableProbe(), providerRegistry)` as `fableAccess`.
+- `src/main/ipc/handlers.ts` — `fableAccess` service; `claudeCli:checkFableAccess` handler.
+- `src/preload/index.ts` — `claudeCli.checkFableAccess()`.
+- `src/renderer/components/Settings/SettingsView.tsx` — `FableAccessCheck` in Model Selection: button, last result, paid-credits note; reloads settings and models after a check.
+- `src/renderer/components/Settings/SettingsView.test.tsx` — Button never probes on its own; hidden once Fable is listed.
+- `src/test/novelEngineMock.ts` — `lastFableProbe` default; `claudeCli.checkFableAccess` mock.
+- `docs/architecture/DOMAIN.md`, `INFRASTRUCTURE.md`, `APPLICATION.md`, `IPC.md`, `RENDERER.md`, `ARCHITECTURE.md` — Documented the above.
+
+### Fixed
+- `src/main/index.ts` — Every launch spent a Fable request (fork #16).
+
+### Architecture Impact
+- New IPC channel: `claudeCli:checkFableAccess`.
+- New service: `FableAccessService` → `ISettingsService`, `IFableProbe` (`FableProbe`), `IProviderRegistry`.
+- No launch-time Claude CLI call for Fable.
+
+### Migration Notes
+- New setting `lastFableProbe` (default `null`); existing settings files merge with defaults, no migration.
+- Installs that already list Fable keep it. Installs that don't must use the Settings button once.
+
+---
+
 ## [2026-11-12] — Cut Verity's first-draft cost: CLI session resume, turn budget, tool-use guidance
 
 ### Summary

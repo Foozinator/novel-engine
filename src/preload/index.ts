@@ -62,6 +62,7 @@ import type {
   BookStatistics,
   ClaudeCliUpdateReminder,
   ClaudeCliUpdateResult,
+  FableProbeResult,
 } from '@domain/types';
 
 const api = {
@@ -82,6 +83,7 @@ const api = {
   claudeCli: {
     checkUpdateReminder: (): Promise<ClaudeCliUpdateReminder> => ipcRenderer.invoke('claudeCli:checkUpdateReminder'),
     runUpdate: (): Promise<ClaudeCliUpdateResult> => ipcRenderer.invoke('claudeCli:runUpdate'),
+    checkFableAccess: (): Promise<FableProbeResult> => ipcRenderer.invoke('claudeCli:checkFableAccess'),
   },
 
   // Agents

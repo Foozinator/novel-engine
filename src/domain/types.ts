@@ -405,6 +405,15 @@ export type ClaudeCliUpdateReminder = {
   version: string | null;          // installed version, when due
 };
 
+/** Outcome of the on-demand Fable access check. */
+export type FableProbeStatus = 'available' | 'unavailable' | 'error';
+
+export type FableProbeResult = {
+  status: FableProbeStatus;
+  checkedAt: string;   // ISO date of the check
+  detail?: string;     // short reason, for `error`
+};
+
 // === Settings ===
 
 export type AppSettings = {
@@ -433,6 +442,8 @@ export type AppSettings = {
   // Claude CLI update reminder
   claudeCliUpdateReminder: boolean;     // offer a CLI update check at launch, at most weekly
   lastClaudeCliUpdateCheck: string | null; // ISO date the reminder was last offered (or an update ran)
+  // Fable access — checked only on demand from Settings (never at launch)
+  lastFableProbe: FableProbeResult | null;
 };
 
 // === Token Usage ===

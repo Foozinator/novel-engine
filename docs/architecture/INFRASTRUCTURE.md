@@ -81,6 +81,7 @@ Key behavior:
 | `ClaudeCodeClient.ts` | Implements `IClaudeClient` and `IModelProvider`. Spawns `claude` CLI as child process, streams NDJSON responses. Exposes `providerId` (`'claude-cli'`) and `capabilities` (`text-completion`, `tool-use`, `thinking`, `streaming`). |
 | `StreamSessionTracker.ts` | Tracks active stream sessions for orphan detection/recovery. |
 | `ClaudeCliUpdater.ts` | Implements `IClaudeCliUpdater`. `getVersion()` parses `claude --version`; `update()` runs `claude update` (180s timeout) and re-reads the version → `updated` / `up-to-date` / `failed` (with stdout+stderr) / `busy` (an injected `isBusy()` — the composition root passes `claudeClient.hasActiveProcesses()`; a running `claude.exe` blocks the update on Windows) / `not-installed`. |
+| `FableProbe.ts` | Implements `IFableProbe`. Runs `claude -p` against the `fable` alias with the cheapest flag set available on subscription auth (`FABLE_PROBE_ARGS`: replacement `--system-prompt`, `--tools ""`, `--strict-mcp-config`, `--setting-sources ""`, `--no-session-persistence`), cwd `os.tmpdir()`, 60s timeout. `classifyFableProbeOutput()` → `unavailable` (CLI model-access message) / `available` (JSON with `is_error !== true`) / `error` (timeout, missing CLI, other). |
 | `index.ts` | Barrel export |
 
 Key behavior:

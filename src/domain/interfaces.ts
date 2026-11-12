@@ -71,6 +71,8 @@ import type {
   UsageCostBasisRow,
   UsageSummary,
   WordCountSnapshot,
+  FableProbeStatus,
+  FableProbeResult,
 } from './types';
 
 /** Reads the installed Claude CLI version and runs `claude update`. */
@@ -89,6 +91,19 @@ export interface IClaudeCliUpdateService {
   checkReminder(): Promise<ClaudeCliUpdateReminder>;
   /** Runs the update and records the check time. */
   runUpdate(): Promise<ClaudeCliUpdateResult>;
+}
+
+/** Sends one minimal request to the `fable` alias to see if this account can use it. Billed when it succeeds. */
+export interface IFableProbe {
+  probe(): Promise<{ status: FableProbeStatus; detail?: string }>;
+}
+
+export interface IFableAccessService {
+  /**
+   * Runs the Fable probe (on demand only), records the result in settings, and
+   * adds Fable to the Claude CLI model list when available. Never removes it.
+   */
+  check(): Promise<FableProbeResult>;
 }
 
 export interface ISettingsService {

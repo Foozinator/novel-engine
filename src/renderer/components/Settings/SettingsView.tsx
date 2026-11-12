@@ -4,7 +4,8 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useCliUpdateStore } from '../../stores/cliUpdateStore';
 import { useBookStore } from '../../stores/bookStore';
 import { useModalChatStore } from '../../stores/modalChatStore';
-import type { ModelInfo, TourId, UsageSummary } from '@domain/types';
+import type { FableProbeResult, ModelInfo, TourId, UsageSummary } from '@domain/types';
+import { FABLE_MODEL_ID } from '@domain/constants';
 import { ProviderSection } from './ProviderSection';
 import { useProviderStore } from '../../stores/providerStore';
 import { useTourStore } from '../../stores/tourStore';
@@ -150,15 +151,76 @@ function ClaudeCliUpdateControls(): React.ReactElement {
   );
 }
 
+function describeFableProbe(result: FableProbeResult): string {
+  const date = result.checkedAt.slice(0, 10);
+  switch (result.status) {
+    case 'available':
+      return `Available (checked ${date})`;
+    case 'unavailable':
+      return `Not available for this account (checked ${date})`;
+    case 'error':
+      return `Check failed${result.detail ? `: ${result.detail}` : ''} (${date})`;
+  }
+}
+
+/**
+ * On-demand Fable access check. Never runs on its own: a successful probe is a
+ * billed Fable request (fork issue #16).
+ */
+function FableAccessCheck({ onChecked }: { onChecked: () => void }): React.ReactElement {
+  const { settings, load } = useSettingsStore();
+  const [checking, setChecking] = useState(false);
+  const last = settings?.lastFableProbe ?? null;
+
+  const handleCheck = useCallback(async () => {
+    setChecking(true);
+    try {
+      await window.novelEngine.claudeCli.checkFableAccess();
+      await load();
+      onChecked();
+    } catch (err) {
+      console.error('Fable access check failed:', err);
+    } finally {
+      setChecking(false);
+    }
+  }, [load, onChecked]);
+
+  return (
+    <div className="space-y-2 rounded-lg border border-zinc-200 dark:border-zinc-800 p-3">
+      <div className="flex items-center gap-3">
+        <button
+          onClick={handleCheck}
+          disabled={checking}
+          className="rounded-md bg-zinc-200 dark:bg-zinc-800 px-3 py-1.5 text-sm text-zinc-800 dark:text-zinc-200 hover:bg-zinc-300 dark:hover:bg-zinc-700 disabled:opacity-50"
+        >
+          {checking ? 'Checking…' : 'Check for Fable access'}
+        </button>
+        {last && !checking && (
+          <span className="text-xs text-zinc-500">{describeFableProbe(last)}</span>
+        )}
+      </div>
+      <HelpText>
+        Sends one short request to Fable to see if your account can use it. On some plans this uses paid credits.
+      </HelpText>
+    </div>
+  );
+}
+
 function ModelSelectionSection(): React.ReactElement {
   const { settings, update } = useSettingsStore();
   const { providers, load: loadProviders, setDefault } = useProviderStore();
   const [models, setModels] = useState<ModelInfo[]>([]);
 
-  useEffect(() => {
+  const loadModels = useCallback(() => {
     window.novelEngine.models.getAvailable().then(setModels).catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    loadModels();
     loadProviders().catch(console.error);
-  }, [loadProviders]);
+  }, [loadModels, loadProviders]);
+
+  const showFableCheck = Boolean(settings?.hasClaudeCli) && !models.some((m) => m.id === FABLE_MODEL_ID);
 
   const primaryModelExists = Boolean(settings?.model && models.some((model) => model.id === settings.model));
   const primaryFallback = models[0] ?? null;
@@ -304,6 +366,7 @@ function ModelSelectionSection(): React.ReactElement {
             (model) => model.id === primaryRecommendedId,
           )}
         </div>
+        {showFableCheck && <FableAccessCheck onChecked={loadModels} />}
       </div>
 
       {/* ── Secondary Model ────────────────────────────────── */}
