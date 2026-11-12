@@ -247,6 +247,7 @@ describe('agent prompts and reading rules per step (#23)', () => {
         'chapters/01-ch/notes.md': 'author notes',
         'chapters/02-ch/draft.md': words,
         'source/pitch.md': 'pitch',
+        'source/voice-profile.md': 'voice',
       },
       { bookSlug: 'book' }
     );
@@ -294,6 +295,25 @@ describe('agent prompts and reading rules per step (#23)', () => {
 
     expect(read.messages[0].content).toContain('chapters/01-ch/draft.md');
     expect(read.messages[0].content).not.toContain('chapters/01-ch/notes.md');
+  });
+
+  it('Ghostlight reads the voice profile only in synthesis, after the trackers (#25)', async () => {
+    const calls = await runAll('Ghostlight');
+    const read = calls[0];
+    const synthesis = calls[calls.length - 1];
+
+    // Read step: not listed, and named as belonging to a later step
+    const available = read.systemPrompt.split('## Available Files')[1].split('## Reading Rules')[0];
+    expect(available).not.toContain('voice-profile');
+    expect(read.systemPrompt).toMatch(/- \*\*Not in this step\*\*.*`source\/voice-profile\.md`/);
+    expect(read.messages[0].content).not.toContain('voice-profile');
+
+    // Synthesis: guidance names it as post-pass, and the task reads it after the trackers
+    expect(synthesis.systemPrompt).toMatch(/- \*\*Read only after your main pass is done\*\*.*`source\/voice-profile\.md`/);
+    const task = synthesis.messages[0].content;
+    expect(task.indexOf('source/.scratch/ghostlight-read-1.md')).toBeLessThan(task.indexOf('**Step 2.**'));
+    expect(task).toContain('**Step 2.** If `source/voice-profile.md` is in the file manifest, read it.');
+    expect(task).toContain('- Intent vs. experience (last section, short; only if the voice profile exists)');
   });
 
   it.each(['Lumen', 'Sable'] as const)('%s read steps list each chapter\'s notes and carry the read-notes rule', async (agent) => {

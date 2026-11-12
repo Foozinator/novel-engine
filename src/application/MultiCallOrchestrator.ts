@@ -26,7 +26,7 @@ import {
   MULTI_CALL_TARGET_WORDS_PER_BATCH,
 } from '@domain/constants';
 import { ContextBuilder } from './ContextBuilder';
-import { chapterNotesRule, filterNeverRead, getReadGuidance } from './context/readRules';
+import { chapterNotesRule, filterForReadStep, getReadGuidance, readAfterRules } from './context/readRules';
 import { StreamManager } from './StreamManager';
 import { resolveThinkingBudget } from './thinkingBudget';
 
@@ -333,7 +333,8 @@ export class MultiCallOrchestrator {
    * Skips the full agent markdown (developmental editing framework, lens
    * definitions, etc.) but keeps the agent's own reading rules from
    * AGENT_READ_GUIDANCE: files it must never read are left out of the
-   * file listing and named explicitly, and the chapter-notes rule is
+   * file listing and named explicitly (so are `readAfter` files, which
+   * belong to a later step), and the chapter-notes rule is
    * spelled out (Ghostlight never sees notes; Lumen and Sable read them).
    */
   private buildLightweightSystemPrompt(manifest: ProjectManifest, agent: Agent): string {
@@ -350,13 +351,17 @@ export class MultiCallOrchestrator {
     lines.push(`- **Total words**: ${manifest.totalWordCount.toLocaleString()}`);
     lines.push('');
     lines.push('## Available Files');
-    for (const f of filterNeverRead(manifest.files, agent.name)) {
+    for (const f of filterForReadStep(manifest.files, agent.name)) {
       lines.push(`- \`${f.path}\` (${f.wordCount.toLocaleString()} words)`);
     }
     lines.push('');
     lines.push('## Reading Rules');
     if (guidance && guidance.neverRead.length > 0) {
       lines.push(`- **Never read**: ${guidance.neverRead.map((f) => `\`${f}\``).join(', ')}`);
+    }
+    const readAfter = readAfterRules(agent.name);
+    if (readAfter.length > 0) {
+      lines.push(`- **Not in this step** (read only after the whole pass is done, in a later step): ${readAfter.map((f) => `\`${f}\``).join(', ')}`);
     }
     if (notesRule === 'never') {
       lines.push('- **Chapter notes**: Never open any `notes.md` file. You read as a first reader, and a first reader does not see the author\'s notes.');

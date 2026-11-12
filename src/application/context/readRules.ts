@@ -38,6 +38,25 @@ export function filterNeverRead<T extends { path: string }>(files: T[], agentNam
   return files.filter((f) => !isNeverRead(agentName, f.path));
 }
 
+/** Files the agent reads only after its main pass (`readAfter`), or [] if none. */
+export function readAfterRules(agentName: AgentName): string[] {
+  return getReadGuidance(agentName)?.readAfter ?? [];
+}
+
+/**
+ * True when a multi-call read step must not see the path: it is on the
+ * agent's `neverRead` list, or on its `readAfter` list (a read step is
+ * still mid-pass, so "after the pass" has not happened yet).
+ */
+export function isSkippedDuringRead(agentName: AgentName, path: string): boolean {
+  return isNeverRead(agentName, path) || readAfterRules(agentName).some((rule) => matchesReadRule(path, rule));
+}
+
+/** Drop entries a multi-call read step must not see (neverRead + readAfter). */
+export function filterForReadStep<T extends { path: string }>(files: T[], agentName: AgentName): T[] {
+  return files.filter((f) => !isSkippedDuringRead(agentName, f.path));
+}
+
 /**
  * How the agent treats per-chapter author notes:
  *   - 'read'   — listed in alwaysRead or readIfRelevant (Lumen, Sable)

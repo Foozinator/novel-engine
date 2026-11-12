@@ -162,6 +162,9 @@ export class ContextBuilder {
     if (guidance.readIfRelevant.length > 0) {
       lines.push(`- **Read if relevant to this task**: ${guidance.readIfRelevant.map((f) => `\`${f}\``).join(', ')}`);
     }
+    if (guidance.readAfter && guidance.readAfter.length > 0) {
+      lines.push(`- **Read only after your main pass is done** (the author's stated intent, to check your findings against, not a guide to read by): ${guidance.readAfter.map((f) => `\`${f}\``).join(', ')}`);
+    }
     if (guidance.neverRead.length > 0) {
       lines.push(`- **Skip** (not your domain): ${guidance.neverRead.map((f) => `\`${f}\``).join(', ')}`);
     }

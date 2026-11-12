@@ -4,6 +4,29 @@ All notable changes to Novel Engine are documented here.
 
 ---
 
+## [2026-11-12] — Ghostlight reads the voice profile after the read (#25)
+
+### Summary
+
+Spike #22's best-rated reader report came from a run that read `source/voice-profile.md` and compared the author's stated intent with how the chapters read. NE put the voice profile on Ghostlight's Skip list, and the synthesis task forbade any file beyond the batch trackers, even though `GHOSTLIGHT.md` already describes a post-read "Reader vs. Author Intent" section. `ReadGuidance` gains an optional `readAfter` tier for files read only after the agent's main pass. Ghostlight's voice profile moves there. Multi-call read steps still hide it. The synthesis task now reads the trackers first, then the voice profile if present, and ends the report with a short "Intent vs. experience" section.
+
+### Changed
+- `src/domain/constants.ts` — `ReadGuidance.readAfter?: string[]`. Ghostlight: `source/voice-profile.md` moved from `neverRead` to `readAfter`; pitch, outline, story bible, author profile, dev report and chapter notes stay in `neverRead`. `ghostlight-synthesis` prompt: trackers first ("Step 1"), then the voice profile if it is in the manifest ("Step 2"), plus an "Intent vs. experience" output item rated match / partial / mismatch, written last and only when the profile exists.
+- `src/application/ContextBuilder.ts` — `buildReadGuidance()` renders `readAfter` as "**Read only after your main pass is done** (the author's stated intent, to check your findings against, not a guide to read by)".
+- `src/application/context/readRules.ts` — Added `readAfterRules`, `isSkippedDuringRead`, `filterForReadStep` (`neverRead` + `readAfter`).
+- `src/application/MultiCallOrchestrator.ts` — `buildLightweightSystemPrompt()` filters with `filterForReadStep` and adds a "**Not in this step**" line naming `readAfter` files.
+- `agents/GHOSTLIGHT.md` — Reference-docs intro now says the reader lacks the voice profile *while reading*, not at all. The "Reader vs. Author Intent" block says to keep it short, omit it without a profile, and not revise earlier sections after reading it. Bundled prompt only: `ensureAgents()` never overwrites existing `custom-agents/` copies, so existing installs keep their current file. The behavior change ships through the guidance and synthesis task, not this file.
+- `src/domain/constants.test.ts`, `src/application/ContextBuilder.test.ts`, `src/application/context/readRules.test.ts`, `src/application/MultiCallOrchestrator.test.ts` — Disjointness covers `readAfter`; Ghostlight guidance, rendering, read-step filtering, and synthesis ordering tests.
+- `docs/architecture/APPLICATION.md`, `docs/architecture/DOMAIN.md`, `docs/architecture/ARCHITECTURE.md` — Documented the above.
+
+### Architecture Impact
+- None — no wiring changes. New optional field on `ReadGuidance`.
+
+### Migration Notes
+- None.
+
+---
+
 ## [2026-11-12] — Multi-call synthesis gets the agent prompt; read steps keep the agent's reading rules (#23)
 
 ### Summary
