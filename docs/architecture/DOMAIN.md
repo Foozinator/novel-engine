@@ -117,13 +117,14 @@ Everything in `src/domain/`. Pure TypeScript declarations — zero imports from 
 | Type | Shape | Used By |
 |------|-------|---------|
 | `RevisionSessionStatus` | `'pending' \| 'running' \| 'awaiting-approval' \| 'approved' \| 'rejected' \| 'skipped'` | RevisionQueueView |
-| `ApprovalAction` | `'approve' \| 'approve-all' \| 'reject' \| 'skip' \| 'retry'` | Gate handling |
+| `ApprovalAction` | `'approve' \| 'approve-all' \| 'reply' \| 'complete' \| 'skip' \| 'retry'` | Gate handling. `reply` sends the author's typed text; `complete` approves the session with no further call. `approve`/`approve-all` are ignored on a `choice` gate. |
+| `GateKind` | `'confirm' \| 'choice'` | `confirm`: a quick reply can answer it. `choice`: options or an open question; only a typed answer can. |
 | `QueueMode` | `'manual' \| 'auto-approve' \| 'auto-skip' \| 'selective'` | Queue controls |
 | `QueueStatus` | `{ planId, isRunning, activeSessionId }` | Frontend status recovery |
 | `RevisionSession` | `{ id, index, title, chapters, taskNumbers, model, prompt, notes, status, conversationId, response }` | RevisionQueueView |
 | `RevisionPlanPhase` | `{ number, name, taskCount, completedCount, taskNumbers? }` | Progress display |
 | `RevisionPlan` | `{ id, bookSlug, sessions, totalTasks, completedTaskNumbers, phases, mode, createdAt, verificationConversationId }` | RevisionQueueService |
-| `RevisionQueueEvent` | Discriminated union (10 variants: `session:status`, `session:chunk`, `session:thinking`, `session:done`, `session:gate`, `session:streamEvent`, `plan:progress`, `plan:loading-step`, `queue:done`, `error`). `session:streamEvent` includes optional `conversationId`. | Event bus |
+| `RevisionQueueEvent` | Discriminated union (10 variants: `session:status`, `session:chunk`, `session:thinking`, `session:done`, `session:gate`, `session:streamEvent`, `plan:progress`, `plan:loading-step`, `queue:done`, `error`). `session:streamEvent` includes optional `conversationId`. `session:gate` carries `gateText` and `gateKind`. | Event bus |
 
 ### Verity Audit
 
@@ -670,6 +671,9 @@ Implemented by: `QueryService` (`src/application/QueryService.ts`)
 | Constant | Value | Purpose |
 |----------|-------|---------|
 | `PITCH_ROOM_SLUG` | `'__pitch-room__'` | Reserved book slug for pitch room |
+| `REVISION_SESSION_COMPLETE_MARKER` | `'<!-- session-complete -->'` | Verity's last line when a revision-queue session is finished. The queue completes a session only on this marker. |
+| `REVISION_QUEUE_PROTOCOL` | `string` | Appended to Verity's system prompt for every revision-queue session. Tells her when to emit the marker. |
+| `MAX_AUTO_GATE_REPLIES` | `8` | Quick replies the queue sends on its own (auto modes, Approve All) per session run before it pauses for the author |
 | `HELPER_SLUG` | `'__helper__'` | Reserved book slug for helper conversations |
 | `CREATIVE_AGENT_NAMES` | 7-element array | UI agent lists (excludes Wrangler) |
 | `WRANGLER_MODEL` | `'claude-sonnet-4-20250514'` | Model for plan parsing |

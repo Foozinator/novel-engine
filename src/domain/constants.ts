@@ -652,6 +652,35 @@ export const VERITY_LEDGER_FILE = 'VERITY-LEDGER.md';
 
 export const VERITY_AUDIT_AGENT_FILE = 'VERITY-AUDIT.md';
 
+// === Revision queue gates ===
+
+/**
+ * Verity ends a revision-queue session's final message with this line when
+ * every task is done. The queue completes a session only when it sees it;
+ * any other ending is treated as a gate. An HTML comment so markdown views
+ * don't render it.
+ */
+export const REVISION_SESSION_COMPLETE_MARKER = '<!-- session-complete -->';
+
+/** Appended to Verity's system prompt for every revision-queue session. */
+export const REVISION_QUEUE_PROTOCOL = `## Revision Queue Protocol
+
+You are running inside Novel Engine's revision queue. The queue reads the end of each of your messages to decide whether you are waiting for the author or finished.
+
+- When you stop to ask the author anything (approval, a choice between options, a question), end your message with the question. Do not add the completion marker.
+- Only when every task in this session is finished and you need nothing more from the author, end your final message with this exact line on its own:
+
+${REVISION_SESSION_COMPLETE_MARKER}
+
+Never emit that line in a message that asks the author anything.`;
+
+/**
+ * Most quick replies the queue sends on its own (auto-approve, auto-skip,
+ * Approve All) in one session run before it pauses for the author. Guards
+ * against a loop when Verity never emits the completion marker.
+ */
+export const MAX_AUTO_GATE_REPLIES = 8;
+
 /** Model used for the audit pass — the secondary Claude CLI model (faster/cheaper). Derived from BUILT_IN_PROVIDER_CONFIGS. */
 export const VERITY_AUDIT_MODEL: string = CLAUDE_CLI_SECONDARY_MODEL;
 

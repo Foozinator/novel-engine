@@ -13,7 +13,7 @@ import {
   type FakeFileSystem,
   type ScriptedProvider,
 } from '../test/fakes';
-import { DEFAULT_SETTINGS } from '@domain/constants';
+import { DEFAULT_SETTINGS, MAX_AUTO_GATE_REPLIES, REVISION_QUEUE_PROTOCOL, REVISION_SESSION_COMPLETE_MARKER } from '@domain/constants';
 
 const WRANGLER_JSON = {
   sessions: [
@@ -27,9 +27,10 @@ const WRANGLER_JSON = {
 
 const TASKS_MD = ['# Tasks', '- [ ] **1. Fix opening', '- [ ] **2. Tighten middle', '- [ ] **3. Polish ending'].join('\n');
 
-// isApprovalGate scans the LAST paragraph for signal words — this reply has none.
-const FINAL_REPLY = 'Revised the chapter as requested.\n\nAll tasks in this session are finished.';
+// A session completes only on Verity's explicit marker; every other ending is a gate.
+const FINAL_REPLY = `Revised the chapter as requested.\n\nAll tasks in this session are finished.\n\n${REVISION_SESSION_COMPLETE_MARKER}`;
 const GATE_REPLY = 'Task 1 revised.\n\nShall I proceed with task 2?';
+const CHOICE_REPLY = 'Two ways to fix the opening.\n\nA) Cut the dream.\nB) Compress it.\n\nWhich do you want?';
 
 function reply(text: string): StreamEvent[] {
   return [
@@ -95,6 +96,7 @@ describe('runSession', () => {
     expect(provider.calls[0].maxTurns).toBe(60);
     expect(provider.calls[0].messages[0].content).toBe('Revise chapter two.');
     expect(provider.calls[0].systemPrompt).toContain('Verity system prompt');
+    expect(provider.calls[0].systemPrompt).toContain(REVISION_QUEUE_PROTOCOL);
 
     // Conversation persisted with both sides
     const messages = db.getMessages(session.conversationId!);
@@ -184,7 +186,7 @@ describe('approval gates', () => {
     });
 
     const gate = events.find((e) => e.type === 'session:gate');
-    expect(gate && gate.type === 'session:gate' ? gate.gateText : '').toBe('Shall I proceed with task 2?');
+    expect(gate).toMatchObject({ gateText: 'Shall I proceed with task 2?', gateKind: 'confirm' });
 
     service.respondToGate(plan.id, session.id, 'approve');
     await run;
@@ -228,6 +230,154 @@ describe('approval gates', () => {
     expect(plan.sessions[0].status).toBe('approved');
     expect(provider.calls.length).toBe(2);
     expect(events.some((e) => e.type === 'session:gate')).toBe(false);
+  });
+});
+
+describe('gate detection (#17)', () => {
+  // Returns the run wrapped: an async function returning a bare promise would flatten it.
+  async function runUntilGate(plan: RevisionPlan, sessionIdx = 0): Promise<{ run: Promise<void> }> {
+    const session = plan.sessions[sessionIdx];
+    const run = service.runSession(plan.id, session.id);
+    await vi.waitFor(() => {
+      expect(session.status).toBe('awaiting-approval');
+    });
+    return { run };
+  }
+
+  function gateEvents() {
+    return events.filter((e) => e.type === 'session:gate');
+  }
+
+  it('a question without approval keywords pauses instead of completing', async () => {
+    const plan = await loadPlan();
+    provider.scriptNext(reply('Both drafts are above.\n\nWhich version do you prefer?'));
+    provider.scriptNext(reply(FINAL_REPLY));
+
+    const { run } = await runUntilGate(plan);
+    expect(gateEvents()[0]).toMatchObject({ gateKind: 'choice', gateText: 'Which version do you prefer?' });
+
+    service.respondToGate(plan.id, plan.sessions[0].id, 'reply', 'The second one.');
+    await run;
+
+    expect(plan.sessions[0].status).toBe('approved');
+    const contents = db.getMessages(plan.sessions[0].conversationId!).map((m) => m.content);
+    expect(contents[2]).toBe('The second one.');
+  });
+
+  it('a reply without the completion marker pauses (e.g. a turn-limit cutoff)', async () => {
+    const plan = await loadPlan();
+    provider.scriptNext(reply('Working through task 2; the ledger is updated.'));
+
+    const { run } = await runUntilGate(plan);
+    expect(gateEvents()[0]).toMatchObject({ gateKind: 'confirm' });
+
+    service.respondToGate(plan.id, plan.sessions[0].id, 'complete');
+    await run;
+  });
+
+  it('complete approves the session without another agent call', async () => {
+    const plan = await loadPlan();
+    provider.scriptNext(reply('All tasks are done.'));
+
+    const { run } = await runUntilGate(plan);
+    service.respondToGate(plan.id, plan.sessions[0].id, 'complete');
+    await run;
+
+    expect(plan.sessions[0].status).toBe('approved');
+    expect(provider.calls.length).toBe(1);
+    expect(db.getMessages(plan.sessions[0].conversationId!).map((m) => m.role)).toEqual(['user', 'assistant']);
+  });
+
+  it('auto-approve pauses on a choice and does not answer it', async () => {
+    const plan = await loadPlan();
+    service.setMode(plan.id, 'auto-approve');
+    provider.scriptNext(reply(CHOICE_REPLY));
+    provider.scriptNext(reply(FINAL_REPLY));
+
+    const { run } = await runUntilGate(plan);
+    expect(gateEvents()[0]).toMatchObject({
+      gateKind: 'choice',
+      gateText: 'A) Cut the dream.\nB) Compress it.\n\nWhich do you want?',
+    });
+    expect(provider.calls.length).toBe(1);
+
+    service.respondToGate(plan.id, plan.sessions[0].id, 'reply', 'A.');
+    await run;
+    expect(plan.sessions[0].status).toBe('approved');
+  });
+
+  it('auto-skip pauses on a choice instead of skipping it', async () => {
+    const plan = await loadPlan();
+    service.setMode(plan.id, 'auto-skip');
+    provider.scriptNext(reply(CHOICE_REPLY));
+
+    const { run } = await runUntilGate(plan);
+    expect(gateEvents()[0]).toMatchObject({ gateKind: 'choice' });
+
+    service.respondToGate(plan.id, plan.sessions[0].id, 'retry');
+    await run;
+  });
+
+  it('approve on a choice gate is ignored; the gate stays open for a real answer', async () => {
+    const plan = await loadPlan();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    provider.scriptNext(reply(CHOICE_REPLY));
+    provider.scriptNext(reply(FINAL_REPLY));
+
+    const { run } = await runUntilGate(plan);
+    service.respondToGate(plan.id, plan.sessions[0].id, 'approve');
+    service.respondToGate(plan.id, plan.sessions[0].id, 'approve-all');
+    await Promise.resolve();
+    expect(provider.calls.length).toBe(1);
+    expect(plan.sessions[0].status).toBe('awaiting-approval');
+    expect(warn).toHaveBeenCalledTimes(2);
+
+    service.respondToGate(plan.id, plan.sessions[0].id, 'reply', 'B, and keep the trim.');
+    await run;
+
+    const contents = db.getMessages(plan.sessions[0].conversationId!).map((m) => m.content);
+    expect(contents).toEqual(['Revise chapter two.', CHOICE_REPLY, 'B, and keep the trim.', FINAL_REPLY]);
+  });
+
+  it('Approve All answers later yes/no stops but still pauses on a choice', async () => {
+    const plan = await loadPlan();
+    provider.scriptNext(reply(GATE_REPLY));
+    provider.scriptNext(reply(GATE_REPLY));
+    provider.scriptNext(reply(CHOICE_REPLY));
+    provider.scriptNext(reply(FINAL_REPLY));
+
+    const { run } = await runUntilGate(plan);
+    expect(gateEvents()).toHaveLength(1);
+    service.respondToGate(plan.id, plan.sessions[0].id, 'approve-all');
+
+    await vi.waitFor(() => {
+      expect(gateEvents()).toHaveLength(2);
+    });
+    expect(gateEvents()[1]).toMatchObject({ gateKind: 'choice' });
+    expect(provider.calls.length).toBe(3); // second yes/no stop auto-answered
+
+    service.respondToGate(plan.id, plan.sessions[0].id, 'reply', 'A.');
+    await run;
+
+    const contents = db.getMessages(plan.sessions[0].conversationId!).map((m) => m.content);
+    expect(contents.filter((c) => c.startsWith('Approved.'))).toEqual([
+      'Approved. Continue with the next task.',
+      'Approved. Continue with the next task.',
+    ]);
+    expect(plan.sessions[0].status).toBe('approved');
+  });
+
+  it(`auto-approve pauses after ${MAX_AUTO_GATE_REPLIES} quick replies in a row`, async () => {
+    const plan = await loadPlan();
+    service.setMode(plan.id, 'auto-approve');
+    for (let i = 0; i <= MAX_AUTO_GATE_REPLIES; i++) provider.scriptNext(reply(GATE_REPLY));
+
+    const { run } = await runUntilGate(plan);
+    expect(provider.calls.length).toBe(MAX_AUTO_GATE_REPLIES + 1);
+    expect(gateEvents()).toHaveLength(1);
+
+    service.respondToGate(plan.id, plan.sessions[0].id, 'complete');
+    await run;
   });
 });
 

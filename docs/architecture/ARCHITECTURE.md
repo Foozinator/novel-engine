@@ -92,6 +92,7 @@ src/
 │   ├── BuildService.ts                      # Pandoc execution for DOCX/EPUB/PDF
 │   ├── UsageService.ts                      # Token tracking, cost estimation
 │   ├── RevisionQueueService.ts              # Parses Forge output, executes revision sessions
+│   ├── revisionGate.ts                      # Revision-queue completion marker check + gate classification
 │   ├── MotifLedgerService.ts                # Motif ledger CRUD from JSON on disk
 │   ├── VersionService.ts                   # File versioning: snapshot, diff, revert, prune
 │   ├── ManuscriptImportService.ts           # DOCX/MD import, chapter detection, book creation

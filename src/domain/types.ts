@@ -478,7 +478,22 @@ export type UsageSummary = {
 
 export type RevisionSessionStatus = 'pending' | 'running' | 'awaiting-approval' | 'approved' | 'rejected' | 'skipped';
 
-export type ApprovalAction = 'approve' | 'approve-all' | 'reject' | 'skip' | 'retry';
+/**
+ * Author's response to a revision-queue gate.
+ * - `approve` / `approve-all` — only valid on a `confirm` gate (ignored on `choice`)
+ * - `reply` — send the author's typed text as the next message
+ * - `complete` — mark the session done without another agent call
+ * - `skip` — tell Verity to skip the current task
+ * - `retry` — reset the session for a fresh run
+ */
+export type ApprovalAction = 'approve' | 'approve-all' | 'reply' | 'complete' | 'skip' | 'retry';
+
+/**
+ * What kind of stop Verity made in a revision-queue session.
+ * - `confirm` — a yes/no or open stop that a quick reply can answer
+ * - `choice` — a question with options; only the author's typed answer can resolve it
+ */
+export type GateKind = 'confirm' | 'choice';
 
 export type QueueMode = 'manual' | 'auto-approve' | 'auto-skip' | 'selective';
 
@@ -529,7 +544,7 @@ export type RevisionQueueEvent =
   | { type: 'session:chunk'; sessionId: string; text: string }
   | { type: 'session:thinking'; sessionId: string; text: string }
   | { type: 'session:done'; sessionId: string; taskNumbers: number[] }
-  | { type: 'session:gate'; sessionId: string; gateText: string }
+  | { type: 'session:gate'; sessionId: string; gateText: string; gateKind: GateKind }
   | { type: 'session:streamEvent'; sessionId: string; event: StreamEvent; conversationId?: string }
   | { type: 'plan:progress'; planId: string; completedTasks: number; totalTasks: number }
   | { type: 'plan:loading-step'; step: string }

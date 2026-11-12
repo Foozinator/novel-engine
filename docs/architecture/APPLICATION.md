@@ -284,9 +284,9 @@ Dependencies: `IFileSystemService`, `IProviderRegistry`, `IAgentService`, `IData
 |--------|-------------|
 | `loadPlan(bookSlug)` | Reads revision-prompts.md + project-tasks.md → sends to Wrangler for parsing → returns `RevisionPlan` |
 | `clearCache(bookSlug)` | Removes cached parse from disk |
-| `runSession(planId, sessionId)` | Sends session prompt to Verity, streams response, fires events. Model comes from `resolveSessionModel(session.model, settings)`: Forge's `opus`/`sonnet` tier when the user's model is a Claude CLI model and the tier alias is listed, else `settings.model`. |
+| `runSession(planId, sessionId)` | Sends session prompt to Verity (system prompt + `REVISION_QUEUE_PROTOCOL`), streams response, fires events. Model comes from `resolveSessionModel(session.model, settings)`: Forge's `opus`/`sonnet` tier when the user's model is a Claude CLI model and the tier alias is listed, else `settings.model`. |
 | `runAll(planId, selectedIds?)` | Runs all pending sessions sequentially (respects mode and pause) |
-| `respondToGate(planId, sessionId, action, message?)` | Author decision at approval gate |
+| `respondToGate(planId, sessionId, action, message?)` | Author decision at a gate. Ignores `approve`/`approve-all` on a `choice` gate (the gate stays open). |
 | `approveSession(planId, sessionId)` | Marks tasks as `[x]` in project-tasks.md |
 | `rejectSession(planId, sessionId)` | Resets session to `pending` for re-run |
 | `skipSession(planId, sessionId)` | Marks as `skipped`, tasks stay `[ ]` |
@@ -300,10 +300,16 @@ Dependencies: `IFileSystemService`, `IProviderRegistry`, `IAgentService`, `IData
 **Plan parsing:**
 Uses Wrangler model (Sonnet) with `WRANGLER-PARSE.md` (loaded via `AgentService.loadRaw()`) to parse Forge's markdown output into structured JSON. Caches the parsed result on disk.
 
+**Gates** (`src/application/revisionGate.ts`, #17):
+- After each Verity reply, `isSessionComplete()` checks for `REVISION_SESSION_COMPLETE_MARKER` on the last non-empty line with no `?` in the paragraph before it. Only then is the session approved. Any other ending (including a turn-limit cutoff) is a gate.
+- `classifyGate()` returns `{ kind, gateText }`. `choice` = ≥2 lettered/"Option X" lines in the last 3 paragraphs, an "A or B?" question (fallback offers like "or would you like changes?" excluded), or an open question ("Which version…?"; "How does this read?" excluded). Otherwise `confirm`. Plain numbered lists don't count as options.
+- `confirm` gates in `auto-approve`, `auto-skip`, or after Approve All get a fixed quick reply, up to `MAX_AUTO_GATE_REPLIES` per session run. `choice` gates always pause.
+- Decisions: `approve`, `approve-all` (sends the plain approval; the queue answers later `confirm` gates itself), `reply` (typed text), `skip`, `complete` (approve with no further call), `retry`.
+
 **Queue modes:**
-- `manual`: pause after every session for approval
-- `auto-approve`: approve and continue automatically
-- `auto-skip`: skip all sessions (for testing)
+- `manual`: pause at every gate
+- `auto-approve`: answer `confirm` gates with "Approved. Continue with the next task."; pause on `choice`
+- `auto-skip`: answer `confirm` gates with "Skip this task…"; pause on `choice`
 - `selective`: only run selected sessions
 
 ### MotifLedgerService

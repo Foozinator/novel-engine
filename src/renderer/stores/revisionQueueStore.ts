@@ -3,6 +3,7 @@ import type {
   RevisionPlan,
   QueueMode,
   ApprovalAction,
+  GateKind,
   Message,
 } from '@domain/types';
 
@@ -19,6 +20,7 @@ type RevisionQueueState = {
   streamingThinking: string;
   gateSessionId: string | null;
   gateText: string;
+  gateKind: GateKind;
   error: string | null;
   selectedSessionIds: Set<string>;
 
@@ -80,6 +82,7 @@ type CachedBookState = {
   streamingThinking: string;
   gateSessionId: string | null;
   gateText: string;
+  gateKind: GateKind;
   error: string | null;
   selectedSessionIds: Set<string>;
   panelMessages: Message[];
@@ -108,6 +111,7 @@ function snapshotState(state: RevisionQueueState): CachedBookState {
     streamingThinking: state.streamingThinking,
     gateSessionId: state.gateSessionId,
     gateText: state.gateText,
+    gateKind: state.gateKind,
     error: state.error,
     selectedSessionIds: new Set(state.selectedSessionIds),
     panelMessages: state.panelMessages,
@@ -131,6 +135,7 @@ export const useRevisionQueueStore = create<RevisionQueueState>((set, get) => ({
   streamingThinking: '',
   gateSessionId: null,
   gateText: '',
+  gateKind: 'confirm',
   error: null,
   selectedSessionIds: new Set(),
   panelMessages: [],
@@ -207,6 +212,7 @@ export const useRevisionQueueStore = create<RevisionQueueState>((set, get) => ({
       streamingThinking: '',
       gateSessionId: null,
       gateText: '',
+      gateKind: 'confirm',
       error: null,
       selectedSessionIds: new Set(),
       panelMessages: [],
@@ -373,7 +379,7 @@ export const useRevisionQueueStore = create<RevisionQueueState>((set, get) => ({
   respondToGate: async (action: ApprovalAction, message?: string) => {
     const { planId, gateSessionId } = get();
     if (!planId || !gateSessionId) return;
-    set({ gateSessionId: null, gateText: '', streamingResponse: '', streamingThinking: '' });
+    set({ gateSessionId: null, gateText: '', gateKind: 'confirm', streamingResponse: '', streamingThinking: '' });
     await window.novelEngine.revision.respondToGate(planId, gateSessionId, action, message);
   },
 
@@ -397,11 +403,12 @@ export const useRevisionQueueStore = create<RevisionQueueState>((set, get) => ({
       panelMessages: [...state.panelMessages, tempMessage],
       gateSessionId: null,
       gateText: '',
+      gateKind: 'confirm',
       streamingResponse: '',
       streamingThinking: '',
     }));
 
-    await window.novelEngine.revision.respondToGate(planId, gateSessionId, 'reject', message);
+    await window.novelEngine.revision.respondToGate(planId, gateSessionId, 'reply', message);
   },
 
   approveSession: async (sessionId: string) => {
@@ -540,6 +547,7 @@ export const useRevisionQueueStore = create<RevisionQueueState>((set, get) => ({
       streamingThinking: '',
       gateSessionId: null,
       gateText: '',
+      gateKind: 'confirm',
       error: null,
       selectedSessionIds: new Set(),
       panelMessages: [],

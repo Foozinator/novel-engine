@@ -4,6 +4,39 @@ All notable changes to Novel Engine are documented here.
 
 ---
 
+## [2026-11-12] — Revision queue: explicit completion, choice gates never auto-answered (#17)
+
+### Summary
+
+The revision queue marked a session complete whenever the last paragraph of Verity's reply lacked one of 13 approval keywords. "A or B?" or "Which version do you prefer?" slipped through, so the author's decision was skipped and `runAll` moved on. A turn-limit cutoff did the same. When a gate was caught, Approve, Approve All, auto-approve and auto-skip all sent fixed text that couldn't answer a choice. Now Verity's system prompt in the queue tells her to end a finished session with `<!-- session-complete -->`. The queue completes a session only on that marker; every other ending is a gate. Gates are classified as `confirm` or `choice`. Quick replies (buttons, auto modes, Approve All) answer only `confirm` gates, capped at 8 in a row; `choice` gates always wait for a typed answer. Approve All no longer tells Verity to stop asking. Typed feedback is its own action (`reply`, was `reject`), and a new Mark Complete action closes a session whose marker is missing without spending a call.
+
+### Added
+- `src/application/revisionGate.ts` — `isSessionComplete()`, `classifyGate()`, `stripCompletionMarker()`. Replaces the private keyword check `isApprovalGate`.
+- `src/application/revisionGate.test.ts` — Completion marker rules; confirm vs choice classification (fallback "or" offers, review questions, lettered options, numbered change reports).
+
+### Changed
+- `src/domain/types.ts` — `ApprovalAction`: `reject` renamed `reply`; added `complete`. New `GateKind = 'confirm' | 'choice'`. `session:gate` event carries `gateKind`.
+- `src/domain/constants.ts` — Added `REVISION_SESSION_COMPLETE_MARKER`, `REVISION_QUEUE_PROTOCOL`, `MAX_AUTO_GATE_REPLIES` (8).
+- `src/application/RevisionQueueService.ts` — `runSession` appends `REVISION_QUEUE_PROTOCOL` to Verity's system prompt. `runConversationLoop` completes only on `isSessionComplete()`; otherwise classifies the gate. Auto modes and Approve All answer `confirm` gates only, up to `MAX_AUTO_GATE_REPLIES` per run (`autoReplyCounts`). Approve All sends the plain approval text. New `reply` and `complete` decisions. `respondToGate` ignores `approve`/`approve-all` on a `choice` gate (`gateKinds`) and leaves it open.
+- `src/renderer/stores/revisionQueueStore.ts` — `gateKind` state (cached per book, reset to `confirm`); `sendGateMessage` answers with `reply`.
+- `src/renderer/hooks/useRevisionQueueEvents.ts` — Stores `gateKind` from `session:gate`.
+- `src/renderer/components/RevisionQueue/RevisionSessionPanel.tsx` — Choice gates hide Approve/Approve All and prompt for a typed answer. New Mark Complete button.
+- `src/renderer/components/RevisionQueue/QueueControls.tsx` — Auto mode descriptions say choices pause.
+- `src/application/RevisionQueueService.run.test.ts` — Final-reply fixture carries the marker; new gate-detection suite (no-keyword question, missing marker, complete, choice in auto modes, ignored approve on choice, Approve All, auto-reply cap).
+- `src/renderer/components/RevisionQueue/RevisionSessionPanel.test.tsx`, `src/renderer/stores/revisionQueueStore.test.ts`, `src/renderer/hooks/useRevisionQueueEvents.test.tsx` — `reply` action, `gateKind`, choice bar, Mark Complete.
+- `docs/USER_GUIDE.md` — Execution modes and gate bar rewritten; Auto-Skip documented.
+
+### Architecture Impact
+- New module: `src/application/revisionGate.ts` (pure; used by `RevisionQueueService`)
+- `revision:respondToGate` accepts `reply` and `complete`; `reject` is gone
+- `session:gate` push event payload gains `gateKind`
+
+### Migration Notes
+- None for data. `ApprovalAction` values are not persisted.
+- Behavior: sessions run under a model that never emits the marker now pause at the end instead of completing. Mark Complete closes them.
+
+---
+
 ## [2026-11-12] — Fable access check runs on demand only, never at launch (#16)
 
 ### Summary
