@@ -494,6 +494,17 @@ Per-agent rules from `AGENT_READ_GUIDANCE` in constants:
 - `readIfRelevant`: files included when they exist
 - `neverRead`: files explicitly excluded
 
+File: `src/application/context/readRules.ts` — `matchesReadRule(path, rule)` (exact, `dir/` prefix, `*` = one segment), `getReadGuidance`, `isNeverRead`, `filterNeverRead`, `chapterNotesRule(agent)` → `'read' | 'never' | 'unspecified'`.
+
+### Multi-Call Step Prompts
+
+`MultiCallOrchestrator.runSingleStep()` picks the system prompt per step:
+
+- **Read steps** (`lightweightPrompt: true`, dynamic chapter batches only): `buildLightweightSystemPrompt(manifest, agent)`. Names the agent and role, lists manifest files minus the agent's `neverRead`, and adds a `## Reading Rules` section (never-read list plus the chapter-notes rule). For agents whose `chapterNotesRule` is `'read'` (Lumen, Sable), `computeChapterBatches()` lists each chapter's `notes.md` under its draft when one exists. Ghostlight's batches list drafts only.
+- **Analysis and synthesis steps**: full `ContextBuilder.build()` with the agent's system prompt, plus `buildStepInstructions()` as `purposeInstructions`. That section says the step's own file list overrides the agent's standalone reading workflow, that no author is present to approve writes, and names the file the step must write.
+
+`lightweightPrompt` is for read steps only; `src/domain/constants.test.ts` enforces that no synthesis step sets it.
+
 ### Conversation Compaction
 
 Dynamic turn budget based on remaining context window:

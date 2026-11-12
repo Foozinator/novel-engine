@@ -56,7 +56,7 @@ function makeOrchestrator(fsFake: FakeFileSystem): MultiCallOrchestrator {
   );
 }
 
-function run(agentName: 'Forge' | 'Ghostlight' | 'Spark') {
+function run(agentName: 'Forge' | 'Ghostlight' | 'Lumen' | 'Sable' | 'Spark') {
   return orchestrator.runMultiCall({
     agentName,
     conversationId,
@@ -205,8 +205,10 @@ describe('dynamic step expansion (Ghostlight)', () => {
     expect(synthesis).toContain('- source/.scratch/ghostlight-read-1.md');
     expect(synthesis).toContain('- source/.scratch/ghostlight-read-3.md');
 
-    // Read steps use the lightweight system prompt
-    expect(provider.calls[0].systemPrompt).toContain('You are a careful manuscript reader');
+    // Read steps use the lightweight system prompt; synthesis gets the agent's own
+    expect(provider.calls[0].systemPrompt).toContain('You are Ghostlight (First Reader)');
+    expect(provider.calls[0].systemPrompt).not.toContain('Ghostlight system prompt');
+    expect(provider.calls[3].systemPrompt).toContain('Ghostlight system prompt');
 
     // Progress covers all 4 expanded steps
     const labels = events
@@ -230,5 +232,79 @@ describe('dynamic step expansion (Ghostlight)', () => {
 
     expect(fs.files.has('book/source/.scratch/ghostlight-read-1.md')).toBe(true); // survives for retry
     expect(events.find((e) => e.type === 'error')?.message).toContain('Prior results saved in source/.scratch/');
+  });
+});
+
+// ── #23: each step carries the agent's prompt or reading rules ─────────
+
+describe('agent prompts and reading rules per step (#23)', () => {
+  // 2 chapters × 5k words → 1 read batch. Chapter 01 has notes, 02 does not.
+  beforeEach(() => {
+    const words = 'w '.repeat(5_000).trim();
+    fs = makeFakeFs(
+      {
+        'chapters/01-ch/draft.md': words,
+        'chapters/01-ch/notes.md': 'author notes',
+        'chapters/02-ch/draft.md': words,
+        'source/pitch.md': 'pitch',
+      },
+      { bookSlug: 'book' }
+    );
+    orchestrator = makeOrchestrator(fs);
+  });
+
+  /** Runs the agent with every step writing its own target file. */
+  async function runAll(agent: 'Ghostlight' | 'Lumen' | 'Sable') {
+    provider.setImpl(async (params) => {
+      // Read steps name their tracker in the user prompt; full-prompt steps
+      // name their target in the step instructions.
+      const target =
+        params.messages[0].content.match(/create `(source\/\.scratch\/[\w-]+\.md)` before finishing/)?.[1] ??
+        params.systemPrompt.match(/not complete until `([^`]+)` is written/)?.[1];
+      if (target) await fs.writeFile('book', target, 'x');
+      params.onEvent({ type: 'done', inputTokens: 1, outputTokens: 1, thinkingTokens: 0, filesTouched: {} });
+    });
+    await run(agent);
+    expect(events.some((e) => e.type === 'error'), JSON.stringify(events.filter((e) => e.type === 'error'))).toBe(false);
+    return provider.calls;
+  }
+
+  it.each(['Ghostlight', 'Lumen', 'Sable'] as const)('%s synthesis gets the full agent prompt plus step instructions', async (agent) => {
+    const calls = await runAll(agent);
+    const synthesis = calls[calls.length - 1].systemPrompt;
+    expect(synthesis).toContain(`${agent} system prompt`);
+    expect(synthesis).toContain('## Context Loading Guidance');
+    expect(synthesis).toMatch(new RegExp(`## Multi-Call Step ${calls.length} of ${calls.length}: Synthesize`));
+    expect(synthesis).toContain('No author is present to approve writes');
+    expect(synthesis).not.toContain('Your job in this step is to read chapters');
+  });
+
+  it('Ghostlight read steps never see or list chapter notes', async () => {
+    const calls = await runAll('Ghostlight');
+    const read = calls[0];
+    expect(read.systemPrompt).toContain('You are Ghostlight (First Reader)');
+    expect(read.systemPrompt).toContain('## Reading Rules');
+    expect(read.systemPrompt).toContain('`chapters/*/notes.md`');
+    expect(read.systemPrompt).toContain('Never open any `notes.md` file');
+
+    const available = read.systemPrompt.split('## Available Files')[1].split('## Reading Rules')[0];
+    expect(available).toContain('chapters/01-ch/draft.md');
+    expect(available).not.toContain('notes.md');
+    expect(available).not.toContain('source/pitch.md');
+
+    expect(read.messages[0].content).toContain('chapters/01-ch/draft.md');
+    expect(read.messages[0].content).not.toContain('chapters/01-ch/notes.md');
+  });
+
+  it.each(['Lumen', 'Sable'] as const)('%s read steps list each chapter\'s notes and carry the read-notes rule', async (agent) => {
+    const calls = await runAll(agent);
+    const read = calls[0];
+    expect(read.systemPrompt).toContain(`You are ${agent}`);
+    expect(read.systemPrompt).toContain('Before each chapter, read its `notes.md`');
+    expect(read.systemPrompt).not.toContain(`${agent} system prompt`);
+
+    const prompt = read.messages[0].content;
+    expect(prompt).toContain('- notes: `chapters/01-ch/notes.md`');
+    expect(prompt).not.toContain('chapters/02-ch/notes.md');
   });
 });
