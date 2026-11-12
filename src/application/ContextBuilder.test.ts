@@ -73,6 +73,16 @@ describe('system prompt assembly', () => {
     expect(guidance).not.toContain('`author-profile.md`');
   });
 
+  it('renders the chapter-notes rule: skip for Ghostlight, read-if-relevant for Lumen', () => {
+    const skipLine = (agentName: 'Ghostlight' | 'Lumen', label: string) =>
+      builder
+        .build({ agentName, agentSystemPrompt: 'p', manifest: makeManifest(), messages: [] })
+        .systemPrompt.split('\n')
+        .find((l) => l.startsWith(`- **${label}**`)) ?? '';
+    expect(skipLine('Ghostlight', 'Skip')).toContain('`chapters/*/notes.md`');
+    expect(skipLine('Lumen', 'Read if relevant to this task')).toContain('`chapters/*/notes.md`');
+  });
+
   it('omits read guidance for non-creative agents and shows the empty-book note', () => {
     const result = builder.build({
       agentName: 'Wrangler',

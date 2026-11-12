@@ -4,6 +4,35 @@ All notable changes to Novel Engine are documented here.
 
 ---
 
+## [2026-11-12] — Multi-call synthesis gets the agent prompt; read steps keep the agent's reading rules (#23)
+
+### Summary
+
+Ghostlight's, Lumen's and Sable's multi-call runs wrote their final reports under a generic ~1 KB "careful manuscript reader" prompt, because the synthesis steps were marked `lightweightPrompt`. Spike #22 measured every such spawn at 1,090 bytes. The synthesis steps now get the agent's full prompt through `ContextBuilder`. Read steps keep the light prompt but now carry the agent's own reading rules. Ghostlight's read step had opened chapter `notes.md` files, which a cold reader must never see, and Lumen's never read the notes its prompt requires. Chapter notes are now in `AGENT_READ_GUIDANCE`, filtered out of Ghostlight's file list, and listed next to each draft for Lumen and Sable.
+
+### Added
+- `src/application/context/readRules.ts` — `matchesReadRule`, `getReadGuidance`, `isNeverRead`, `filterNeverRead`, `chapterNotesRule`. Path matching for `AGENT_READ_GUIDANCE` entries (exact, `dir/` prefix, `*` single segment).
+- `src/application/context/readRules.test.ts` — Matcher and per-agent rule tests.
+
+### Changed
+- `src/domain/constants.ts` — Added `CHAPTER_NOTES_PATTERN` (`'chapters/*/notes.md'`): in Ghostlight's `neverRead`, in Lumen's and Sable's `readIfRelevant`. Removed `lightweightPrompt: true` from `sable-synthesis`, `lumen-synthesis` and `ghostlight-synthesis`. Lumen and Sable read-step prompts now say to read "the chapter files and notes listed above". Ghostlight read-step prompts add "Do NOT open any `notes.md` file".
+- `src/domain/types.ts` — `MultiCallStep.lightweightPrompt` doc comment: read steps only.
+- `src/application/MultiCallOrchestrator.ts` — `buildLightweightSystemPrompt(manifest, agent)` names the agent and role, drops `neverRead` files from "Available Files", and adds a `## Reading Rules` section. `computeChapterBatches()` takes the agent name and lists each chapter's `notes.md` under its draft when the agent's guidance reads notes. New `buildStepInstructions()` is passed as `purposeInstructions` to every full-prompt step (analysis and synthesis). It says the step's file list overrides the agent's standalone workflow, that no author is present to approve writes, and which file the step must write. This also applies to the lens/analysis steps and Forge's steps, which already had the full prompt.
+- `src/application/MultiCallOrchestrator.test.ts` — Tests that synthesis steps for Ghostlight, Lumen and Sable carry the agent prompt and step instructions, that Ghostlight's read step neither lists nor names chapter notes, and that Lumen's and Sable's read steps list them.
+- `src/application/ContextBuilder.test.ts` — The chapter-notes rule renders in chat read guidance.
+- `src/domain/constants.test.ts` — Invariant: only dynamic read steps may be lightweight; no synthesis step is.
+- `docs/architecture/APPLICATION.md`, `docs/architecture/DOMAIN.md`, `docs/architecture/ARCHITECTURE.md` — Documented the above.
+
+### Architecture Impact
+- New application helper module: `MultiCallOrchestrator` → `context/readRules` → `AGENT_READ_GUIDANCE`.
+- Chat context for Ghostlight, Lumen and Sable now includes the chapter-notes rule in "Context Loading Guidance".
+- No IPC, schema or DI changes.
+
+### Migration Notes
+- None. Synthesis spawns grow from ~1 KB to the agent prompt's size (~16–22 KB plus manifest), so they cost more input tokens per run.
+
+---
+
 ## [2026-11-05] — Fork setup: CI workflow and fork conventions
 
 ### Summary

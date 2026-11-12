@@ -289,6 +289,16 @@ describe('AGENT_MULTI_CALL_STEPS', () => {
     }
   });
 
+  it('only read steps use the lightweight prompt — analysis and synthesis get the agent prompt (#23)', () => {
+    for (const steps of Object.values(AGENT_MULTI_CALL_STEPS)) {
+      for (const step of steps) {
+        if (!step.lightweightPrompt) continue;
+        expect(step.isSynthesis, `${step.id} is synthesis but lightweight`).toBe(false);
+        expect(step.dynamic, `${step.id} is lightweight but not a chapter read step`).toBe(true);
+      }
+    }
+  });
+
   it('each schema ends with exactly one synthesis step that writes a real output file', () => {
     for (const [agent, steps] of Object.entries(AGENT_MULTI_CALL_STEPS)) {
       const synthesis = steps.filter((s) => s.isSynthesis);

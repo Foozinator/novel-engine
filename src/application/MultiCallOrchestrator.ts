@@ -26,6 +26,7 @@ import {
   MULTI_CALL_TARGET_WORDS_PER_BATCH,
 } from '@domain/constants';
 import { ContextBuilder } from './ContextBuilder';
+import { chapterNotesRule, filterNeverRead, getReadGuidance } from './context/readRules';
 import { StreamManager } from './StreamManager';
 import { resolveThinkingBudget } from './thinkingBudget';
 
@@ -139,7 +140,7 @@ export class MultiCallOrchestrator {
     }
 
     // Compute chapter batches for the (possibly expanded) dynamic steps
-    const chapterBatches = this.computeChapterBatches(manifest, expandedSteps);
+    const chapterBatches = this.computeChapterBatches(manifest, expandedSteps, agentName);
 
     const allChangedFiles: string[] = [];
 
@@ -327,15 +328,20 @@ export class MultiCallOrchestrator {
   }
 
   /**
-   * Build a minimal system prompt for lightweight read-and-track steps.
+   * Build a minimal system prompt for lightweight chapter read steps.
    *
    * Skips the full agent markdown (developmental editing framework, lens
-   * definitions, etc.) and provides only essential instructions: the book
-   * metadata, file manifest, and file-writing instructions.
+   * definitions, etc.) but keeps the agent's own reading rules from
+   * AGENT_READ_GUIDANCE: files it must never read are left out of the
+   * file listing and named explicitly, and the chapter-notes rule is
+   * spelled out (Ghostlight never sees notes; Lumen and Sable read them).
    */
-  private buildLightweightSystemPrompt(manifest: ProjectManifest): string {
+  private buildLightweightSystemPrompt(manifest: ProjectManifest, agent: Agent): string {
+    const guidance = getReadGuidance(agent.name);
+    const notesRule = chapterNotesRule(agent.name);
+
     const lines: string[] = [];
-    lines.push('You are a careful manuscript reader. Your job is to read chapters and produce structured tracking notes.');
+    lines.push(`You are ${agent.name} (${agent.role}). Your job in this step is to read chapters and produce structured tracking notes.`);
     lines.push('');
     lines.push(`## Active Book`);
     lines.push(`- **Title**: ${manifest.meta.title}`);
@@ -344,9 +350,20 @@ export class MultiCallOrchestrator {
     lines.push(`- **Total words**: ${manifest.totalWordCount.toLocaleString()}`);
     lines.push('');
     lines.push('## Available Files');
-    for (const f of manifest.files) {
+    for (const f of filterNeverRead(manifest.files, agent.name)) {
       lines.push(`- \`${f.path}\` (${f.wordCount.toLocaleString()} words)`);
     }
+    lines.push('');
+    lines.push('## Reading Rules');
+    if (guidance && guidance.neverRead.length > 0) {
+      lines.push(`- **Never read**: ${guidance.neverRead.map((f) => `\`${f}\``).join(', ')}`);
+    }
+    if (notesRule === 'never') {
+      lines.push('- **Chapter notes**: Never open any `notes.md` file. You read as a first reader, and a first reader does not see the author\'s notes.');
+    } else if (notesRule === 'read') {
+      lines.push('- **Chapter notes**: Before each chapter, read its `notes.md` if your prompt lists one. It records the author\'s intentional choices and known issues — do not report those as problems.');
+    }
+    lines.push('- Read only the files your prompt lists (plus any prior batch tracker it names).');
     lines.push('');
     lines.push('## Instructions');
     lines.push('- Use the Read tool to read chapter files.');
@@ -355,6 +372,25 @@ export class MultiCallOrchestrator {
     lines.push('- Do NOT skip chapters. Read every file listed in your prompt.');
     lines.push('- Be concise in your notes — bullet points, not paragraphs.');
     return lines.join('\n');
+  }
+
+  /**
+   * Instructions appended to the full agent prompt for analysis and
+   * synthesis steps. The agent prompt describes its whole standalone
+   * workflow; inside a multi-call run, the step's own instructions and
+   * file list take precedence, and there is no author to approve writes.
+   */
+  private buildStepInstructions(step: MultiCallStep, stepNum: number, totalSteps: number): string {
+    const target = step.scratchFile ?? step.outputFile;
+    return [
+      `## Multi-Call Step ${stepNum} of ${totalSteps}: ${step.label}`,
+      '',
+      `This is one automated step of a longer pass. Intermediate results from this pass are saved under \`${MULTI_CALL_SCRATCH_DIR}/\`.`,
+      '',
+      '- Follow the instructions in the user message for this step. Where they say which files to read, that list replaces the reading workflow and read guidance above.',
+      '- No author is present to approve writes in this step. Write the files the step names without asking, then stop.',
+      ...(target ? [`- This step is not complete until \`${target}\` is written.`] : []),
+    ].join('\n');
   }
 
   /**
@@ -413,7 +449,7 @@ export class MultiCallOrchestrator {
     // Build system prompt: lightweight for read steps, full for analysis/synthesis
     let systemPrompt: string;
     if (step.lightweightPrompt) {
-      systemPrompt = this.buildLightweightSystemPrompt(manifest);
+      systemPrompt = this.buildLightweightSystemPrompt(manifest, agent);
     } else {
       // Author-edits section: only Verity revises chapters, so only Verity needs it
       let authorEditsSection: string | undefined;
@@ -435,6 +471,7 @@ export class MultiCallOrchestrator {
         thinkingBudget,
         maxContextTokens: modelContextWindow,
         authorEditsSection,
+        purposeInstructions: this.buildStepInstructions(step, stepNum, totalSteps),
       });
       systemPrompt = assembled.systemPrompt;
     }
@@ -711,6 +748,7 @@ export class MultiCallOrchestrator {
   private computeChapterBatches(
     manifest: ProjectManifest,
     steps: MultiCallStep[],
+    agentName: AgentName,
   ): Map<string, string> {
     const dynamicSteps = steps.filter(s => s.dynamic && !s.isSynthesis);
     if (dynamicSteps.length === 0) return new Map();
@@ -746,6 +784,15 @@ export class MultiCallOrchestrator {
       batches.push(currentBatch);
     }
 
+    // Agents whose guidance reads chapter notes (Lumen, Sable) get each
+    // chapter's notes.md listed next to its draft. Ghostlight never does.
+    const listNotes = chapterNotesRule(agentName) === 'read';
+    const notesPaths = new Map(
+      manifest.files
+        .filter(f => f.path.startsWith('chapters/') && f.path.endsWith('/notes.md'))
+        .map(f => [f.path, f.wordCount] as const),
+    );
+
     // Map batch content to dynamic step IDs
     const result = new Map<string, string>();
     for (let i = 0; i < dynamicSteps.length; i++) {
@@ -753,7 +800,10 @@ export class MultiCallOrchestrator {
       const listing = batch
         .map(ch => {
           const name = ch.path.replace('chapters/', '').replace('/draft.md', '');
-          return `- \`${ch.path}\` — ${name} (${ch.wordCount.toLocaleString()} words)`;
+          const entry = `- \`${ch.path}\` — ${name} (${ch.wordCount.toLocaleString()} words)`;
+          const notesPath = ch.path.replace(/\/draft\.md$/, '/notes.md');
+          if (!listNotes || !notesPaths.has(notesPath)) return entry;
+          return `${entry}\n  - notes: \`${notesPath}\` (${notesPaths.get(notesPath)!.toLocaleString()} words)`;
         })
         .join('\n');
 
