@@ -4,6 +4,26 @@ All notable changes to Novel Engine are documented here.
 
 ---
 
+## [2026-11-12] — Auto-save fallback no longer writes chat replies into phase output files (#8)
+
+### Summary
+
+The post-stream fallback in `ChatService` wrote a pipeline agent's reply text into any missing phase output file whenever the turn made no Write/Edit calls. A Forge turn in Fix Planning that answered in chat, or archived files with `mv`, could put a chat reply into `source/revision-prompts.md` while Forge was holding that file until the author answered Phase 0. The only sign was a status line. The fallback now runs only for non-Claude-CLI providers, only when the turn made no tool calls at all, and only when none of the phase's output files has content yet. When it does write, it emits a `warning` instead of a `status`.
+
+### Changed
+- `src/application/ChatService.ts` — `sendMessage()` computes `fallbackOutputFiles` (empty for Claude CLI) and wraps `onEvent` to record any `toolUse` event. The `onDone` and `onError` hooks extract only when `fallbackOutputFiles` is set and no tool call was seen. This replaces the `done.filesTouched` check. `extractResponseToFiles()` now skips if any output file is populated, where before it filled the missing subset. It emits a `warning` through the new module helper `autoSaveNotice()` instead of a `status`. Moved the method's orphaned JSDoc onto it.
+- `src/domain/constants.ts` — `PHASE_OUTPUT_FILES` doc comment describes the new extraction conditions.
+- `src/application/ChatService.test.ts` — The harness takes `providerId`. Added tests for: Claude CLI never auto-saving (done and error paths), a tool call suppressing extraction, the issue's repro (Forge with `project-tasks.md` present doesn't create `revision-prompts.md`, on both done and error), and the Forge two-file split still working when both files are missing. The existing auto-save test expects the `warning`.
+- `docs/architecture/APPLICATION.md` — Rewrote the "Pipeline file fallback" description.
+
+### Architecture Impact
+- None — no wiring changes. The auto-save notice moved from a `status` to a `warning` StreamEvent; both already exist.
+
+### Migration Notes
+- None. Files that earlier auto-saves already wrote are not touched; check `source/revision-prompts.md` in books that went through Fix Planning or Revision Plan.
+
+---
+
 ## [2026-11-12] — Fable access check runs on demand only, never at launch (#16)
 
 ### Summary

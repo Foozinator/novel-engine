@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationPurpose, PipelinePhaseId, StreamEvent } from '@domain/types';
-import { AGENT_REGISTRY, DEFAULT_SETTINGS } from '@domain/constants';
+import { AGENT_REGISTRY, CLAUDE_CLI_PROVIDER_ID, DEFAULT_SETTINGS } from '@domain/constants';
 import { ChatService } from './ChatService';
 import { StreamManager } from './StreamManager';
 import { makeDb } from '../test/db';
@@ -24,13 +24,13 @@ const MODEL = DEFAULT_SETTINGS.model;
 
 type Harness = ReturnType<typeof makeHarness>;
 
-function makeHarness(opts: { fsFiles?: Record<string, string>; registryModels?: string[] } = {}) {
+function makeHarness(opts: { fsFiles?: Record<string, string>; registryModels?: string[]; providerId?: string } = {}) {
   const db = makeDb();
   const settings = makeFakeSettings();
   const agents = makeFakeAgents();
-  const provider = makeScriptedProvider();
+  const provider = makeScriptedProvider({ providerId: opts.providerId });
   const registry = makeFakeRegistry(provider, {
-    models: (opts.registryModels ?? [MODEL]).map((id) => makeModelInfo(id)),
+    models: (opts.registryModels ?? [MODEL]).map((id) => makeModelInfo(id, provider.providerId)),
   });
   const fs = makeFakeFs(opts.fsFiles ?? { 'source/pitch.md': 'a pitch' });
   const recorder = makeUsageRecorder();
@@ -254,8 +254,8 @@ describe('post-stream extraction fallback', () => {
     expect(h.fs.files.get('test-book/source/pitch.md')).toBe('# The Pitch\n\nA great concept.');
     expect(events).toContainEqual({ type: 'filesChanged', paths: ['source/pitch.md'] });
     expect(events).toContainEqual({
-      type: 'status',
-      message: expect.stringContaining('Auto-saved response to source/pitch.md'),
+      type: 'warning',
+      message: expect.stringContaining("Auto-saved the agent's reply to source/pitch.md"),
     });
   });
 
@@ -274,6 +274,100 @@ describe('post-stream extraction fallback', () => {
       type: 'status',
       message: expect.stringContaining('did not contain the expected document format'),
     });
+  });
+
+  const autoSaveWarning = {
+    type: 'warning',
+    message: expect.stringContaining('Auto-saved'),
+  };
+
+  it('never auto-saves for Claude CLI, even when the output file is missing', async () => {
+    h.db.close();
+    h = makeHarness({ fsFiles: {}, providerId: CLAUDE_CLI_PROVIDER_ID });
+    events = [];
+    await pipelineSend('Spark', 'pitch', 'Before I pitch, what genre are you after?');
+
+    expect(h.fs.files.has('test-book/source/pitch.md')).toBe(false);
+    expect(events).not.toContainEqual(autoSaveWarning);
+  });
+
+  it('skips extraction when the turn made any tool call (e.g. Bash), even with no Write/Edit', async () => {
+    h.db.close();
+    h = makeHarness({ fsFiles: {} });
+    events = [];
+    const conversationId = await newConversation('pipeline', 'Spark', 'pitch');
+    h.provider.scriptNext([
+      { type: 'toolUse', tool: { toolName: 'Bash', toolId: 't1', status: 'complete' } },
+      { type: 'textDelta', text: 'Archived the old files.' },
+      { type: 'done', inputTokens: 1, outputTokens: 1, thinkingTokens: 0, filesTouched: {} },
+    ]);
+    await send(conversationId, { agentName: 'Spark', message: 'Go.' });
+
+    expect(h.fs.files.has('test-book/source/pitch.md')).toBe(false);
+    expect(events).not.toContainEqual(autoSaveWarning);
+  });
+
+  // Forge routes first pipeline messages to MultiCallOrchestrator, so seed a
+  // prior message to reach the normal single-call path.
+  async function forgeFollowUp(script: StreamEvent[]) {
+    const conversationId = await newConversation('pipeline', 'Forge', 'revision-plan-2');
+    h.db.saveMessage({ conversationId, role: 'assistant', content: 'Earlier turn.', thinking: '' });
+    h.provider.scriptNext(script);
+    await send(conversationId, { agentName: 'Forge', message: 'What do you need from me?' });
+  }
+
+  it('does not fill a missing Forge file while the other one is populated (issue #8 repro)', async () => {
+    h.db.close();
+    h = makeHarness({ fsFiles: { 'source/project-tasks.md': '# Tasks' } });
+    events = [];
+    await forgeFollowUp([
+      { type: 'textDelta', text: 'Please answer the Phase 0 decisions first.' },
+      { type: 'done', inputTokens: 1, outputTokens: 1, thinkingTokens: 0, filesTouched: {} },
+    ]);
+
+    expect(h.fs.files.has('test-book/source/revision-prompts.md')).toBe(false);
+    expect(h.fs.files.get('test-book/source/project-tasks.md')).toBe('# Tasks');
+    expect(events).not.toContainEqual(autoSaveWarning);
+  });
+
+  it('still splits a Forge reply across both files when neither exists', async () => {
+    h.db.close();
+    h = makeHarness({ fsFiles: {} });
+    events = [];
+    await forgeFollowUp([
+      { type: 'textDelta', text: '# Tasks\n\n- fix it\n\n## source/revision-prompts.md\n\n# Prompts\n' },
+      { type: 'done', inputTokens: 1, outputTokens: 1, thinkingTokens: 0, filesTouched: {} },
+    ]);
+
+    expect(h.fs.files.get('test-book/source/project-tasks.md')).toContain('# Tasks');
+    expect(h.fs.files.get('test-book/source/revision-prompts.md')).toContain('# Prompts');
+    expect(events).toContainEqual(autoSaveWarning);
+  });
+
+  it('error path: does not fill a missing Forge file while the other one is populated', async () => {
+    h.db.close();
+    h = makeHarness({ fsFiles: { 'source/project-tasks.md': '# Tasks' } });
+    events = [];
+    await forgeFollowUp([
+      { type: 'textDelta', text: 'Partial chat reply.' },
+      { type: 'error', message: 'connection dropped' },
+    ]);
+
+    expect(h.fs.files.has('test-book/source/revision-prompts.md')).toBe(false);
+  });
+
+  it('error path: never auto-saves for Claude CLI', async () => {
+    h.db.close();
+    h = makeHarness({ fsFiles: {}, providerId: CLAUDE_CLI_PROVIDER_ID });
+    events = [];
+    const conversationId = await newConversation('pipeline', 'Spark', 'pitch');
+    h.provider.scriptNext([
+      { type: 'textDelta', text: '# The Pitch' },
+      { type: 'error', message: 'connection dropped' },
+    ]);
+    await send(conversationId, { agentName: 'Spark', message: 'Go.' });
+
+    expect(h.fs.files.has('test-book/source/pitch.md')).toBe(false);
   });
 });
 

@@ -113,8 +113,9 @@ export const PIPELINE_PHASES: { id: PipelinePhaseId; label: string; agent: Agent
  * Maps pipeline phases to the output file(s) each agent is expected to write.
  *
  * Used by:
- * - Post-stream file extraction: when a non-tool-use provider finishes a
- *   pipeline conversation, the response text is written to these paths.
+ * - Post-stream file extraction: when a non-Claude-CLI pipeline turn makes
+ *   no tool calls and none of these paths has content yet, the response
+ *   text is written to them.
  * - Capability guard: ChatService warns the user when the active provider
  *   lacks tool-use and these files will be auto-extracted instead.
  *
