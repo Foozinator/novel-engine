@@ -19,6 +19,12 @@ import {
 } from '@domain/constants';
 import { TokenEstimator } from './context/TokenEstimator';
 
+/** Guidance name of the app-level author profile. */
+const AUTHOR_PROFILE_FILE = 'author-profile.md';
+
+/** Cap on the inlined author profile, so a runaway file can't crowd out the context. */
+export const AUTHOR_PROFILE_MAX_WORDS = 4000;
+
 /**
  * ContextBuilder — Builds a lean system prompt with a file manifest
  * and compacts conversation history using dynamic, token-budget-aware rules.
@@ -46,19 +52,34 @@ export class ContextBuilder {
     purposeInstructions?: string;
     thinkingBudget?: number;
     authorProfilePath?: string;
+    /** Author profile text, read by the caller when
+     *  `ContextBuilder.wantsAuthorProfile(agentName)` is true. Non-empty →
+     *  inlined into the system prompt. Empty string → the profile doesn't
+     *  exist, so it's dropped from the read guidance. Undefined → the
+     *  guidance points at `authorProfilePath` as before. */
+    authorProfileContent?: string;
     seriesBiblePath?: string;
     maxContextTokens?: number;
     authorEditsSection?: string;
   }): AssembledContext {
-    const { agentName, agentSystemPrompt, manifest, messages, purposeInstructions, thinkingBudget, authorProfilePath, seriesBiblePath, maxContextTokens, authorEditsSection } = params;
+    const { agentName, agentSystemPrompt, manifest, messages, purposeInstructions, thinkingBudget, authorProfilePath, authorProfileContent, seriesBiblePath, maxContextTokens, authorEditsSection } = params;
 
     // 1. Build file manifest section
     const manifestSection = this.buildManifestSection(manifest);
 
-    // 2. Build read guidance section (only for creative agents)
-    // Replace bare 'author-profile.md' with absolute path so the agent can find it
-    let guidanceSection = this.buildReadGuidance(agentName);
-    if (guidanceSection && authorProfilePath) {
+    // 2. Build read guidance section (only for creative agents).
+    // The author profile lives outside the book directory, where Bash can't
+    // reach it. When the caller supplied its content, inline it and say so in
+    // the guidance; when it's missing, leave it out of the guidance;
+    // otherwise point at its absolute path.
+    // Only agents whose guidance asks for the profile get it inlined.
+    const profileText = ContextBuilder.wantsAuthorProfile(agentName) ? authorProfileContent?.trim() : undefined;
+    const authorProfileSection = profileText ? this.buildAuthorProfileSection(profileText) : null;
+    let guidanceSection = this.buildReadGuidance(agentName, (file) => {
+      if (file !== AUTHOR_PROFILE_FILE || profileText === undefined) return `\`${file}\``;
+      return profileText ? `the author profile (included below — don't read it)` : null;
+    });
+    if (guidanceSection && authorProfilePath && profileText === undefined) {
       guidanceSection = guidanceSection.replace(/`author-profile\.md`/g, `\`${authorProfilePath}\``);
     }
 
@@ -67,14 +88,17 @@ export class ContextBuilder {
       guidanceSection = guidanceSection.replace(/`series-bible\.md`/g, `\`${seriesBiblePath}\``);
     }
 
-    // 3. Build file-writing instructions
+    // 3. Build file-writing and tool-use instructions
     const writeInstructions = this.buildFileWriteInstructions();
+    const toolUseInstructions = this.buildToolUseInstructions();
 
     // 4. Assemble full system prompt
     const sections = [agentSystemPrompt, '---', manifestSection];
     if (guidanceSection) sections.push(guidanceSection);
+    if (authorProfileSection) sections.push(authorProfileSection);
     if (authorEditsSection) sections.push(authorEditsSection);
     sections.push(writeInstructions);
+    sections.push(toolUseInstructions);
     if (seriesBiblePath) {
       sections.push(`### Series Context\nThis book is part of a series. The shared series bible is at: \`${seriesBiblePath}\`\nRead it for cross-volume character details, world rules, and timeline.`);
     }
@@ -95,7 +119,7 @@ export class ContextBuilder {
     const conversationMessages = this.compactConversation(messages, turnBudgetTokens);
 
     // 7. Build diagnostics
-    const addedContent = [manifestSection, guidanceSection ?? '', writeInstructions].join('\n');
+    const addedContent = [manifestSection, guidanceSection ?? '', authorProfileSection ?? '', writeInstructions, toolUseInstructions].join('\n');
     const manifestTokens = this.tokenEstimator.estimate(addedContent);
 
     const diagnostics: ContextDiagnostics = {
@@ -144,11 +168,22 @@ export class ContextBuilder {
    * Build per-agent read guidance so the agent knows which files
    * are most relevant to its role.
    */
-  private buildReadGuidance(agentName: AgentName): string | null {
+  private buildReadGuidance(
+    agentName: AgentName,
+    renderFile: (file: string) => string | null = (file) => `\`${file}\``,
+  ): string | null {
     if (!CREATIVE_AGENT_NAMES.includes(agentName as CreativeAgentName)) return null;
 
-    const guidance = AGENT_READ_GUIDANCE[agentName as CreativeAgentName];
-    if (!guidance) return null;
+    const raw = AGENT_READ_GUIDANCE[agentName as CreativeAgentName];
+    if (!raw) return null;
+    const render = (files: string[]) =>
+      files.map(renderFile).filter((f): f is string => f !== null);
+    const guidance = {
+      alwaysRead: render(raw.alwaysRead),
+      readIfRelevant: render(raw.readIfRelevant),
+      readAfter: render(raw.readAfter ?? []),
+      neverRead: render(raw.neverRead),
+    };
 
     const lines: string[] = [];
     lines.push('## Context Loading Guidance');
@@ -157,22 +192,56 @@ export class ContextBuilder {
     lines.push('');
 
     if (guidance.alwaysRead.length > 0) {
-      lines.push(`- **Always read**: ${guidance.alwaysRead.map((f) => `\`${f}\``).join(', ')}`);
+      lines.push(`- **Always read**: ${guidance.alwaysRead.join(', ')}`);
     }
     if (guidance.readIfRelevant.length > 0) {
-      lines.push(`- **Read if relevant to this task**: ${guidance.readIfRelevant.map((f) => `\`${f}\``).join(', ')}`);
+      lines.push(`- **Read if relevant to this task**: ${guidance.readIfRelevant.join(', ')}`);
     }
-    if (guidance.readAfter && guidance.readAfter.length > 0) {
-      lines.push(`- **Read only after your main pass is done** (the author's stated intent, to check your findings against, not a guide to read by): ${guidance.readAfter.map((f) => `\`${f}\``).join(', ')}`);
+    if (guidance.readAfter.length > 0) {
+      lines.push(`- **Read only after your main pass is done** (the author's stated intent, to check your findings against, not a guide to read by): ${guidance.readAfter.join(', ')}`);
     }
     if (guidance.neverRead.length > 0) {
-      lines.push(`- **Skip** (not your domain): ${guidance.neverRead.map((f) => `\`${f}\``).join(', ')}`);
+      lines.push(`- **Skip** (not your domain): ${guidance.neverRead.join(', ')}`);
     }
 
     lines.push('');
     lines.push('Read the files you need before responding. Use the LS tool to explore chapter directories if needed.');
 
     return lines.join('\n');
+  }
+
+  /**
+   * Whether this agent's read guidance asks for the author profile
+   * (always or if relevant). Callers use this to decide whether to read the
+   * profile and pass it as `authorProfileContent`.
+   */
+  static wantsAuthorProfile(agentName: AgentName): boolean {
+    if (!CREATIVE_AGENT_NAMES.includes(agentName as CreativeAgentName)) return false;
+    const guidance = AGENT_READ_GUIDANCE[agentName as CreativeAgentName];
+    return guidance.alwaysRead.includes(AUTHOR_PROFILE_FILE) || guidance.readIfRelevant.includes(AUTHOR_PROFILE_FILE);
+  }
+
+  /** The author profile, inlined. Long profiles are cut at AUTHOR_PROFILE_MAX_WORDS. */
+  private buildAuthorProfileSection(content: string): string {
+    const words = content.split(/\s+/);
+    const body = words.length > AUTHOR_PROFILE_MAX_WORDS
+      ? `${words.slice(0, AUTHOR_PROFILE_MAX_WORDS).join(' ')}\n\n*[Author profile truncated at ${AUTHOR_PROFILE_MAX_WORDS} words.]*`
+      : content;
+    return `## Author Profile\n\n${body}`;
+  }
+
+  /**
+   * Tool-use efficiency rules appended to every agent's system prompt.
+   * Every turn re-sends the whole context, so fewer turns cost less.
+   */
+  private buildToolUseInstructions(): string {
+    return `## Tool Use
+
+Every turn re-sends the whole conversation, so work in as few turns as you can:
+- Make independent tool calls together in one turn: read all the files you need at once, run several Greps at once.
+- Read a file whole, once. Don't page through it in small chunks, and don't re-read a file that's already in this conversation. The Project Files table gives word counts.
+- When you have several changes to make to one file (ledger entries, story-bible items, line fixes), decide all of them first, then make every Edit in a single turn.
+- Don't write scripts to inspect or transform files. Use Read and Grep to inspect, Edit and Write to change.`;
   }
 
   /**

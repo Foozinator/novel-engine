@@ -4,6 +4,56 @@ All notable changes to Novel Engine are documented here.
 
 ---
 
+## [2026-11-12] — Cut Verity's first-draft cost: CLI session resume, turn budget, tool-use guidance
+
+### Summary
+
+In spike #22, drafting one chapter cost about twice as much in NE as in Claude Code, and NE hit max turns twice (#24). The transcripts showed four causes:
+- Verity's 30-turn budget ran out after the draft was written, during post-write work.
+- Each auto-resume spawned a fresh CLI process that had lost every tool result, so Verity re-read the draft, outline, ledger and bible.
+- 9 of 10 tool errors were Bash commands outside `--allowedTools`. NE's system prompt replaces Claude Code's own, so agents were never told the limits.
+- Ledger updates went in one Edit per turn.
+
+Changes:
+- `AutoTurnResumer` now continues the same CLI session with `--resume`.
+- Verity's turn budget is 60.
+- Every system prompt gets tool-use guidance, and Claude CLI prompts also get a Bash limits note.
+- The author profile is inlined for agents that use it.
+
+### Added
+- `src/application/context/readAuthorProfile.ts` — Reads the app-level author profile for inlining. Returns `''` when the file is missing or unreadable.
+
+### Changed
+- `src/domain/types.ts` — New `StreamEvent` variant `{ type: 'cliSession'; sessionId }`.
+- `src/domain/interfaces.ts` — Optional `resumeCliSessionId` on `sendMessage` params of `IClaudeClient`, `IModelProvider` and `IProviderRegistry`.
+- `src/domain/constants.ts` — Verity `maxTurns` 30 → 60. New `CLAUDE_CLI_ALLOWED_BASH_COMMANDS` and `CLAUDE_CLI_ALLOWED_TOOLS`; the `--allowedTools` string moved here from the CLI client and is unchanged.
+- `src/infrastructure/claude-cli/ClaudeCodeClient.ts`:
+  - Emits `cliSession` from the init event's `session_id`.
+  - With `resumeCliSessionId`, adds `--resume <id>` and refuses IDs that aren't UUIDs.
+  - Appends a `## Bash Limits` note to every system prompt file.
+- `src/application/AutoTurnResumer.ts`:
+  - Consumes `cliSession`.
+  - On max turns, resumes the same CLI session with only the continue instruction, falling back to text replay for providers without sessions.
+- `src/application/ContextBuilder.ts`:
+  - New `## Tool Use` section: batch independent calls, read files whole and once, make all Edits to one file in one turn, no scripts.
+  - New `authorProfileContent` param. Spark, Verity and Quill get the profile inlined, capped at 4000 words; a missing profile is dropped from the guidance.
+  - New static `wantsAuthorProfile(agentName)`.
+- `src/application/ChatService.ts` — Reads the author profile and passes it to `ContextBuilder` when the agent wants it.
+- `agents/VERITY-LEDGER.md` — Ledger Format Rules: finish the audit first, then apply every change as targeted Edits in a single turn. No parse scripts and no full-file rewrites; Write only to create a ledger. Behavioral change for Verity's post-write ledger update.
+- `src/application/AutoTurnResumer.test.ts`, `src/application/ContextBuilder.test.ts`, `src/infrastructure/claude-cli/ClaudeCodeClient.test.ts` — Tests for session resume and its fallback, the init `cliSession` event, `--resume` args, resume-ID validation, the Bash limits note, tool-use guidance, and profile inlining, omission and truncation.
+- `src/application/RevisionQueueService.run.test.ts` — Expects Verity's new 60-turn budget.
+
+### Architecture Impact
+- New `StreamEvent` variant: `cliSession`. It is internal to `AutoTurnResumer` and not forwarded to the renderer.
+- New provider param: `resumeCliSessionId`. Only `ClaudeCodeClient` honours it.
+- No new IPC channels, stores or DI wiring.
+
+### Migration Notes
+- Agent prompts are copied into `{userData}/custom-agents/` once and never overwritten. Existing installs keep their old `VERITY-LEDGER.md` until it is deleted or replaced by hand. The code-level `## Tool Use` section carries the same batching rule regardless.
+- No schema or settings changes.
+
+---
+
 ## [2026-11-12] — Ghostlight reads the voice profile after the read (#25)
 
 ### Summary

@@ -92,7 +92,7 @@ describe('runSession', () => {
     expect(session.response).toBe(FINAL_REPLY);
 
     // Verity call carried the session prompt and registry turn budget
-    expect(provider.calls[0].maxTurns).toBe(30);
+    expect(provider.calls[0].maxTurns).toBe(60);
     expect(provider.calls[0].messages[0].content).toBe('Revise chapter two.');
     expect(provider.calls[0].systemPrompt).toContain('Verity system prompt');
 

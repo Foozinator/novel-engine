@@ -27,6 +27,7 @@ import { nanoid } from 'nanoid';
 import { VERITY_PHASE_FILES, VERITY_LEDGER_FILE, AGENT_REGISTRY, PHASE_OUTPUT_FILES, PHASE_OUTPUT_CONTENT_MARKERS, CLAUDE_CLI_PROVIDER_ID, MAX_CALL_CONTEXT_TOKENS } from '@domain/constants';
 import { randomPreparingStatus, randomWaitingStatus } from '@domain/statusMessages';
 import { ContextBuilder } from './ContextBuilder';
+import { readAuthorProfile } from './context/readAuthorProfile';
 import { MultiCallOrchestrator } from './MultiCallOrchestrator';
 import { StreamManager } from './StreamManager';
 import { resolveThinkingBudget } from './thinkingBudget';
@@ -312,6 +313,9 @@ export class ChatService implements IChatService {
       }
 
       const authorProfileAbsPath = this.fs.getAuthorProfilePath();
+      const authorProfileContent = ContextBuilder.wantsAuthorProfile(agentName)
+        ? await readAuthorProfile(authorProfileAbsPath)
+        : undefined;
       const assembled = this.contextBuilder.build({
         agentName,
         agentSystemPrompt: effectiveSystemPrompt,
@@ -319,6 +323,7 @@ export class ChatService implements IChatService {
         messages,
         purposeInstructions,
         authorProfilePath: authorProfileAbsPath,
+        authorProfileContent,
         seriesBiblePath: seriesBiblePath ?? undefined,
         thinkingBudget,
         maxContextTokens: modelContextWindow,

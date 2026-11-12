@@ -104,6 +104,7 @@ src/
 │   ├── import/
 │   │   └── ChapterDetector.ts               # Pure chapter break detection utility
 │   ├── context/
+│   │   ├── readAuthorProfile.ts             # Reads the author profile for inlining ('' if missing)
 │   │   ├── readRules.ts                     # AGENT_READ_GUIDANCE path matching (never-read and read-step filters, chapter-notes rule)
 │   │   └── TokenEstimator.ts                # Pure token counting utility
 │   └── index.ts                             # Barrel export

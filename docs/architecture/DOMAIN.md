@@ -79,7 +79,7 @@ Everything in `src/domain/`. Pure TypeScript declarations — zero imports from 
 | `PersistedStreamEvent` | `{ id, sessionId, conversationId, sequenceNumber, eventType, payload, timestamp }` | Stream event replay |
 | `StreamSessionRecord` | `{ id, conversationId, agentName, model, bookSlug, startedAt, endedAt, finalStage, filesTouched, interrupted }` | Orphan recovery |
 | `StreamEventSource` | `'chat' \| 'auto-draft' \| 'hot-take' \| 'adhoc-revision' \| 'revision' \| 'audit' \| 'fix' \| 'motif-audit' \| 'query'` | IPC source discriminator |
-| `StreamEvent` | Discriminated union (17 variants: `callStart`, `status`, `modelResolved` (`model` — the concrete model an alias resolved to), `blockStart`, `thinkingDelta`, `textDelta`, `blockEnd`, `toolUse`, `filesChanged`, `done` (+`isMaxTurns?`, +`model?` resolved model), `progressStage`, `thinkingSummary`, `toolDuration`, `warning`, `error` (+`isMaxTurns?`), `multiCallProgress`, `maxTurnsResume`) | IPC streaming |
+| `StreamEvent` | Discriminated union (18 variants: `callStart`, `status`, `modelResolved` (`model` — the concrete model an alias resolved to), `cliSession` (`sessionId` — the Claude CLI session ID from the init event; consumed by `AutoTurnResumer` for `--resume`, not forwarded), `blockStart`, `thinkingDelta`, `textDelta`, `blockEnd`, `toolUse`, `filesChanged`, `done` (+`isMaxTurns?`, +`model?` resolved model), `progressStage`, `thinkingSummary`, `toolDuration`, `warning`, `error` (+`isMaxTurns?`), `multiCallProgress`, `maxTurnsResume`) | IPC streaming |
 | `ActiveStreamInfo` | `{ conversationId, agentName, model, bookSlug, startedAt, sessionId, callId, progressStage, filesTouched, thinkingBuffer, textBuffer }` | Renderer refresh recovery |
 
 ### Model Providers
@@ -366,7 +366,7 @@ Implemented by: `ClaudeCodeClient` (`src/infrastructure/claude-cli/`)
 
 | Method | Signature | Returns |
 |--------|-----------|---------|
-| `sendMessage` | `(params) => Promise<void>` | Streams events via onEvent callback |
+| `sendMessage` | `(params) => Promise<void>` | Streams events via onEvent callback. Optional `resumeCliSessionId` continues an earlier provider session (`messages` then holds only the new user turn); only providers that emit `cliSession` honour it |
 | `abortStream` | `(conversationId) => void` | SIGTERM then SIGKILL |
 | `isAvailable` | `() => Promise<boolean>` | CLI accessible check |
 | `invalidateAvailabilityCache` | `() => void` | Forces re-check |
@@ -381,7 +381,7 @@ The core abstraction for all AI backends. Providers declare capabilities so serv
 |-------------------|-----------|---------|
 | `providerId` | `readonly ProviderId` | Stable ID matching ProviderConfig.id |
 | `capabilities` | `readonly ProviderCapability[]` | What the provider supports |
-| `sendMessage` | `(params) => Promise<void>` | Streams events via onEvent callback |
+| `sendMessage` | `(params) => Promise<void>` | Streams events via onEvent callback. Optional `resumeCliSessionId` continues an earlier provider session (`messages` then holds only the new user turn); only providers that emit `cliSession` honour it |
 | `abortStream` | `(conversationId) => void` | Kill active stream |
 | `isAvailable` | `() => Promise<boolean>` | Backend reachable check |
 | `invalidateAvailabilityCache` | `() => void` | Force re-check |
@@ -405,7 +405,7 @@ Router/manager for all configured providers. Services call with a model ID; regi
 | `checkProviderStatus` | `(providerId) => Promise<ProviderStatus>` | Availability check |
 | `getProviderConfig` | `(providerId) => ProviderConfig \| null` | — |
 | `updateProviderConfig` | `(providerId, partial) => void` | Update config |
-| `sendMessage` | `(params) => Promise<void>` | Routes to correct provider |
+| `sendMessage` | `(params) => Promise<void>` | Routes to correct provider (passes `resumeCliSessionId` through) |
 | `abortStream` | `(conversationId) => void` | Checks all providers |
 | `hasActiveProcesses` | `() => boolean` | Any provider active |
 | `hasActiveProcessesForBook` | `(bookSlug) => boolean` | Any provider active for book |
@@ -614,7 +614,7 @@ Implemented by: `QueryService` (`src/application/QueryService.ts`)
 | Agent | Filename | Role | Color | Thinking Budget | Max Turns |
 |-------|----------|------|-------|----------------|-----------|
 | Spark | SPARK.md | Story Pitch | #F59E0B | 4000 | 5 |
-| Verity | VERITY-CORE.md | Ghostwriter | #8B5CF6 | 10000 | 30 |
+| Verity | VERITY-CORE.md | Ghostwriter | #8B5CF6 | 10000 | 60 |
 | Ghostlight | GHOSTLIGHT.md | First Reader | #06B6D4 | 6000 | 15 |
 | Lumen | LUMEN.md | Developmental Editor | #10B981 | 16000 | 15 |
 | Sable | SABLE.md | Copy Editor | #EF4444 | 4000 | 20 |
@@ -659,6 +659,8 @@ Implemented by: `QueryService` (`src/application/QueryService.ts`)
 | `DEFAULT_SETTINGS` | `AppSettings` | Default values for all settings (includes `providers` and `activeProviderId`) |
 | `AVAILABLE_MODELS` | 3-element array | **(deprecated)** `opus`, `sonnet`, `haiku` aliases. Use `BUILT_IN_PROVIDER_CONFIGS[0].models` or `IProviderRegistry.listAllModels()` |
 | `CLAUDE_CLI_PROVIDER_ID` | `'claude-cli'` | Built-in Claude CLI provider ID |
+| `CLAUDE_CLI_ALLOWED_BASH_COMMANDS` | `readonly string[]` (`mkdir`, `cat`, `mv`, `cp`, `ls`, `find`, `grep`, `wc`, `head`, `tail`, `rm`, `rmdir`) | Bash commands the CLI may run without approval; also listed in the CLI's Bash Limits prompt note |
+| `CLAUDE_CLI_ALLOWED_TOOLS` | `string` | `--allowedTools` value: core tools plus `Bash(<cmd>:*)` for each allowed command |
 | `OPENCODE_CLI_PROVIDER_ID` | `'opencode-cli'` | Reserved for future OpenCode CLI provider |
 | `OLLAMA_CLI_PROVIDER_ID` | `'ollama-cli'` | Built-in Ollama provider ID |
 | `LLAMA_SERVER_PROVIDER_ID` | `'llama-server'` | Built-in llama-server provider ID |

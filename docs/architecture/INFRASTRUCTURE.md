@@ -90,6 +90,8 @@ Key behavior:
 - Parses NDJSON line-by-line from stdout
 - Maps CLI events to `StreamEvent` union variants
 - Resolved model: the `system`/`init` event's `model` (e.g. `opus` → `claude-opus-5-5`) is stored on the `StreamSessionTracker`, emitted once as `modelResolved`, and attached to `done` as `model`
+- CLI session: the `system`/`init` event's `session_id` (a UUID) is emitted as `cliSession`. With `resumeCliSessionId` set, the client adds `--resume <id>` and sends only the new user message on stdin; the CLI reloads the session's transcript, tool results included. IDs that aren't UUIDs are refused with an `error` event before spawning
+- Bash limits: a `## Bash Limits` note listing `CLAUDE_CLI_ALLOWED_BASH_COMMANDS` is appended to every system prompt file, since `--system-prompt-file` replaces Claude Code's own prompt and print mode can't approve other commands
 - `abortStream` sends SIGTERM, then SIGKILL after 2s grace period
 - `isAvailable()` caches result of `claude --version` check
 - Persists stream events to SQLite in batches (100ms flush interval, max 20, critical events flush immediately) for reduced I/O pressure
@@ -326,7 +328,8 @@ claude --output-format stream-json \
 ```
 
 - Working directory set to book path (enables tool file operations)
-- `--allowedTools` set to `Read,Write,Edit,LS,WebSearch,Bash(mkdir:*),Bash(cat:*),Bash(mv:*),Bash(cp:*),Bash(ls:*),Bash(find:*),Bash(wc:*),Bash(rm:*),Bash(rmdir:*)` — includes `WebSearch` for all agents
+- `--allowedTools` set to `CLAUDE_CLI_ALLOWED_TOOLS` (`src/domain/constants.ts`): `Read,Write,Edit,LS,Glob,Grep,WebSearch,WebFetch,Task,TodoWrite` plus `Bash(<cmd>:*)` for each of `mkdir cat mv cp ls find grep wc head tail rm rmdir`
+- `--resume <cliSessionId>` when `AutoTurnResumer` continues a max-turns session
 - Process spawned via `child_process.spawn`
 
 ### Streaming Protocol

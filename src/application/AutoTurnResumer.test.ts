@@ -301,4 +301,84 @@ describe('AutoTurnResumer', () => {
     expect(done).toBeDefined();
     expect((done as { isMaxTurns?: boolean }).isMaxTurns).toBe(true);
   });
+
+  describe('CLI session resume', () => {
+    type SentParams = { messages: { role: string; content: string }[]; resumeCliSessionId?: string };
+    const CLI_ID = '75ec574a-73de-429a-9e73-facdeba6f9ae';
+
+    it('continues the reported CLI session with only the resume instruction', async () => {
+      const events: StreamEvent[] = [];
+      let callCount = 0;
+      const inner = makeMockRegistry({
+        onSend: (onEvent) => {
+          callCount++;
+          onEvent({ type: 'cliSession', sessionId: CLI_ID });
+          if (callCount === 1) {
+            onEvent({ type: 'textDelta', text: 'partial work' });
+            onEvent({ type: 'error', message: 'max turns', isMaxTurns: true });
+            return Promise.reject(new Error('max turns'));
+          }
+          onEvent({ type: 'done', inputTokens: 1, outputTokens: 2, thinkingTokens: 0, filesTouched: {} });
+          return Promise.resolve();
+        },
+      });
+      const resumer = new AutoTurnResumer(inner);
+
+      await resumer.sendMessage({
+        model: 'test-model',
+        systemPrompt: 'sys',
+        messages: [{ role: 'user', content: 'earlier' }, { role: 'assistant', content: 'reply' }, { role: 'user', content: 'do work' }],
+        maxTokens: 4096,
+        maxTurns: 30,
+        conversationId: 'conv-1',
+        onEvent: (e) => events.push(e),
+      });
+
+      const calls = vi.mocked(inner.sendMessage).mock.calls.map((c) => c[0] as unknown as SentParams);
+      expect(calls).toHaveLength(2);
+      expect(calls[0].resumeCliSessionId).toBeUndefined();
+      expect(calls[0].messages).toHaveLength(3);
+      expect(calls[1].resumeCliSessionId).toBe(CLI_ID);
+      expect(calls[1].messages).toEqual([{ role: 'user', content: 'Continue where you left off. You had more work to do.' }]);
+      // cliSession is internal to the resumer
+      expect(events.filter((e) => e.type === 'cliSession')).toHaveLength(0);
+      expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+    });
+
+    it('falls back to replaying text when the provider reports no session', async () => {
+      let callCount = 0;
+      const inner = makeMockRegistry({
+        onSend: (onEvent) => {
+          callCount++;
+          if (callCount === 1) {
+            onEvent({ type: 'textDelta', text: 'partial work' });
+            onEvent({ type: 'done', inputTokens: 0, outputTokens: 0, thinkingTokens: 0, filesTouched: {}, isMaxTurns: true });
+            return Promise.resolve();
+          }
+          onEvent({ type: 'done', inputTokens: 0, outputTokens: 0, thinkingTokens: 0, filesTouched: {} });
+          return Promise.resolve();
+        },
+      });
+      const resumer = new AutoTurnResumer(inner);
+
+      await resumer.sendMessage({
+        model: 'test-model',
+        systemPrompt: 'sys',
+        messages: [{ role: 'user', content: 'do work' }],
+        maxTokens: 4096,
+        maxTurns: 30,
+        conversationId: 'conv-1',
+        onEvent: () => {},
+      });
+
+      const calls = vi.mocked(inner.sendMessage).mock.calls.map((c) => c[0] as unknown as SentParams);
+      expect(calls).toHaveLength(2);
+      expect(calls[1].resumeCliSessionId).toBeUndefined();
+      expect(calls[1].messages.map((m) => m.content)).toEqual([
+        'do work',
+        'partial work',
+        'Continue where you left off. You had more work to do.',
+      ]);
+    });
+  });
 });

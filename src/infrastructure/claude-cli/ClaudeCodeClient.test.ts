@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IDatabaseService } from '@domain/interfaces';
 import type { StreamEvent } from '@domain/types';
@@ -155,6 +156,17 @@ describe('sendMessage — happy path', () => {
     expect(events.find((e) => e.type === 'done')).toMatchObject({ model: 'claude-opus-5-5' });
   });
 
+  it('reports the CLI session ID from the init event', async () => {
+    const id = '75ec574a-73de-429a-9e73-facdeba6f9ae';
+    const promise = send();
+    const child = await fake.waitForChild();
+    child.pushStdout(ndjson([{ ...initEvent, session_id: id }, resultEvent({ result: 'ok' })]));
+    child.exit(0);
+    await promise;
+
+    expect(events.filter((e) => e.type === 'cliSession')).toEqual([{ type: 'cliSession', sessionId: id }]);
+  });
+
   it('leaves done.model unset when the init event names no model', async () => {
     const promise = send();
     const child = await fake.waitForChild();
@@ -230,6 +242,53 @@ describe('sendMessage — spawn contract', () => {
     const { args, options } = fake.lastCall();
     expect(args.join(' ')).toContain('--effort high');
     expect(options.cwd).toBe('/explicit/dir');
+
+    fake.lastChild().exit(0);
+    await promise;
+  });
+
+  it('continues a CLI session with --resume and sends only the new message', async () => {
+    const id = '75ec574a-73de-429a-9e73-facdeba6f9ae';
+    const promise = send({
+      resumeCliSessionId: id,
+      messages: [{ role: 'user', content: 'Continue where you left off.' }],
+    });
+    const child = await fake.waitForChild();
+
+    const { args } = fake.lastCall();
+    expect(args.join(' ')).toContain(`--resume ${id}`);
+    expect(args).toContain('--system-prompt-file');
+    expect(child.stdin.written).toBe('Continue where you left off.');
+
+    child.exit(0);
+    await promise;
+  });
+
+  it('refuses a resume ID that is not a CLI session UUID', async () => {
+    await send({ resumeCliSessionId: '--dangerously-skip-permissions' });
+
+    expect(fake.children.length).toBe(0);
+    expect(events).toEqual([
+      { type: 'error', message: expect.stringContaining('Invalid CLI session ID') },
+    ]);
+  });
+
+  it('passes the shared allowed-tools list, Bash limited to the allowlist', async () => {
+    const promise = send();
+    await fake.waitForChild();
+
+    const { args } = fake.lastCall();
+    const allowed = args[args.indexOf('--allowedTools') + 1];
+    expect(allowed).toContain('Read,Write,Edit');
+    expect(allowed).toContain('Bash(wc:*)');
+    expect(allowed).not.toContain('python');
+
+    // The system prompt file tells the model the same limits
+    const promptFile = args[args.indexOf('--system-prompt-file') + 1];
+    const written = await readFile(promptFile, 'utf-8');
+    expect(written.startsWith('You are a test agent.')).toBe(true);
+    expect(written).toContain('## Bash Limits');
+    expect(written).toContain('wc, head');
 
     fake.lastChild().exit(0);
     await promise;

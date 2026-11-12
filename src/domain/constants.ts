@@ -71,7 +71,7 @@ export const AGENT_READ_GUIDANCE: Record<CreativeAgentName, ReadGuidance> = {
 // Agent metadata (everything except the systemPrompt, which comes from files)
 export const AGENT_REGISTRY: Record<AgentName, Omit<AgentMeta, 'name'>> = {
   Spark:      { filename: 'SPARK.md',      role: 'Story Pitch',           color: '#F59E0B', thinkingBudget: 4000, maxTurns: 5 },
-  Verity:     { filename: 'VERITY-CORE.md', role: 'Ghostwriter',           color: '#8B5CF6', thinkingBudget: 10000, maxTurns: 30 },
+  Verity:     { filename: 'VERITY-CORE.md', role: 'Ghostwriter',           color: '#8B5CF6', thinkingBudget: 10000, maxTurns: 60 },
   Ghostlight: { filename: 'GHOSTLIGHT.md', role: 'First Reader',          color: '#06B6D4', thinkingBudget: 6000, maxTurns: 50 },
   Lumen:      { filename: 'LUMEN.md',      role: 'Developmental Editor',  color: '#10B981', thinkingBudget: 16000, maxTurns: 50 },
   Sable:      { filename: 'SABLE.md',      role: 'Copy Editor',           color: '#EF4444', thinkingBudget: 4000, maxTurns: 20 },
@@ -163,6 +163,22 @@ export const AVAILABLE_MODELS = [
 
 /** The built-in Claude CLI provider ID. Always present, cannot be removed. */
 export const CLAUDE_CLI_PROVIDER_ID: ProviderId = 'claude-cli';
+
+/**
+ * Shell commands the Claude CLI may run through Bash without approval.
+ * Print mode can't grant approval, so anything else (python, awk, sed, jq,
+ * shell variables) fails as a tool error. ContextBuilder lists these in the
+ * system prompt so agents don't waste turns on denied commands.
+ */
+export const CLAUDE_CLI_ALLOWED_BASH_COMMANDS = [
+  'mkdir', 'cat', 'mv', 'cp', 'ls', 'find', 'grep', 'wc', 'head', 'tail', 'rm', 'rmdir',
+] as const;
+
+/** Value of the CLI's `--allowedTools` flag. */
+export const CLAUDE_CLI_ALLOWED_TOOLS = [
+  'Read', 'Write', 'Edit', 'LS', 'Glob', 'Grep', 'WebSearch', 'WebFetch', 'Task', 'TodoWrite',
+  ...CLAUDE_CLI_ALLOWED_BASH_COMMANDS.map((cmd) => `Bash(${cmd}:*)`),
+].join(',');
 
 /** Reserved provider ID for OpenCode CLI (future implementation). */
 export const OPENCODE_CLI_PROVIDER_ID: ProviderId = 'opencode-cli';
