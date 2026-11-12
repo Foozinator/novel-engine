@@ -37,11 +37,17 @@ export const NO_PROGRESS_LIMIT = 2;
  * auto-resumes CLI calls when the max-turns limit is reached.
  *
  * When a provider emits `done` or `error` with `isMaxTurns: true`, this
- * wrapper suppresses the terminal event, captures the partial assistant
- * text, and re-spawns the call with:
- *   - The original messages + the partial assistant output + a "continue" instruction
+ * wrapper suppresses the terminal event and re-spawns the call with:
+ *   - If the provider reported a `cliSession` ID: the same session, continued
+ *     via `resumeCliSessionId`, with only a "continue" instruction as the new
+ *     message. The provider keeps the full transcript, tool results included,
+ *     so the model doesn't re-read files it already loaded.
+ *   - Otherwise: the original messages + the partial assistant text + a
+ *     "continue" instruction, in a fresh session (earlier tool results lost).
  *   - A higher turn budget (original + AUTO_RESUME_EXTRA_TURNS per attempt)
  *   - A fresh sessionId (for DB orphan-recovery tracking)
+ *
+ * `cliSession` events are consumed here and not forwarded.
  *
  * Safety valves:
  *   - `MAX_RESUME_ATTEMPTS` (5) — hard cap on resume attempts before
@@ -68,10 +74,14 @@ export class AutoTurnResumer implements IProviderRegistry {
     workingDir?: string;
     sessionId?: string;
     conversationId?: string;
+    resumeCliSessionId?: string;
     onEvent: (event: StreamEvent) => void;
   }): Promise<void> {
     const baseMaxTurns = params.maxTurns ?? 30;
     let currentMessages = [...params.messages];
+    // Provider session to continue on the next attempt (set after a max-turns
+    // exhaustion when the provider reported one).
+    let resumeCliSessionId = params.resumeCliSessionId;
     let attempt = 0;
 
     let totalInputTokens = 0;
@@ -128,6 +138,7 @@ export class AutoTurnResumer implements IProviderRegistry {
       let attemptOutputTokens = 0;
       let attemptThinkingTokens = 0;
       let attemptFilesTouched: FileTouchMap = {};
+      let attemptCliSessionId: string | undefined;
 
       const wrappedOnEvent = (event: StreamEvent): void => {
         if (event.type === 'textDelta') {
@@ -136,6 +147,9 @@ export class AutoTurnResumer implements IProviderRegistry {
           partialThinking += event.text;
         } else if (event.type === 'modelResolved') {
           resolvedModel = event.model;
+        } else if (event.type === 'cliSession') {
+          attemptCliSessionId = event.sessionId;
+          return;
         }
 
         if (event.type === 'done') {
@@ -170,6 +184,7 @@ export class AutoTurnResumer implements IProviderRegistry {
           messages: currentMessages,
           maxTurns: currentMaxTurns,
           sessionId: resumeSessionId,
+          resumeCliSessionId,
           onEvent: wrappedOnEvent,
         });
       } catch (err) {
@@ -255,13 +270,20 @@ export class AutoTurnResumer implements IProviderRegistry {
         `partialText=${partialText.length} chars`,
       );
 
-      if (partialText.trim()) {
+      if (attemptCliSessionId) {
+        // Continue the same provider session: it already holds the original
+        // prompt, the partial output and every tool result.
+        resumeCliSessionId = attemptCliSessionId;
+        currentMessages = [{ role: 'user' as MessageRole, content: RESUME_INSTRUCTION }];
+      } else if (partialText.trim()) {
+        resumeCliSessionId = undefined;
         currentMessages = [
           ...currentMessages,
           { role: 'assistant' as MessageRole, content: partialText },
           { role: 'user' as MessageRole, content: RESUME_INSTRUCTION },
         ];
       } else {
+        resumeCliSessionId = undefined;
         currentMessages = [
           ...currentMessages,
           { role: 'user' as MessageRole, content: RESUME_INSTRUCTION },

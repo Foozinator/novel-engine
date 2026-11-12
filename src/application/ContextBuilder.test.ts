@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Message, ProjectManifest } from '@domain/types';
-import { ContextBuilder } from './ContextBuilder';
+import { AUTHOR_PROFILE_MAX_WORDS, ContextBuilder } from './ContextBuilder';
 
 function makeManifest(files: { path: string; wordCount: number }[] = []): ProjectManifest {
   return {
@@ -71,6 +71,92 @@ describe('system prompt assembly', () => {
     expect(guidance).toContain('`/abs/author-profile.md`');
     expect(guidance).toContain('`/abs/series-bible.md`');
     expect(guidance).not.toContain('`author-profile.md`');
+  });
+
+  it('adds tool-use guidance after the file-writing section', () => {
+    const sp = builder.build({
+      agentName: 'Verity',
+      agentSystemPrompt: 'p',
+      manifest: makeManifest(),
+      messages: [],
+    }).systemPrompt;
+
+    expect(sp).toContain('## Tool Use');
+    expect(sp).toContain('in a single turn');
+    expect(sp.indexOf('## Tool Use')).toBeGreaterThan(sp.indexOf('## File Writing'));
+  });
+
+  describe('author profile', () => {
+    const guidanceOf = (sp: string) => sp.split('## Context Loading Guidance')[1].split('\n\n## ')[0];
+
+    it('inlines the profile and points the guidance at it instead of the path', () => {
+      const sp = builder.build({
+        agentName: 'Verity',
+        agentSystemPrompt: 'p',
+        manifest: makeManifest(),
+        messages: [],
+        authorProfilePath: '/abs/author-profile.md',
+        authorProfileContent: 'I write slow-burn space opera.\n',
+      }).systemPrompt;
+
+      expect(sp).toContain('## Author Profile\n\nI write slow-burn space opera.');
+      const guidance = guidanceOf(sp);
+      expect(guidance).toContain('the author profile (included below');
+      expect(guidance).not.toContain('author-profile.md');
+      expect(sp.indexOf('## Author Profile')).toBeGreaterThan(sp.indexOf('## Context Loading Guidance'));
+    });
+
+    it('drops the profile from the guidance when it is empty or missing', () => {
+      const sp = builder.build({
+        agentName: 'Verity',
+        agentSystemPrompt: 'p',
+        manifest: makeManifest(),
+        messages: [],
+        authorProfilePath: '/abs/author-profile.md',
+        authorProfileContent: '   ',
+      }).systemPrompt;
+
+      expect(sp).not.toContain('## Author Profile');
+      expect(guidanceOf(sp)).not.toMatch(/author.profile/i);
+      expect(guidanceOf(sp)).toContain('`source/pitch.md`'); // other items intact
+    });
+
+    it('never inlines the profile for agents that skip it', () => {
+      const sp = builder.build({
+        agentName: 'Ghostlight',
+        agentSystemPrompt: 'p',
+        manifest: makeManifest(),
+        messages: [],
+        authorProfilePath: '/abs/author-profile.md',
+        authorProfileContent: 'PROFILE TEXT',
+      }).systemPrompt;
+
+      expect(sp).not.toContain('PROFILE TEXT');
+      expect(guidanceOf(sp)).toContain('`/abs/author-profile.md`'); // still listed under Skip
+    });
+
+    it('truncates a profile longer than the cap', () => {
+      const long = Array.from({ length: AUTHOR_PROFILE_MAX_WORDS + 50 }, (_, i) => `w${i}`).join(' ');
+      const sp = builder.build({
+        agentName: 'Spark',
+        agentSystemPrompt: 'p',
+        manifest: makeManifest(),
+        messages: [],
+        authorProfileContent: long,
+      }).systemPrompt;
+
+      expect(sp).toContain(`w${AUTHOR_PROFILE_MAX_WORDS - 1}`);
+      expect(sp).not.toContain(`w${AUTHOR_PROFILE_MAX_WORDS} `);
+      expect(sp).toContain(`truncated at ${AUTHOR_PROFILE_MAX_WORDS} words`);
+    });
+
+    it('reports which agents want the profile', () => {
+      expect(ContextBuilder.wantsAuthorProfile('Verity')).toBe(true);
+      expect(ContextBuilder.wantsAuthorProfile('Spark')).toBe(true);
+      expect(ContextBuilder.wantsAuthorProfile('Quill')).toBe(true);
+      expect(ContextBuilder.wantsAuthorProfile('Ghostlight')).toBe(false);
+      expect(ContextBuilder.wantsAuthorProfile('Wrangler')).toBe(false);
+    });
   });
 
   it('omits read guidance for non-creative agents and shows the empty-book note', () => {

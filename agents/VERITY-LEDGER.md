@@ -69,7 +69,8 @@ After completing a chapter draft or revision:
 ### Ledger Format Rules
 
 - IDs: short lowercase alphanumeric strings, 8–12 characters (e.g., `sys_k8m2p9r4`)
-- When updating: read the current file, parse, modify, write the full JSON back.
+- When updating: read the current file once. Finish the whole post-write audit and decide every change first (new entries, `occurrences` additions, status changes, the audit-log entry). Then apply them all as targeted Edits in a single turn. Don't run scripts to parse the JSON, and don't rewrite the whole file. Use Write only to create a new ledger.
+- Keep the JSON valid: match the surrounding commas and brackets in each Edit.
 - Never delete entries. If a motif is retired, note it in the entry's `notes` field.
 - Don't create a system for fewer than 2 related entries.
 - Don't add entries for one-off descriptions. The ledger tracks **patterns**, not every metaphor.

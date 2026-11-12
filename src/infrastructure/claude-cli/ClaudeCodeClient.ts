@@ -8,7 +8,7 @@ import { nanoid } from 'nanoid';
 
 import type { IClaudeClient, IModelProvider, IDatabaseService } from '@domain/interfaces';
 import type { MessageRole, StreamEvent, ProviderCapability, ProviderId } from '@domain/types';
-import { CHARS_PER_TOKEN, CLAUDE_CLI_PROVIDER_ID } from '@domain/constants';
+import { CHARS_PER_TOKEN, CLAUDE_CLI_ALLOWED_BASH_COMMANDS, CLAUDE_CLI_ALLOWED_TOOLS, CLAUDE_CLI_PROVIDER_ID } from '@domain/constants';
 import { StreamSessionTracker } from './StreamSessionTracker';
 
 const execFileAsync = promisify(execFile);
@@ -18,6 +18,18 @@ const CLI_NOT_FOUND_MESSAGE =
 
 /** Grace period (ms) between SIGTERM and SIGKILL on abort. */
 const ABORT_KILL_GRACE_MS = 2000;
+
+/**
+ * Appended to every system prompt. --system-prompt-file replaces Claude
+ * Code's own prompt, so without this the model doesn't learn which Bash
+ * commands --allowedTools permits, and each denied command costs a turn.
+ */
+const BASH_LIMITS_NOTE = `## Bash Limits
+
+Bash runs only these commands: ${CLAUDE_CLI_ALLOWED_BASH_COMMANDS.join(', ')}. Anything else is denied, including python, awk, sed, jq, shell variables ($VAR, \${...}) and redirecting output into files. Use Read and Grep to inspect files, Edit and Write to change them, and \`wc -w\` to count words.`;
+
+/** Shape of a CLI session ID (a UUID). Checked before passing one to --resume. */
+const CLI_SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export class ClaudeCodeClient implements IClaudeClient, IModelProvider {
   readonly providerId: ProviderId = CLAUDE_CLI_PROVIDER_ID;
@@ -115,6 +127,7 @@ export class ClaudeCodeClient implements IClaudeClient, IModelProvider {
     workingDir?: string;
     sessionId?: string;
     conversationId?: string;
+    resumeCliSessionId?: string;
     onEvent: (event: StreamEvent) => void;
   }): Promise<void> {
     const { model, systemPrompt, messages, bookSlug, workingDir } = params;
@@ -209,7 +222,7 @@ export class ClaudeCodeClient implements IClaudeClient, IModelProvider {
     // --system-prompt-file, which sidesteps the argv limit on every platform.
     const systemPromptFile = path.join(os.tmpdir(), `novel-engine-sysprompt-${sessionId}.md`);
     try {
-      await writeFile(systemPromptFile, systemPrompt, 'utf-8');
+      await writeFile(systemPromptFile, `${systemPrompt}\n\n${BASH_LIMITS_NOTE}`, 'utf-8');
     } catch (err) {
       const message = `Failed to write system prompt temp file: ${err instanceof Error ? err.message : String(err)}`;
       params.onEvent({ type: 'error', message });
@@ -230,7 +243,7 @@ export class ClaudeCodeClient implements IClaudeClient, IModelProvider {
       '--model', model,
       '--max-turns', String(params.maxTurns ?? 30),
       '--system-prompt-file', systemPromptFile,
-      '--allowedTools', 'Read,Write,Edit,LS,Glob,Grep,WebSearch,WebFetch,Task,TodoWrite,Bash(mkdir:*),Bash(cat:*),Bash(mv:*),Bash(cp:*),Bash(ls:*),Bash(find:*),Bash(grep:*),Bash(wc:*),Bash(head:*),Bash(tail:*),Bash(rm:*),Bash(rmdir:*)',
+      '--allowedTools', CLAUDE_CLI_ALLOWED_TOOLS,
       '--add-dir', this.booksDir,
     ];
 
@@ -239,6 +252,19 @@ export class ClaudeCodeClient implements IClaudeClient, IModelProvider {
     // we set --effort high to enable deep reasoning.
     if (params.thinkingBudget && params.thinkingBudget > 0) {
       args.push('--effort', 'high');
+    }
+
+    // Continue an earlier CLI session (auto-resume after max turns). The CLI
+    // reloads that session's full transcript, tool results included, so the
+    // model doesn't re-read files it already has. Only IDs the CLI itself
+    // reported are accepted.
+    if (params.resumeCliSessionId) {
+      if (!CLI_SESSION_ID_PATTERN.test(params.resumeCliSessionId)) {
+        params.onEvent({ type: 'error', message: `Invalid CLI session ID for resume: ${params.resumeCliSessionId}` });
+        cleanupSystemPromptFile();
+        return;
+      }
+      args.push('--resume', params.resumeCliSessionId);
     }
 
     // Set working directory: explicit workingDir takes priority, then bookSlug-derived path
@@ -686,6 +712,12 @@ export class ClaudeCodeClient implements IClaudeClient, IModelProvider {
       if (event.subtype === 'init' && typeof model === 'string' && model && !tracker.getResolvedModel()) {
         tracker.setResolvedModel(model);
         onEvent({ type: 'modelResolved', model });
+      }
+      // The init event also carries the CLI's session ID, which the
+      // auto-resume wrapper needs to continue this session with --resume.
+      const cliSessionId = event.session_id;
+      if (event.subtype === 'init' && typeof cliSessionId === 'string' && CLI_SESSION_ID_PATTERN.test(cliSessionId)) {
+        onEvent({ type: 'cliSession', sessionId: cliSessionId });
       }
       return;
     }

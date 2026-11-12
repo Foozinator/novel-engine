@@ -170,14 +170,16 @@ Dependencies: `ISettingsService`, `IAgentService`, `IDatabaseService`, `IFileSys
 2. Build project manifest (file listing with token estimates)
 3. Apply `AGENT_READ_GUIDANCE` to determine which files to include
 4. Replace `series-bible.md` placeholder with absolute path in guidance (when book is in a series)
-5. Add "Series Context" block to system prompt with bible path (when applicable)
-6. Append manifest section to system prompt showing available files
-5. Compact conversation history using `TURN_BUDGET_THRESHOLDS`:
+5. Author profile: when the caller passes `authorProfileContent` and the agent's guidance asks for the profile (`ContextBuilder.wantsAuthorProfile(agentName)` — Spark, Verity, Quill), inline it as `## Author Profile` (capped at `AUTHOR_PROFILE_MAX_WORDS` = 4000) and list it in the guidance as "included below". Empty content drops it from the guidance; undefined content keeps the absolute-path substitution. `ChatService` reads the file with `readAuthorProfile()` (`src/application/context/readAuthorProfile.ts`)
+6. Add "Series Context" block to system prompt with bible path (when applicable)
+7. Append manifest section to system prompt showing available files
+8. Append `## File Writing` then `## Tool Use` (batch independent calls in one turn, read files whole and once, make all Edits to one file in one turn, no scripts)
+9. Compact conversation history using `TURN_BUDGET_THRESHOLDS`:
    - **Generous** (>40% free): keep all turns, strip old thinking blocks
    - **Moderate** (20-40%): keep last 8 turns, prepend summary
    - **Tight** (10-20%): keep last 4 turns, prepend summary
    - **Critical** (<10%): keep last 2 turns + brief recap
-6. Return assembled context with diagnostics
+10. Return assembled context with diagnostics
 
 ### ChapterValidator
 
@@ -515,12 +517,13 @@ Transparent decorator around `IProviderRegistry` that auto-resumes CLI calls whe
 
 | Method | What It Does |
 |--------|-------------|
-| `sendMessage(params)` | Intercepts the call — delegates to the inner registry with a wrapped `onEvent` that captures text deltas and suppresses terminal events. On `done`/`error` with `isMaxTurns: true`: accumulates tokens + file touches, appends partial assistant text + "Continue where you left off" instruction, emits `maxTurnsResume` + `warning` events, and re-spawns with fresh `sessionId` and `maxTurns + 10`. Two safety valves: `MAX_RESUME_ATTEMPTS = 5` hard cap (attempt > cap → emit `warning` + merged `done` `isMaxTurns: true` and return); `NO_PROGRESS_LIMIT = 2` consecutive zero-progress attempts (no new partial text AND no new files touched across attempts → same emit/return). On normal completion: emits a merged `done` with accumulated totals. On genuine error: forwards the error and re-throws. |
+| `sendMessage(params)` | Intercepts the call — delegates to the inner registry with a wrapped `onEvent` that captures text deltas, consumes `cliSession`, and suppresses terminal events. On `done`/`error` with `isMaxTurns: true`: accumulates tokens + file touches; if the attempt reported a `cliSession`, re-spawns with `resumeCliSessionId` and only the "Continue where you left off" instruction (the CLI keeps the transcript and tool results); otherwise appends partial assistant text + that instruction to the messages; then emits `maxTurnsResume` + `warning` events, and re-spawns with fresh `sessionId` and `maxTurns + 10`. Two safety valves: `MAX_RESUME_ATTEMPTS = 5` hard cap (attempt > cap → emit `warning` + merged `done` `isMaxTurns: true` and return); `NO_PROGRESS_LIMIT = 2` consecutive zero-progress attempts (no new partial text AND no new files touched across attempts → same emit/return). On normal completion: emits a merged `done` with accumulated totals. On genuine error: forwards the error and re-throws. |
 | All other methods | Pure delegation to the inner registry |
 
 Key behaviors:
 - Turn budget bump: `AUTO_RESUME_EXTRA_TURNS = 10` per attempt (30 → 40 → 50 → …)
 - Fresh `sessionId` per attempt (via `nanoid()`) for DB orphan-recovery tracking
+- Same provider session across attempts when the provider reports one (Claude CLI `--resume`), so a resume doesn't re-read files; text replay is the fallback for providers without sessions
 - `callStart` forwarded only from the first attempt (suppressed on resumes)
 - Token usage (`inputTokens`, `outputTokens`, `thinkingTokens`) and `filesTouched` accumulated across all attempts into the final merged `done` event
 - Intermediate `done`/`error` events are suppressed (never forwarded to the caller)

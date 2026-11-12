@@ -268,6 +268,11 @@ export type StreamEventSource = 'chat' | 'auto-draft' | 'hot-take' | 'adhoc-revi
  * `maxTurnsResume` is emitted by the auto-resume wrapper to notify the UI
  * that a re-spawn is happening (attempt number + new turn budget).
  *
+ * `cliSession` reports the provider's own session ID (Claude CLI: the
+ * `session_id` from the system init event). The auto-resume wrapper uses it
+ * to continue the same session with `--resume`, keeping earlier tool results,
+ * and does not forward it. Providers without resumable sessions never emit it.
+ *
  * `modelResolved` reports the concrete model a provider is running when the
  * requested ID was an alias (Claude CLI: `opus` → `claude-opus-5-5`, read from
  * the CLI's system init event). `done.model` carries the same value so usage
@@ -284,6 +289,7 @@ export type StreamEvent =
   | { type: 'toolUse'; tool: ToolUseInfo }
   | { type: 'filesChanged'; paths: string[] }
   | { type: 'modelResolved'; model: string }
+  | { type: 'cliSession'; sessionId: string }
   | { type: 'done'; inputTokens: number; outputTokens: number; thinkingTokens: number; filesTouched: FileTouchMap; isMaxTurns?: boolean; model?: string }
   | { type: 'progressStage'; stage: ProgressStage }
   | { type: 'thinkingSummary'; summary: ThinkingSummary }

@@ -104,7 +104,8 @@ src/
 │   ├── import/
 │   │   └── ChapterDetector.ts               # Pure chapter break detection utility
 │   ├── context/
-│   │   └── TokenEstimator.ts                # Pure token counting utility
+│   │   ├── TokenEstimator.ts                # Pure token counting utility
+│   │   └── readAuthorProfile.ts             # Reads the author profile for inlining ('' if missing)
 │   └── index.ts                             # Barrel export
 │
 ├── main/                                    # LAYER 4: Electron main process

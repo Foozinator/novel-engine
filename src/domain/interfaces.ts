@@ -292,6 +292,7 @@ export interface IClaudeClient {
     workingDir?: string;
     sessionId?: string;          // caller-provided session ID for tracking
     conversationId?: string;     // needed for event persistence
+    resumeCliSessionId?: string; // continue this CLI session (--resume); messages = only the new user turn
     onEvent: (event: StreamEvent) => void;
   }): Promise<void>;
 
@@ -342,6 +343,10 @@ export interface IModelProvider {
     workingDir?: string;
     sessionId?: string;
     conversationId?: string;
+    /** Continue this provider session instead of starting fresh. Only
+     *  providers that emit `cliSession` honour it; others ignore it.
+     *  When set, `messages` holds only the new user turn. */
+    resumeCliSessionId?: string;
     onEvent: (event: StreamEvent) => void;
   }): Promise<void>;
 
@@ -415,6 +420,8 @@ export interface IProviderRegistry {
     workingDir?: string;
     sessionId?: string;
     conversationId?: string;
+    /** See IModelProvider.sendMessage. */
+    resumeCliSessionId?: string;
     onEvent: (event: StreamEvent) => void;
   }): Promise<void>;
 
