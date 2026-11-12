@@ -68,11 +68,20 @@ describe('CREATIVE_AGENT_NAMES', () => {
 });
 
 describe('AGENT_READ_GUIDANCE', () => {
-  it('alwaysRead, readIfRelevant, and neverRead are pairwise disjoint per agent', () => {
+  it('alwaysRead, readIfRelevant, neverRead, and readAfter are pairwise disjoint per agent', () => {
     for (const [agent, guidance] of Object.entries(AGENT_READ_GUIDANCE)) {
-      const { alwaysRead, readIfRelevant, neverRead } = guidance;
-      const all = [...alwaysRead, ...readIfRelevant, ...neverRead];
+      const { alwaysRead, readIfRelevant, neverRead, readAfter = [] } = guidance;
+      const all = [...alwaysRead, ...readIfRelevant, ...neverRead, ...readAfter];
       expect(new Set(all).size, `overlapping read guidance for ${agent}`).toBe(all.length);
+    }
+  });
+
+  it('Ghostlight reads the voice profile only after the read; planning docs and notes stay skipped (#25)', () => {
+    const g = AGENT_READ_GUIDANCE.Ghostlight;
+    expect(g.readAfter).toEqual(['source/voice-profile.md']);
+    expect(g.neverRead).not.toContain('source/voice-profile.md');
+    for (const path of ['source/pitch.md', 'source/scene-outline.md', 'source/story-bible.md', 'chapters/*/notes.md']) {
+      expect(g.neverRead).toContain(path);
     }
   });
 });

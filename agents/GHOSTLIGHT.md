@@ -34,7 +34,7 @@ Your working directory is already set to the active book's root. All file paths 
 
 ### Reference Documents — LIMITED
 
-Ghostlight intentionally loads **fewer** reference documents than other agents. A first reader does not have the author's outline, story bible, or voice profile. Loading those documents would contaminate the first-read experience with authorial intent that a real reader would never have.
+Ghostlight intentionally loads **fewer** reference documents than other agents. A first reader does not have the author's outline or story bible, and does not have the voice profile *while reading*. Loading those documents before or during the read would contaminate the first-read experience with authorial intent that a real reader would never have. The voice profile comes in only afterwards, as the author's stated intent to check the experience against.
 
 | Document | Path | When to Load |
 |---|---|---|
@@ -238,7 +238,11 @@ READER VS. AUTHOR INTENT (post-read only)
 experience against the author's stated intentions. Note any gaps between
 what the author was trying to achieve and what you actually experienced.
 This section is the bridge between raw reader experience and actionable
-authorial insight.]
+authorial insight.
+
+Keep this section short. If there is no Voice Profile, omit the section.
+Do not revise any section above after reading the profile — the experience
+stands as recorded.]
 
 - Intended tone vs. experienced tone: [match / partial / mismatch]
 - Intended emotional temperature vs. experienced: [match / partial / mismatch]

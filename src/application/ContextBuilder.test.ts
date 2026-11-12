@@ -83,6 +83,21 @@ describe('system prompt assembly', () => {
     expect(skipLine('Lumen', 'Read if relevant to this task')).toContain('`chapters/*/notes.md`');
   });
 
+  it('renders readAfter files on their own post-pass line (#25)', () => {
+    const lines = (agentName: 'Ghostlight' | 'Verity') =>
+      builder
+        .build({ agentName, agentSystemPrompt: 'p', manifest: makeManifest(), messages: [] })
+        .systemPrompt.split('\n');
+    const ghostlight = lines('Ghostlight');
+    const after = ghostlight.find((l) => l.startsWith('- **Read only after your main pass is done**')) ?? '';
+    expect(after).toContain('`source/voice-profile.md`');
+    expect(after).toContain('not a guide to read by');
+    expect(ghostlight.find((l) => l.startsWith('- **Skip**'))).not.toContain('voice-profile');
+
+    // Agents without readAfter get no such line
+    expect(lines('Verity').some((l) => l.startsWith('- **Read only after'))).toBe(false);
+  });
+
   it('omits read guidance for non-creative agents and shows the empty-book note', () => {
     const result = builder.build({
       agentName: 'Wrangler',

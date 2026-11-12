@@ -104,7 +104,7 @@ src/
 │   ├── import/
 │   │   └── ChapterDetector.ts               # Pure chapter break detection utility
 │   ├── context/
-│   │   ├── readRules.ts                     # AGENT_READ_GUIDANCE path matching (never-read filter, chapter-notes rule)
+│   │   ├── readRules.ts                     # AGENT_READ_GUIDANCE path matching (never-read and read-step filters, chapter-notes rule)
 │   │   └── TokenEstimator.ts                # Pure token counting utility
 │   └── index.ts                             # Barrel export
 │

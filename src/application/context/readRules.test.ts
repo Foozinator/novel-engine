@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CHAPTER_NOTES_PATTERN } from '@domain/constants';
-import { chapterNotesRule, filterNeverRead, isNeverRead, matchesReadRule } from './readRules';
+import { chapterNotesRule, filterForReadStep, filterNeverRead, isNeverRead, isSkippedDuringRead, matchesReadRule, readAfterRules } from './readRules';
 
 describe('matchesReadRule', () => {
   it('treats a trailing slash as a directory prefix', () => {
@@ -48,5 +48,21 @@ describe('agent read rules', () => {
   it('non-creative agents have no rules', () => {
     expect(chapterNotesRule('Wrangler')).toBe('unspecified');
     expect(filterNeverRead(files, 'Wrangler')).toEqual(files);
+    expect(readAfterRules('Wrangler')).toEqual([]);
+    expect(filterForReadStep(files, 'Wrangler')).toEqual(files);
+  });
+
+  it('read steps also skip readAfter files; neverRead alone does not (#25)', () => {
+    const withProfile = [...files, { path: 'source/voice-profile.md' }];
+    expect(readAfterRules('Ghostlight')).toEqual(['source/voice-profile.md']);
+    expect(isNeverRead('Ghostlight', 'source/voice-profile.md')).toBe(false);
+    expect(isSkippedDuringRead('Ghostlight', 'source/voice-profile.md')).toBe(true);
+    expect(isSkippedDuringRead('Ghostlight', 'chapters/01-a/notes.md')).toBe(true);
+    expect(filterForReadStep(withProfile, 'Ghostlight').map((f) => f.path)).toEqual([
+      'chapters/01-a/draft.md',
+      'source/reader-report.md',
+    ]);
+    // Agents without readAfter: read-step filter equals the neverRead filter
+    expect(filterForReadStep(withProfile, 'Lumen')).toEqual(filterNeverRead(withProfile, 'Lumen'));
   });
 });
