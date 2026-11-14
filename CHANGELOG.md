@@ -4,6 +4,36 @@ All notable changes to Novel Engine are documented here.
 
 ---
 
+## [2026-11-14] — Reading font size (Ctrl+wheel) and chapter line numbers (#35)
+
+### Summary
+
+Typeset prose views (Chapter, Sources, Reports and Explorer tabs, and the Manuscript reader) had a fixed 16.5 px font. The size is now a setting, `proseFontSize`. Ctrl/Cmd + mouse wheel, Ctrl/Cmd + `=`/`-` step it by 1 px. Ctrl/Cmd + `0` resets it. Settings → Appearance → Reading has the same controls. Headings and code scale with it. A new `showChapterLineNumbers` setting (off by default) shows each block's `draft.md` source line in a left gutter. It applies in the Chapter tab and the Manuscript single-chapter reader, and the numbers match what an agent's Read tool shows. This covers the two priority items of #35. Font family selection is not done; theme already existed.
+
+### Added
+- `src/renderer/hooks/useProseZoom.ts` — Window-level non-passive `wheel` and `keydown` listeners. Updates `settingsStore` at once and persists via `settings.update` debounced 400 ms, so one wheel spin is one write. Mounted in `App.tsx`.
+- `src/renderer/hooks/useProseZoom.test.tsx` — Wheel up/down, no-Ctrl passthrough, key steps and reset, clamp, debounced single persist.
+
+### Changed
+- `src/domain/types.ts` — `AppSettings` gains `proseFontSize: number` and `showChapterLineNumbers: boolean`.
+- `src/domain/constants.ts` — `DEFAULT_SETTINGS` gets `proseFontSize: 16.5` and `showChapterLineNumbers: false`. Added `PROSE_FONT_SIZE_DEFAULT` / `_MIN` (12) / `_MAX` (28) / `_STEP` (1) and `clampProseFontSize()`.
+- `src/renderer/components/common/ProseViewer.tsx` — Font size comes from settings (inline style plus `--ne-prose-size`). Heading, code and table sizes are now em-relative (same px at the 16.5 default). Raw mode scales at 12.5/16.5. New `lineNumbers` prop. New exported `renderWithLineNumbers()` renders each top-level marked token separately and tags its opening tag with `data-line`. It locates each token in the source with `indexOf`, because marked drops link-definition tokens. CRLF is normalised.
+- `src/renderer/styles/globals.css` — `.ne-prose-lines` gutter: `[data-line]::before` shows the number in the left padding, in mono, faint ink, not selectable.
+- `src/renderer/components/Workbench/companion/ChapterTab.tsx`, `src/renderer/components/Manuscript/ManuscriptView.tsx` (chapter scope only) — Pass `lineNumbers` from `showChapterLineNumbers`.
+- `src/renderer/components/Settings/SettingsView.tsx` — New `ReadingSection` after Appearance: A−/A+/Reset font size stepper and a line-number checkbox.
+- `src/renderer/App.tsx` — Mounts `useProseZoom()`.
+- `src/renderer/components/common/ProseViewer.test.tsx` — Font size from settings and line-number tests, including a parity check against plain `marked.parse` output.
+- `src/test/novelEngineMock.ts` — `makeAppSettings` includes the two new fields.
+- `docs/architecture/DOMAIN.md`, `docs/architecture/RENDERER.md`, `docs/architecture/ARCHITECTURE.md` — New fields, constants, hook and settings section.
+
+### Architecture Impact
+- None — no wiring changes. No new IPC channels or stores; the new fields ride `settings:update`.
+
+### Migration Notes
+- None. `SettingsService` merges `DEFAULT_SETTINGS` under stored settings, so existing `settings.json` files pick up the defaults.
+
+---
+
 ## [2026-11-12] — Revision Queue panel resizes horizontally (#12)
 
 ### Summary

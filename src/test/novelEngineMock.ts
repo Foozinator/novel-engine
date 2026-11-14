@@ -74,6 +74,8 @@ export function makeAppSettings(overrides: Partial<AppSettings> = {}): AppSettin
     autoCollapseThinking: false,
     enableNotifications: false,
     theme: 'system',
+    proseFontSize: 16.5,
+    showChapterLineNumbers: false,
     initialized: true,
     authorName: 'Test Author',
     providers: [],
