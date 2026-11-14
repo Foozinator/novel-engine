@@ -352,6 +352,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoCollapseThinking: true,
   enableNotifications: true,
   theme: 'dark',
+  proseFontSize: 16.5,
+  showChapterLineNumbers: false,
   initialized: false,
   authorName: '',
   providers: BUILT_IN_PROVIDER_CONFIGS,
@@ -362,6 +364,20 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lastClaudeCliUpdateCheck: null,
   lastFableProbe: null,
 };
+
+// === Reading View ===
+
+export const PROSE_FONT_SIZE_DEFAULT = 16.5;
+export const PROSE_FONT_SIZE_MIN = 12;
+export const PROSE_FONT_SIZE_MAX = 28;
+export const PROSE_FONT_SIZE_STEP = 1;
+
+/** Clamp a prose font size to the allowed range, rounded to half pixels. Non-finite → default. */
+export function clampProseFontSize(size: number): number {
+  if (!Number.isFinite(size)) return PROSE_FONT_SIZE_DEFAULT;
+  const clamped = Math.min(PROSE_FONT_SIZE_MAX, Math.max(PROSE_FONT_SIZE_MIN, size));
+  return Math.round(clamped * 2) / 2;
+}
 
 // === Claude CLI Updates ===
 

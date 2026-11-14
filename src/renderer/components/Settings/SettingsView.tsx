@@ -5,7 +5,14 @@ import { useCliUpdateStore } from '../../stores/cliUpdateStore';
 import { useBookStore } from '../../stores/bookStore';
 import { useModalChatStore } from '../../stores/modalChatStore';
 import type { FableProbeResult, ModelInfo, TourId, UsageSummary } from '@domain/types';
-import { FABLE_MODEL_ID } from '@domain/constants';
+import {
+  FABLE_MODEL_ID,
+  PROSE_FONT_SIZE_DEFAULT,
+  PROSE_FONT_SIZE_MAX,
+  PROSE_FONT_SIZE_MIN,
+  PROSE_FONT_SIZE_STEP,
+  clampProseFontSize,
+} from '@domain/constants';
 import { ProviderSection } from './ProviderSection';
 import { useProviderStore } from '../../stores/providerStore';
 import { useTourStore } from '../../stores/tourStore';
@@ -542,6 +549,67 @@ function AppearanceSection(): React.ReactElement {
   );
 }
 
+function ReadingSection(): React.ReactElement {
+  const { settings, update } = useSettingsStore();
+  const fontSize = settings?.proseFontSize ?? PROSE_FONT_SIZE_DEFAULT;
+  const showLineNumbers = settings?.showChapterLineNumbers ?? false;
+  const setSize = (size: number): void => {
+    update({ proseFontSize: clampProseFontSize(size) });
+  };
+  const buttonClass =
+    'rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-sm text-zinc-700 transition-colors hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700';
+
+  return (
+    <section className="space-y-3">
+      <SectionHeading>Reading</SectionHeading>
+      <div className="flex items-center gap-3">
+        <span className="w-32 text-sm text-zinc-700 dark:text-zinc-300">Prose font size</span>
+        <button
+          className={buttonClass}
+          onClick={() => setSize(fontSize - PROSE_FONT_SIZE_STEP)}
+          disabled={fontSize <= PROSE_FONT_SIZE_MIN}
+          aria-label="Decrease prose font size"
+        >
+          A−
+        </button>
+        <span className="w-14 text-center text-sm tabular-nums text-zinc-800 dark:text-zinc-200" data-testid="prose-font-size">
+          {fontSize}px
+        </span>
+        <button
+          className={buttonClass}
+          onClick={() => setSize(fontSize + PROSE_FONT_SIZE_STEP)}
+          disabled={fontSize >= PROSE_FONT_SIZE_MAX}
+          aria-label="Increase prose font size"
+        >
+          A+
+        </button>
+        <button
+          className={buttonClass}
+          onClick={() => setSize(PROSE_FONT_SIZE_DEFAULT)}
+          disabled={fontSize === PROSE_FONT_SIZE_DEFAULT}
+        >
+          Reset
+        </button>
+      </div>
+      <HelpText>
+        Applies to chapter, manuscript, report and source views. Ctrl + mouse wheel, Ctrl + = / Ctrl + − and Ctrl + 0 also adjust it.
+      </HelpText>
+      <label className="flex cursor-pointer items-center gap-3">
+        <input
+          type="checkbox"
+          checked={showLineNumbers}
+          onChange={(e) => update({ showChapterLineNumbers: e.target.checked })}
+          className="h-4 w-4 rounded border-zinc-300 dark:border-zinc-600 bg-zinc-100 dark:bg-zinc-800 text-blue-500 focus:ring-2 focus:ring-blue-500 focus:ring-offset-0"
+        />
+        <span className="text-sm text-zinc-700 dark:text-zinc-300">Show line numbers in chapter views</span>
+      </label>
+      <HelpText>
+        Numbers are draft.md line numbers, the same ones agents see, so you can point Verity at a passage by line.
+      </HelpText>
+    </section>
+  );
+}
+
 function UsageSection(): React.ReactElement {
   const [summary, setSummary] = useState<UsageSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -948,6 +1016,8 @@ export function SettingsView(): React.ReactElement {
           {activeTab === 'appearance' && (
             <>
               <AppearanceSection />
+              <SectionDivider />
+              <ReadingSection />
               <SectionDivider />
               <NotificationsSection />
               <SectionDivider />

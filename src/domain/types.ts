@@ -430,6 +430,10 @@ export type AppSettings = {
   autoCollapseThinking: boolean;
   enableNotifications: boolean; // OS notifications when agent calls complete
   theme: 'light' | 'dark' | 'system';
+  /** Reading font size (px) for typeset prose views. Ctrl+wheel / Ctrl+= / Ctrl+- / Ctrl+0 adjust it. */
+  proseFontSize: number;
+  /** Show draft.md source line numbers beside chapter prose (Chapter tab, Manuscript chapter view). */
+  showChapterLineNumbers: boolean;
   initialized: boolean;    // false until onboarding is complete
   authorName: string;      // display name for book covers
   // Multi-provider configuration
