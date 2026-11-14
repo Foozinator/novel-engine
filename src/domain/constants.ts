@@ -503,6 +503,44 @@ Read the full manuscript and scene outline. Write in present tense, third person
   ],
 };
 
+/**
+ * Curated starting points for a fresh phase conversation, shown on the
+ * workbench phase starter card. Values are labels from the phase agent's
+ * AGENT_QUICK_ACTIONS list, so each prompt is defined once.
+ * Phases without an entry fall back to the agent's full list.
+ */
+export const PHASE_STARTER_ACTIONS: Partial<Record<PipelinePhaseId, string[]>> = {
+  'pitch':             ['Pitch me a story', 'I have an idea...', 'Revisit the pitch'],
+  'scaffold':          ['Build scene outline', 'Build story bible'],
+  'first-draft':       ['Next chapter'],
+  'first-read':        ['Read the manuscript'],
+  'first-assessment':  ['Full assessment', 'Pacing & scenes', 'Character arcs'],
+  'revision-plan-1':   ['Create revision plan', 'Plan from my feedback'],
+  'revision':          ['Revise chapter...'],
+  'second-read':       ['Read the manuscript'],
+  'second-assessment': ['Full assessment', 'Pacing & scenes', 'Character arcs'],
+  'copy-edit':         ['Copy edit', 'Build style sheet'],
+  'revision-plan-2':   ['Plan copy fixes', 'Plan from my feedback'],
+  'mechanical-fixes':  ['Revise chapter...'],
+  'publish':           ['Prepare for publication', 'Generate metadata'],
+  'query-agents':      ['Analyze for queries', 'Find agents for this book', 'Query Letter (Traditional)', 'Synopsis (Traditional)'],
+};
+
+/**
+ * Resolves a phase's starter actions against its agent's quick actions.
+ * Unknown labels are skipped; a phase without a curated list gets the
+ * agent's full list. No agent, or a non-creative agent → empty.
+ */
+export function getPhaseStarterActions(phaseId: PipelinePhaseId, agent: AgentName | null): QuickAction[] {
+  if (!agent || !(CREATIVE_AGENT_NAMES as AgentName[]).includes(agent)) return [];
+  const actions = AGENT_QUICK_ACTIONS[agent as CreativeAgentName] ?? [];
+  const labels = PHASE_STARTER_ACTIONS[phaseId];
+  if (!labels) return actions;
+  return labels
+    .map((label) => actions.find((a) => a.label === label))
+    .filter((a): a is QuickAction => a !== undefined);
+}
+
 // Token estimation: ~4 chars per token for English
 export const CHARS_PER_TOKEN = 4;
 // Opus context window (used for budget fraction calculations)

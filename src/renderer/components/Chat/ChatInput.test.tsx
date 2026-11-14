@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { ChatInput } from './ChatInput';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { resetStoresBeforeEach } from '../../../test/resetStores';
@@ -126,5 +126,33 @@ describe('ChatInput', () => {
     expect(screen.getByPlaceholderText('Type a message...')).toHaveValue(
       'I have a story idea. Here it is:',
     );
+  });
+  it('applies an external prefill on each new nonce', () => {
+    vi.useFakeTimers();
+    try {
+      const { rerender, onThinkingBudgetChange, onSend } = renderInput({
+        prefill: { text: 'Starter prompt', nonce: 1 },
+      });
+      const textarea = screen.getByPlaceholderText('Type a message...');
+      expect(textarea).toHaveValue('Starter prompt');
+      act(() => vi.runAllTimers());
+      expect(textarea).toHaveFocus();
+
+      fireEvent.change(textarea, { target: { value: 'edited' } });
+      // Same text, new nonce → re-applied
+      rerender(
+        <ChatInput
+          onSend={onSend}
+          disabled={false}
+          thinkingBudget={8000}
+          defaultThinkingBudget={8000}
+          onThinkingBudgetChange={onThinkingBudgetChange}
+          prefill={{ text: 'Starter prompt', nonce: 2 }}
+        />,
+      );
+      expect(textarea).toHaveValue('Starter prompt');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import type { CreativeAgentName } from '@domain/types';
 import {
   isVersionAtLeast,
   parseClaudeCliVersion,
   parseClaudeCliVersionError,
   formatModelLabel,
   getModelPricing,
+  getPhaseStarterActions,
   AGENT_MULTI_CALL_STEPS,
   AGENT_QUICK_ACTIONS,
   AGENT_READ_GUIDANCE,
@@ -26,6 +28,7 @@ import {
   MODEL_PRICING,
   PHASE_OUTPUT_CONTENT_MARKERS,
   PHASE_OUTPUT_FILES,
+  PHASE_STARTER_ACTIONS,
   PIPELINE_PHASES,
   PITCH_ROOM_SLUG,
   TURN_BUDGET_THRESHOLDS,
@@ -95,6 +98,52 @@ describe('AGENT_QUICK_ACTIONS', () => {
         expect(action.prompt.length).toBeGreaterThan(0);
       }
     }
+  });
+});
+
+describe('PHASE_STARTER_ACTIONS', () => {
+  it('keys are real phase ids', () => {
+    for (const id of Object.keys(PHASE_STARTER_ACTIONS)) expect(PHASE_IDS).toContain(id);
+  });
+
+  it('every label resolves in its phase agent quick actions', () => {
+    for (const [id, labels] of Object.entries(PHASE_STARTER_ACTIONS)) {
+      const phase = PIPELINE_PHASES.find((p) => p.id === id);
+      const agent = phase?.agent;
+      expect(agent, `phase ${id} needs an agent`).toBeTruthy();
+      if (!agent || !(CREATIVE_AGENT_NAMES as string[]).includes(agent)) continue;
+      const available = AGENT_QUICK_ACTIONS[agent as CreativeAgentName].map((a) => a.label);
+      expect(labels.length).toBeGreaterThan(0);
+      for (const label of labels) {
+        expect(available, `"${label}" missing from ${agent} quick actions (phase ${id})`).toContain(label);
+      }
+    }
+  });
+});
+
+describe('getPhaseStarterActions', () => {
+  it('returns the curated actions in order with their prompts', () => {
+    const actions = getPhaseStarterActions('scaffold', 'Verity');
+    expect(actions.map((a) => a.label)).toEqual(['Build scene outline', 'Build story bible']);
+    expect(actions[0].prompt).toBe(
+      AGENT_QUICK_ACTIONS.Verity.find((a) => a.label === 'Build scene outline')?.prompt,
+    );
+  });
+
+  it('falls back to the agent full list when the phase has no curated entry', () => {
+    const original = PHASE_STARTER_ACTIONS.pitch;
+    delete PHASE_STARTER_ACTIONS.pitch;
+    try {
+      expect(getPhaseStarterActions('pitch', 'Spark')).toEqual(AGENT_QUICK_ACTIONS.Spark);
+    } finally {
+      PHASE_STARTER_ACTIONS.pitch = original;
+    }
+  });
+
+  it('returns nothing for agent-less phases and Wrangler', () => {
+    expect(getPhaseStarterActions('build', null)).toEqual([]);
+    expect(getPhaseStarterActions('pitch', 'Wrangler')).toEqual([]);
+    expect(getPhaseStarterActions('pitch', 'Helper')).toEqual([]);
   });
 });
 

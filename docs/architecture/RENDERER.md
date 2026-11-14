@@ -474,7 +474,7 @@ Gate: `App.tsx` checks `settings.initialized` — if false, renders `OnboardingW
 | File | Purpose |
 |------|---------|
 | `ChatView.tsx` | Full chat view with agent header, messages, input |
-| `ChatInput.tsx` | Message input with quick actions and thinking budget controls |
+| `ChatInput.tsx` | Message input with quick actions and thinking budget controls. Optional `prefill: { text, nonce }` prop fills and focuses the textarea on each new nonce (same path as a quick-action pick) |
 | `MessageBubble.tsx` | Single message with copy/save-to-file buttons |
 | `MessageList.tsx` | Scrollable message history with auto-scroll |
 | `StreamingMessage.tsx` | Live-updating message during CLI stream |
@@ -485,6 +485,18 @@ Gate: `App.tsx` checks `settings.initialized` — if false, renders `OnboardingW
 | `ConversationList.tsx` | Sidebar panel listing conversations for active book |
 | `ChatModal.tsx` | Modal chat overlay for hot-take and ad-hoc revision |
 | `QuickActions.tsx` | Pre-built prompt suggestions dropdown |
+
+### Workbench/
+
+| File | Purpose |
+|------|---------|
+| `WorkspaceView.tsx` | Workbench view: phase header plus chat ‖ companion split for the selected phase |
+| `PhaseHeader.tsx` | Phase identity, artifact chips, stage quick-action chips (Hot Take / Ad Hoc Revisions / Voice Setup), primary phase action |
+| `ChatPane.tsx` | Phase chat: conversation dropdown chip, ad-hoc banner, message list and compact `ChatInput`. Shows `PhaseStarterCard` on a fresh phase |
+| `PhaseStarterCard.tsx` | Call-to-action card on a fresh phase (no conversation, or one with no messages): phase label, agent + role, description, and starter buttons from `getPhaseStarterActions()`. A pick fills the chat input like Quick actions; with no conversation, it creates one first. Optional "Start a blank conversation". Hidden on read-only phases, ad-hoc conversations and while streaming |
+| `SplitPane.tsx` | Chat ‖ companion split with draggable divider, reset and collapse |
+| `CompanionPane.tsx` | Companion tab bar (`companion/` Sources, Chapter, Reports, Explorer tabs); `openCompanionDoc()` |
+| `usePhaseConversations.ts` | Phase-scoped conversation list, auto-activation of the latest, create/select |
 
 ### Files/
 
