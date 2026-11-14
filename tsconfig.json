@@ -18,5 +18,5 @@
       "@app/*": ["src/application/*"]
     }
   },
-  "include": ["src/**/*", "forge.env.d.ts"]
+  "include": ["src/**/*", "forge.env.d.ts", "e2e/**/*", "playwright.config.ts"]
 }

@@ -4,6 +4,31 @@ All notable changes to Novel Engine are documented here.
 
 ---
 
+## [2026-11-14] — Playwright smoke test for the packaged Electron app (#41)
+
+### Summary
+
+The repo had no end-to-end tests. `npm run test:e2e` now packages the app and runs a Playwright smoke test against the packaged binary. The test checks that the app starts on a temp data folder (it asserts `app.getPath('userData')`), opens the SQLite DB, and renders the library. It then creates a book through the New Book modal, writes a chapter and a version snapshot through the preload bridge, reads both back, and opens the chapter in the Chapter companion tab. Model CLIs are stubbed and the environment is reduced to an allow-list, so the test never calls a model. It is the baseline for the Electron upgrade (#43) and passes on Electron 33.4.0. Not wired into CI yet.
+
+### Added
+- `playwright.config.ts` — Playwright config: `e2e/` test dir, one worker, 90 s timeout, traces kept on failure, output in `test-results/e2e`.
+- `e2e/launch.ts` — `launchApp()` and `findPackagedExecutable()`. Launches `out/Novel Engine-<platform>-<arch>/` with a fresh temp `--user-data-dir`, seeded `settings.json` (onboarding done, tours done, CLI update reminder off), stub `claude`/`codex`/`ollama` commands on PATH, and a stub login SHELL for `fixShellPath()`. Cleans up the temp folder.
+- `e2e/smoke.spec.ts` — The smoke test.
+
+### Changed
+- `package.json` — Added `@playwright/test` ~1.64.0 (devDependency) and the `pretest:e2e` (`electron-forge package`) and `test:e2e` (`playwright test`) scripts.
+- `tsconfig.json` — `include` adds `e2e/**/*` and `playwright.config.ts`, so `npm run lint` type-checks the e2e code.
+- `.gitignore` — Ignores `test-results/` and `playwright-report/`.
+- `docs/architecture/ARCHITECTURE.md` — Added a Testing section and test rows in the Technology Stack table.
+
+### Architecture Impact
+- None — no wiring changes. Test-only code outside `src/`; Vitest still collects only `src/**`.
+
+### Migration Notes
+- None. `npm run test:e2e` needs `resources/pandoc` (`npm run download-pandoc`) because packaging bundles it.
+
+---
+
 ## [2026-11-12] — Revision Queue panel resizes horizontally (#12)
 
 ### Summary
