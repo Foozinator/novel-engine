@@ -113,6 +113,42 @@ describe('SettingsView', () => {
     await waitFor(() => expect(bridge.settings.detectCodexCli).toHaveBeenCalled());
   });
 
+  it('Reading font: preset saves at once, custom name saves sanitised on blur', async () => {
+    // Stateful settings bridge so the store reload after update sees the change.
+    let stored = makeAppSettings({ activeProviderId: 'prov-a' as ProviderId });
+    const { bridge } = renderSettings({
+      bridge: {
+        settings: {
+          load: vi.fn(async () => stored),
+          update: vi.fn(async (partial) => {
+            stored = { ...stored, ...partial };
+          }),
+        },
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Appearance/ }));
+
+    const select = screen.getByRole('combobox', { name: 'Reading font' });
+    expect(select).toHaveValue('fraunces');
+    fireEvent.change(select, { target: { value: 'sans' } });
+    await waitFor(() => expect(bridge.settings.update).toHaveBeenCalledWith({ proseFont: 'sans' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('prose-font-preview').style.fontFamily).toContain('Inter'),
+    );
+    expect(screen.queryByRole('textbox', { name: 'Custom font name' })).not.toBeInTheDocument();
+
+    fireEvent.change(select, { target: { value: 'custom' } });
+    const input = await screen.findByRole('textbox', { name: 'Custom font name' });
+    fireEvent.change(input, { target: { value: 'EB Garamond; color: red' } });
+    expect(bridge.settings.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ proseFontCustom: expect.anything() }),
+    );
+    fireEvent.blur(input);
+    await waitFor(() =>
+      expect(bridge.settings.update).toHaveBeenCalledWith({ proseFontCustom: 'EB Garamond color red' }),
+    );
+  });
+
   it('Appearance tab reflects the theme and saves changes', async () => {
     const { bridge } = renderSettings();
 

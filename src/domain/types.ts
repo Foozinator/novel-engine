@@ -416,6 +416,9 @@ export type FableProbeResult = {
 
 // === Settings ===
 
+/** Reading font presets for ProseViewer. 'custom' uses an installed font typed by the user. */
+export type ProseFontId = 'fraunces' | 'classic-serif' | 'sans' | 'mono' | 'custom';
+
 export type AppSettings = {
   hasClaudeCli: boolean;   // true if `claude` CLI is detected and authenticated
   hasOllamaCli: boolean;   // true if `ollama` CLI is detected
@@ -434,6 +437,10 @@ export type AppSettings = {
   proseFontSize: number;
   /** Show draft.md source line numbers beside chapter prose (Chapter tab, Manuscript chapter view). */
   showChapterLineNumbers: boolean;
+  /** Reading font for typeset prose views: a preset, or 'custom' to use `proseFontCustom`. */
+  proseFont: ProseFontId;
+  /** Installed font family name used when `proseFont` is 'custom'. */
+  proseFontCustom: string;
   initialized: boolean;    // false until onboarding is complete
   authorName: string;      // display name for book covers
   // Multi-provider configuration
