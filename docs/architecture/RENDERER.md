@@ -409,6 +409,7 @@ Gate: `App.tsx` checks `settings.initialized` — if false, renders `OnboardingW
 
 | File | Purpose |
 |------|---------|
+| `ProseViewer.tsx` | Shared typeset markdown renderer (companion tabs, Manuscript reader) plus `useBookFile()` live file read. Font size from `settings.proseFontSize`. `lineNumbers` prop renders via `renderWithLineNumbers()`: each top-level block is tagged `data-line` with its source line, and `.ne-prose-lines` in `globals.css` draws the gutter. ChapterTab and the Manuscript chapter reader pass `settings.showChapterLineNumbers`. |
 | `Tooltip.tsx` | Reusable tooltip with portal rendering, configurable placement/delay, arrow, multi-line support. Suppressed during active tours via `useTourStore`. `aria-describedby` for accessibility. |
 | `GuidedTourOverlay.tsx` | Spotlight-based tour overlay with CSS clip-path cutout, keyboard navigation, step popovers. Handles window resize + `ResizeObserver`. Auto-focuses Next button. `aria-modal`, `aria-live="polite"`. |
 
@@ -439,7 +440,7 @@ Gate: `App.tsx` checks `settings.initialized` — if false, renders `OnboardingW
 
 | File | Purpose |
 |------|---------|
-| `SettingsView.tsx` | Full settings panel: built-in CLI status for Claude/Codex/Ollama, providers, primary/secondary model selection from the same `window.novelEngine.models.getAvailable()` provider groups, thinking, theme, author profile, usage stats, catalog export. Primary model changes switch the active provider; stale primary selections show a warning and visually fall back to the first available model until updated. Secondary model changes only persist `secondaryModel`. When the Claude CLI is installed and `fable` is not listed, Model Selection shows a "Check for Fable access" button (`FableAccessCheck`) with the last `lastFableProbe` result and a paid-credits warning; it calls `claudeCli.checkFableAccess()`, then reloads settings and models. Nothing probes automatically. Ollama copy points users to `ollama pull model-name` and `ollama list` for local discovery. |
+| `SettingsView.tsx` | Full settings panel: built-in CLI status for Claude/Codex/Ollama, providers, primary/secondary model selection from the same `window.novelEngine.models.getAvailable()` provider groups, thinking, theme, reading (prose font size stepper, chapter line-number toggle), author profile, usage stats, catalog export. Primary model changes switch the active provider; stale primary selections show a warning and visually fall back to the first available model until updated. Secondary model changes only persist `secondaryModel`. When the Claude CLI is installed and `fable` is not listed, Model Selection shows a "Check for Fable access" button (`FableAccessCheck`) with the last `lastFableProbe` result and a paid-credits warning; it calls `claudeCli.checkFableAccess()`, then reloads settings and models. Nothing probes automatically. Ollama copy points users to `ollama pull model-name` and `ollama list` for local discovery. |
 | `ProviderSection.tsx` | Provider management: cards with status dots, active badge, active-provider switch, test connectivity, optional advanced endpoint override for Ollama CLI, endpoint field for llama-server, add/remove/toggle, "Add Provider" form |
 
 ### Sidebar/
@@ -586,6 +587,7 @@ Gate: `App.tsx` checks `settings.initialized` — if false, renders `OnboardingW
 | `useVerticalResize.ts` | Vertical drag-to-resize for panels |
 | `useRevisionQueueEvents.ts` | Subscribes to revision queue IPC events |
 | `useRotatingStatus.ts` | Rotates fun status messages on an interval |
+| `useProseZoom.ts` | Ctrl/Cmd + wheel, Ctrl/Cmd + `=`/`-`/`0` adjust `proseFontSize`. Updates `settingsStore` at once and persists debounced (400 ms). Mounted in `App.tsx`. |
 | `useTheme.ts` | Syncs Tailwind dark mode class with settings theme |
 | `useTooltip.ts` | Tooltip positioning hook — manages show/hide delay, `getBoundingClientRect` positioning, viewport clamping |
 

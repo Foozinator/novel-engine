@@ -4,6 +4,7 @@ import { useBookStore } from '../../stores/bookStore';
 import { useCliActivityStore } from '../../stores/cliActivityStore';
 import { useFileChangeStore } from '../../stores/fileChangeStore';
 import { usePaletteStore } from '../../stores/paletteStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { useViewStore } from '../../stores/viewStore';
 import { useChapterDeepDive } from '../../hooks/useChapterDeepDive';
 import { FileEditor } from '../Files/FileEditor';
@@ -95,6 +96,7 @@ function Segmented<T extends string>({
 export function ManuscriptView(): React.ReactElement {
   const activeSlug = useBookStore((s) => s.activeSlug);
   const { currentView, payload } = useViewStore();
+  const showLineNumbers = useSettingsStore((s) => s.settings?.showChapterLineNumbers ?? false);
   const { chapters, loading: chaptersLoading } = useChapterList(activeSlug);
   const { deepDive, isDeepDiving } = useChapterDeepDive(activeSlug);
 
@@ -418,7 +420,7 @@ export function ManuscriptView(): React.ReactElement {
                     Chapter {selectedChapter.number}
                   </div>
                 )}
-                <ProseViewer content={chapterFile.content} wide />
+                <ProseViewer content={chapterFile.content} wide lineNumbers={showLineNumbers} />
               </>
             )}
           </div>

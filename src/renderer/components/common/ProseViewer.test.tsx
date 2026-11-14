@@ -1,11 +1,14 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, renderHook, screen, waitFor, act } from '@testing-library/react';
-import { ProseViewer, useBookFile } from './ProseViewer';
+import { marked } from 'marked';
+import { DEFAULT_SETTINGS } from '@domain/constants';
+import { ProseViewer, renderWithLineNumbers, useBookFile } from './ProseViewer';
 import { useFileChangeStore } from '../../stores/fileChangeStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { installNovelEngineMock, type NovelEngineMock } from '../../../test/novelEngineMock';
 import { resetStoresBeforeEach } from '../../../test/resetStores';
 
-resetStoresBeforeEach(useFileChangeStore);
+resetStoresBeforeEach(useFileChangeStore, useSettingsStore);
 
 describe('ProseViewer', () => {
   it('renders markdown as typeset HTML', () => {
@@ -24,6 +27,60 @@ describe('ProseViewer', () => {
   it('widens the measure with the wide prop', () => {
     const { container } = render(<ProseViewer content="text" wide />);
     expect(container.firstElementChild?.className).toContain('max-w-[68ch]');
+  });
+
+  it('uses the default font size before settings load', () => {
+    const { container } = render(<ProseViewer content="text" />);
+    expect((container.firstElementChild as HTMLElement).style.fontSize).toBe('16.5px');
+  });
+
+  it('takes its font size from the proseFontSize setting', () => {
+    useSettingsStore.setState({ settings: { ...DEFAULT_SETTINGS, proseFontSize: 22 } });
+    const { container } = render(<ProseViewer content="text" />);
+    expect((container.firstElementChild as HTMLElement).style.fontSize).toBe('22px');
+  });
+
+  it('adds no line numbers unless asked', () => {
+    const { container } = render(<ProseViewer content={'One\n\nTwo'} />);
+    expect(container.querySelector('[data-line]')).toBeNull();
+  });
+
+  it('numbers top-level blocks with their source line when lineNumbers is set', () => {
+    const { container } = render(<ProseViewer content={'# Title\n\nOne\n\nTwo'} lineNumbers />);
+    const root = container.firstElementChild as HTMLElement;
+    expect(root.className).toContain('ne-prose-lines');
+    const lines = [...root.querySelectorAll('[data-line]')].map((el) => [el.tagName, el.getAttribute('data-line')]);
+    expect(lines).toEqual([['H1', '1'], ['P', '3'], ['P', '5']]);
+  });
+});
+
+describe('renderWithLineNumbers', () => {
+  const lineOf = (html: string): string[] =>
+    [...html.matchAll(/<(\w+) data-line="(\d+)"/g)].map((m) => `${m[1]}:${m[2]}`);
+
+  it('matches plain marked output apart from the data-line attributes', () => {
+    const src = '# T\n\nA *b* c.\n\n> q\n\n- x\n- y\n\n---\n\nEnd.';
+    const numbered = renderWithLineNumbers(src).replace(/ data-line="\d+"/g, '');
+    expect(numbered).toBe(marked.parse(src));
+  });
+
+  it('gives a hard-wrapped paragraph its first line and counts extra blank lines', () => {
+    expect(lineOf(renderWithLineNumbers('First\nwrapped.\n\n\n\nSecond'))).toEqual(['p:1', 'p:6']);
+  });
+
+  it('stays aligned past link reference definitions, which marked drops', () => {
+    const src = 'See [x][r].\n\n[r]: http://example.com\n\nAfter.';
+    const html = renderWithLineNumbers(src);
+    expect(lineOf(html)).toEqual(['p:1', 'p:5']);
+    expect(html).toContain('href="http://example.com"');
+  });
+
+  it('normalises CRLF line endings', () => {
+    expect(lineOf(renderWithLineNumbers('One\r\n\r\nTwo\r\n\r\n* a'))).toEqual(['p:1', 'p:3', 'ul:5']);
+  });
+
+  it('skips a leading blank run', () => {
+    expect(lineOf(renderWithLineNumbers('\n\n\nText'))).toEqual(['p:4']);
   });
 });
 

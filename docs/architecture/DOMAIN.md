@@ -98,7 +98,7 @@ Everything in `src/domain/`. Pure TypeScript declarations — zero imports from 
 
 | Type | Shape | Used By |
 |------|-------|---------|
-| `AppSettings` | `{ hasClaudeCli, hasOllamaCli, hasCodexCli, model, secondaryModel, maxTokens, enableThinking, thinkingBudget, overrideThinkingBudget, autoCollapseThinking, enableNotifications, theme, initialized, authorName, providers, activeProviderId, completedTours, savedPrompts, claudeCliUpdateReminder, lastClaudeCliUpdateCheck, lastFableProbe }` | SettingsService, SettingsView, tourStore, ClaudeCliUpdateService, FableAccessService |
+| `AppSettings` | `{ hasClaudeCli, hasOllamaCli, hasCodexCli, model, secondaryModel, maxTokens, enableThinking, thinkingBudget, overrideThinkingBudget, autoCollapseThinking, enableNotifications, theme, proseFontSize, showChapterLineNumbers, initialized, authorName, providers, activeProviderId, completedTours, savedPrompts, claudeCliUpdateReminder, lastClaudeCliUpdateCheck, lastFableProbe }` | SettingsService, SettingsView, tourStore, ClaudeCliUpdateService, FableAccessService |
 | `FableProbeStatus` | `'available' \| 'unavailable' \| 'error'` | FableProbe, FableAccessService |
 | `FableProbeResult` | `{ status: FableProbeStatus, checkedAt, detail? }` | `AppSettings.lastFableProbe`, `claudeCli:checkFableAccess` |
 
@@ -692,6 +692,8 @@ Implemented by: `QueryService` (`src/application/QueryService.ts`)
 | `CLAUDE_CLI_SECONDARY_MODEL` | `'sonnet'` | First Claude model that differs from the primary |
 | `MODEL_PRICING` | `Record<string, ModelPricing>` | USD per 1M tokens. Alias entries first (`opus` $4/$20, `sonnet` $2/$10, `haiku` $0.10/$0.50, `fable` $10/$50, as of 2026-10), then the full IDs they resolved to (`claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1`), then legacy dated IDs. The first entry is the fallback price. |
 | `getModelPricing(modelId)` | `(string) => ModelPricing` | Exact entry → family alias for an unlisted `claude-<family>-N[-M]` ID → first entry. Used by `StatisticsService`. |
+| `PROSE_FONT_SIZE_DEFAULT` / `_MIN` / `_MAX` / `_STEP` | `number` | Reading font size for `ProseViewer`: 16.5 px default, 12–28 px range, 1 px step |
+| `clampProseFontSize(size)` | `(number) => number` | Clamps to the range, rounds to 0.5 px; non-finite → default |
 | `CLAUDE_CLI_UPDATE_CHECK_INTERVAL_MS` | `number` | 7 days — minimum gap between launch-time update offers |
 | `CLAUDE_CLI_MANUAL_UPDATE_COMMAND` | `'claude update'` | Shown when the in-app update can't update the install |
 | `parseClaudeCliVersion(output)` | `(string) => string \| null` | Version from `claude --version` output |

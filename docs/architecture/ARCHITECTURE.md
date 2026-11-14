@@ -166,6 +166,7 @@ src/
     │   ├── PipelineSpine/                   # PipelineSpine, PhaseNode, stages
     │   └── QueryManager/                    # QueryManagerView, TargetCard, AddTargetForm, LetterPreview, FilterBar
     ├── hooks/
+    │   ├── useProseZoom.ts             # Ctrl+wheel / Ctrl+=/-/0 prose font size
     │   ├── useResizeHandle.ts
     │   ├── useRevisionQueueEvents.ts
     │   ├── useRotatingStatus.ts

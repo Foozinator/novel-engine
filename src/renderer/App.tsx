@@ -4,10 +4,12 @@ import { AppLayout } from './components/Layout/AppLayout';
 import { OnboardingWizard } from './components/Onboarding/OnboardingWizard';
 import { useSettingsStore } from './stores/settingsStore';
 import { useTheme } from './hooks/useTheme';
+import { useProseZoom } from './hooks/useProseZoom';
 
 function AppContent(): React.ReactElement {
   const { settings, load } = useSettingsStore();
   useTheme();
+  useProseZoom();
 
   useEffect(() => {
     load();
