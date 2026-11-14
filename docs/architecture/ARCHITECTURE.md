@@ -1,6 +1,6 @@
 # Architecture — Novel Engine
 
-> Last updated: 2026-11-12 (program-030)
+> Last updated: 2026-11-14 (#41 e2e smoke test)
 
 Electron + React 18 + TypeScript 5 + Tailwind v4 + Zustand + better-sqlite3 + Claude Code CLI + Codex CLI + Ollama CLI + Pandoc
 
@@ -377,3 +377,22 @@ The renderer layer normally uses `import type` only from domain. However, **pure
 | Markdown | marked | ^15.0.0 |
 | Archive | archiver | ^7.0.1 |
 | Build Tool | Electron Forge | ^7.11.1 |
+| Unit tests | Vitest | ^4.1.10 |
+| E2E tests | Playwright (`@playwright/test`, `_electron`) | ~1.64.0 |
+
+---
+
+## Testing
+
+| Command | What runs | Where |
+|---------|-----------|-------|
+| `npm test` | Vitest unit tests: `node` project for `src/{domain,infrastructure,application,main,preload}`, `jsdom` project for `src/renderer` | `src/**/*.test.{ts,tsx}` |
+| `npm run test:coverage` | Same, with coverage thresholds | `vitest.config.ts` |
+| `npm run test:e2e` | `pretest:e2e` packages the app (`electron-forge package`), then Playwright launches the packaged binary under `out/` | `e2e/*.spec.ts`, `playwright.config.ts` |
+
+E2E rules (`e2e/launch.ts`):
+- Each run gets a fresh temp data folder, passed as `--user-data-dir`. The real `Novel Engine` data folder is never touched. The spec asserts `app.getPath('userData')` equals the temp folder.
+- `settings.json` is seeded (`initialized`, all tours completed, CLI update reminder off) so onboarding and tours don't block the UI.
+- The environment is reduced to a GUI allow-list. PATH (and on Linux/macOS, SHELL, which `fixShellPath()` reads) point at stub `claude`/`codex`/`ollama` commands that exit 127. No model CLI runs and nothing is billed.
+- The packaged binary is used instead of `.vite/build/index.js` because it carries its own Electron-ABI better-sqlite3; the root `node_modules` copy may be built for Node after `npm test`.
+- Packaging needs `resources/pandoc` (`npm run download-pandoc` once).

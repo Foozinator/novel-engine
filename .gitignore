@@ -14,3 +14,7 @@ dist-installers/
 
 # Test coverage output
 coverage/
+
+# Playwright e2e output
+test-results/
+playwright-report/

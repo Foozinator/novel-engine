@@ -20,6 +20,8 @@
     "test:watch": "vitest",
     "pretest:coverage": "node scripts/ensure-native-abi.js",
     "test:coverage": "vitest run --coverage",
+    "pretest:e2e": "electron-forge package",
+    "test:e2e": "playwright test",
     "clean": "rm -rf out .vite dist"
   },
   "keywords": [],
@@ -39,6 +41,7 @@
     "@electron-forge/plugin-fuses": "^7.11.1",
     "@electron-forge/plugin-vite": "^7.11.1",
     "@electron/fuses": "^1.8.0",
+    "@playwright/test": "~1.64.0",
     "@tailwindcss/postcss": "^4.2.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
