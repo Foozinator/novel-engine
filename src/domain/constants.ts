@@ -529,6 +529,15 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   'claude-sonnet-4-20250514': { inputPer1M: 3, outputPer1M: 15 },
 };
 
+/**
+ * Prompt-cache prices as multiples of a model's input price (Anthropic list
+ * pricing). Used only to estimate usage with no provider-reported cost; the
+ * Claude CLI reports its own cost per run. Cache writes are priced at the
+ * 5-minute rate (1.25×); 1-hour writes cost 2×, so this is a lower bound.
+ */
+export const CACHE_READ_PRICE_MULTIPLIER = 0.1;
+export const CACHE_WRITE_PRICE_MULTIPLIER = 1.25;
+
 const CLAUDE_FAMILY_PATTERN = /^claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/;
 
 /**

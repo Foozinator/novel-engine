@@ -80,7 +80,7 @@ const EMPTY_STATS: BookStatistics = {
   wordCountHistory: [],
   totalCostEstimate: 0,
   wordsPerChapter: [],
-  totalTokens: { input: 0, output: 0, thinking: 0 },
+  totalTokens: { input: 0, output: 0, thinking: 0, cacheRead: 0, cacheWrite: 0 },
   conversationCount: 0,
 };
 

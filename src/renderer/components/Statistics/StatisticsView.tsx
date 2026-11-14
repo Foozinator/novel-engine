@@ -41,7 +41,8 @@ const PHASE_COLORS = [
 // ---------------------------------------------------------------------------
 
 function SummaryCards({ data, showWords }: { data: BookStatistics; showWords: boolean }): React.ReactElement {
-  const totalTokens = data.totalTokens.input + data.totalTokens.output + data.totalTokens.thinking;
+  const cachedTokens = data.totalTokens.cacheRead + data.totalTokens.cacheWrite;
+  const totalTokens = data.totalTokens.input + cachedTokens + data.totalTokens.output + data.totalTokens.thinking;
   const totalWords = data.wordsPerChapter.reduce((sum, ch) => sum + ch.wordCount, 0);
 
   return (
@@ -50,7 +51,7 @@ function SummaryCards({ data, showWords }: { data: BookStatistics; showWords: bo
         <div className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">Total Tokens</div>
         <div className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">{formatTokens(totalTokens)}</div>
         <div className="text-xs text-zinc-400 dark:text-zinc-500 mt-1">
-          {formatTokens(data.totalTokens.input)} in / {formatTokens(data.totalTokens.output)} out / {formatTokens(data.totalTokens.thinking)} think
+          {formatTokens(data.totalTokens.input)} in / {formatTokens(cachedTokens)} cached / {formatTokens(data.totalTokens.output)} out / {formatTokens(data.totalTokens.thinking)} think
         </div>
       </div>
       <div className={cardClass}>

@@ -50,6 +50,8 @@ describe('getSummary', () => {
       totalInputTokens: 131,
       totalOutputTokens: 72,
       totalThinkingTokens: 18,
+      totalCacheReadTokens: 0,
+      totalCacheWriteTokens: 0,
       conversationCount: 2,
     });
   });
@@ -64,6 +66,8 @@ describe('getSummary', () => {
       totalInputTokens: 1,
       totalOutputTokens: 2,
       totalThinkingTokens: 3,
+      totalCacheReadTokens: 0,
+      totalCacheWriteTokens: 0,
       conversationCount: 1,
     });
   });
@@ -73,6 +77,8 @@ describe('getSummary', () => {
       totalInputTokens: 0,
       totalOutputTokens: 0,
       totalThinkingTokens: 0,
+      totalCacheReadTokens: 0,
+      totalCacheWriteTokens: 0,
       conversationCount: 0,
     });
   });

@@ -168,6 +168,83 @@ describe('AutoTurnResumer', () => {
     expect(events.find((e) => e.type === 'done')).toMatchObject({ model: 'claude-opus-5-5' });
   });
 
+  it('counts the exhausted attempt\'s usage, cache tokens and cost in the merged done', async () => {
+    const events: StreamEvent[] = [];
+    let callCount = 0;
+    const inner = makeMockRegistry({
+      onSend: (onEvent) => {
+        callCount++;
+        if (callCount === 1) {
+          onEvent({ type: 'textDelta', text: 'partial work' });
+          onEvent({
+            type: 'error',
+            message: 'max turns',
+            isMaxTurns: true,
+            usage: { inputTokens: 5, outputTokens: 100, thinkingTokens: 0, cacheReadTokens: 1000, cacheWriteTokens: 200, costUsd: 0.5 },
+          });
+          return Promise.reject(new Error('max turns'));
+        }
+        onEvent({ type: 'textDelta', text: ' finished' });
+        onEvent({
+          type: 'done',
+          inputTokens: 1, outputTokens: 10, thinkingTokens: 2,
+          cacheReadTokens: 3000, cacheWriteTokens: 50, costUsd: 0.25,
+          filesTouched: {},
+        });
+        return Promise.resolve();
+      },
+    });
+    const resumer = new AutoTurnResumer(inner);
+
+    await resumer.sendMessage({
+      model: 'test-model',
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'hello' }],
+      maxTokens: 4096,
+      conversationId: 'conv-1',
+      onEvent: (e) => events.push(e),
+    });
+
+    expect(events.find((e) => e.type === 'done')).toMatchObject({
+      inputTokens: 6,
+      outputTokens: 110,
+      thinkingTokens: 2,
+      cacheReadTokens: 4000,
+      cacheWriteTokens: 250,
+      costUsd: 0.75,
+    });
+  });
+
+  it('drops the merged cost when any attempt reported none', async () => {
+    const events: StreamEvent[] = [];
+    let callCount = 0;
+    const inner = makeMockRegistry({
+      onSend: (onEvent) => {
+        callCount++;
+        if (callCount === 1) {
+          onEvent({ type: 'textDelta', text: 'partial work' });
+          onEvent({ type: 'error', message: 'max turns', isMaxTurns: true });
+          return Promise.reject(new Error('max turns'));
+        }
+        onEvent({ type: 'textDelta', text: ' finished' });
+        onEvent({ type: 'done', inputTokens: 1, outputTokens: 1, thinkingTokens: 0, costUsd: 0.25, filesTouched: {} });
+        return Promise.resolve();
+      },
+    });
+    const resumer = new AutoTurnResumer(inner);
+
+    await resumer.sendMessage({
+      model: 'test-model',
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'hello' }],
+      maxTokens: 4096,
+      conversationId: 'conv-1',
+      onEvent: (e) => events.push(e),
+    });
+
+    expect(events.find((e) => e.type === 'done')).not.toHaveProperty('costUsd');
+  });
+
   it('forwards genuine errors (non-maxTurns) without resuming', async () => {
     const events: StreamEvent[] = [];
     const inner = makeMockRegistry({

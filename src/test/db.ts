@@ -4,7 +4,7 @@ import type {
   Message,
   PersistedStreamEvent,
   StreamSessionRecord,
-  UsageRecord,
+  NewUsageRecord,
 } from '@domain/types';
 import { DatabaseService } from '@infra/database/DatabaseService';
 
@@ -51,7 +51,7 @@ export function makeMessage(
   });
 }
 
-type UsageInput = Omit<UsageRecord, 'timestamp' | 'conversationId'>;
+type UsageInput = Omit<NewUsageRecord, 'conversationId'>;
 
 /** Record token usage against a conversation; override any field. */
 export function makeUsage(

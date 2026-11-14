@@ -41,14 +41,30 @@ export function resultEvent(opts: {
   outputTokens?: number;
   subtype?: string;
   isError?: boolean;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  /** Cumulative CLI-session cost (`total_cost_usd`). */
+  totalCostUsd?: number;
+  /** This run's cost per model (`model_usage_since_last_result[model].costUSD`). */
+  runCostByModel?: Record<string, number>;
 }): Json {
-  return {
+  const usage: Json = { input_tokens: opts.inputTokens ?? 0, output_tokens: opts.outputTokens ?? 0 };
+  if (opts.cacheReadTokens !== undefined) usage.cache_read_input_tokens = opts.cacheReadTokens;
+  if (opts.cacheWriteTokens !== undefined) usage.cache_creation_input_tokens = opts.cacheWriteTokens;
+  const event: Json = {
     type: 'result',
     subtype: opts.subtype ?? 'success',
     is_error: opts.isError ?? false,
     result: opts.result ?? '',
-    usage: { input_tokens: opts.inputTokens ?? 0, output_tokens: opts.outputTokens ?? 0 },
+    usage,
   };
+  if (opts.totalCostUsd !== undefined) event.total_cost_usd = opts.totalCostUsd;
+  if (opts.runCostByModel) {
+    event.model_usage_since_last_result = Object.fromEntries(
+      Object.entries(opts.runCostByModel).map(([model, costUSD]) => [model, { costUSD }]),
+    );
+  }
+  return event;
 }
 
 /** Serialize events to an NDJSON string (trailing newline included). */

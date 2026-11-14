@@ -44,7 +44,7 @@ describe('getStatistics', () => {
 
     const stats = await service.getStatistics();
 
-    expect(stats.totalTokens).toEqual({ input: 1_700_000, output: 140_000, thinking: 100_000 });
+    expect(stats.totalTokens).toEqual({ input: 1_700_000, output: 140_000, thinking: 100_000, cacheRead: 0, cacheWrite: 0 });
     expect(stats.conversationCount).toBe(3);
     // 1.7M * $4/M + 240k * $20/M = 6.80 + 4.80
     expect(stats.totalCostEstimate).toBe(11.6);
@@ -54,6 +54,20 @@ describe('getStatistics', () => {
       outputTokens: 140_000,
       thinkingTokens: 100_000,
     });
+  });
+
+  it('uses the reported cost as-is and prices unreported cache tokens at cache rates', async () => {
+    const a = makeConversation(db, { bookSlug: 'book-a', agentName: 'Verity', pipelinePhase: 'first-draft' });
+    // Reported: taken as-is, its tokens are not priced again
+    makeUsage(db, a.id, { inputTokens: 1_000_000, outputTokens: 1_000_000, thinkingTokens: 0, cacheReadTokens: 9_000_000, costUsd: 1.5, model: 'opus' });
+    // Unreported: 1M cache reads at 0.1 × $4/M + 1M cache writes at 1.25 × $4/M = 0.40 + 5.00
+    makeUsage(db, a.id, { inputTokens: 0, outputTokens: 0, thinkingTokens: 0, cacheReadTokens: 1_000_000, cacheWriteTokens: 1_000_000, model: 'opus' });
+
+    const stats = await service.getStatistics('book-a');
+
+    expect(stats.totalCostEstimate).toBe(6.9);
+    expect(stats.perAgent[0].estimatedCost).toBe(6.9);
+    expect(stats.totalTokens).toMatchObject({ cacheRead: 10_000_000, cacheWrite: 1_000_000 });
   });
 
   it('breaks usage down per agent with hand-computed costs, ordered by total tokens', async () => {
@@ -113,7 +127,7 @@ describe('getStatistics', () => {
 
     const stats = await service.getStatistics('book-a');
 
-    expect(stats.totalTokens).toEqual({ input: 1_500_000, output: 100_000, thinking: 100_000 });
+    expect(stats.totalTokens).toEqual({ input: 1_500_000, output: 100_000, thinking: 100_000, cacheRead: 0, cacheWrite: 0 });
     expect(stats.conversationCount).toBe(2);
     expect(stats.wordCountHistory.map((s) => s.wordCount)).toEqual([8]);
     // fs fake: front matter 0 words, body chapters counted, sorted
@@ -146,7 +160,7 @@ describe('getStatistics', () => {
       perPhase: [],
       wordCountHistory: [],
       totalCostEstimate: 0,
-      totalTokens: { input: 0, output: 0, thinking: 0 },
+      totalTokens: { input: 0, output: 0, thinking: 0, cacheRead: 0, cacheWrite: 0 },
       conversationCount: 0,
     });
   });

@@ -116,7 +116,7 @@ describe('sendMessage — happy path', () => {
     expect(messages[1].content).toBe('Here is a pitch.');
 
     expect(h.usageRecords).toEqual([
-      { conversationId, inputTokens: 100, outputTokens: 40, thinkingTokens: 0, model: MODEL },
+      { conversationId, inputTokens: 100, outputTokens: 40, thinkingTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, model: MODEL },
     ]);
 
     // Session created then completed

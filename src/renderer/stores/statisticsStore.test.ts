@@ -16,7 +16,7 @@ function makeStatistics(overrides: Partial<BookStatistics> = {}): BookStatistics
     wordCountHistory: [],
     totalCostEstimate: 1.23,
     wordsPerChapter: [],
-    totalTokens: { input: 100, output: 200, thinking: 0 },
+    totalTokens: { input: 100, output: 200, thinking: 0, cacheRead: 0, cacheWrite: 0 },
     conversationCount: 4,
     ...overrides,
   };

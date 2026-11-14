@@ -35,7 +35,7 @@ vi.mock('child_process', async () => {
   };
 });
 
-import { ClaudeCodeClient } from './ClaudeCodeClient';
+import { ClaudeCodeClient, extractRunCostUsd } from './ClaudeCodeClient';
 
 const BOOKS_DIR = '/fake/books';
 
@@ -200,6 +200,119 @@ describe('sendMessage — happy path', () => {
 
     const texts = events.filter((e) => e.type === 'textDelta').map((e) => e.text);
     expect(texts).toEqual(['Full result text.']);
+  });
+});
+
+describe('sendMessage — usage and cost', () => {
+  const RESUME_ID = '75ec574a-73de-429a-9e73-facdeba6f9ae';
+
+  it('reports cache reads/writes and this run\'s CLI-reported cost on done', async () => {
+    const promise = send();
+    const child = await fake.waitForChild();
+    child.pushStdout(
+      ndjson([
+        resultEvent({
+          inputTokens: 2,
+          outputTokens: 4,
+          cacheReadTokens: 21832,
+          cacheWriteTokens: 15832,
+          totalCostUsd: 0.0034,
+          runCostByModel: { 'claude-haiku-5-5': 0.003, 'claude-opus-5-5': 0.0004 },
+        }),
+      ])
+    );
+    child.exit(0);
+    await promise;
+
+    const done = events.find((e) => e.type === 'done');
+    expect(done).toMatchObject({
+      inputTokens: 2,
+      outputTokens: 4,
+      cacheReadTokens: 21832,
+      cacheWriteTokens: 15832,
+    });
+    expect((done as { costUsd?: number }).costUsd).toBeCloseTo(0.0034, 10);
+  });
+
+  it('reports zero cache tokens and no cost when the CLI sends neither', async () => {
+    const promise = send();
+    const child = await fake.waitForChild();
+    child.pushStdout(ndjson([resultEvent({ inputTokens: 10, outputTokens: 5 })]));
+    child.exit(0);
+    await promise;
+
+    const done = events.find((e) => e.type === 'done');
+    expect(done).toMatchObject({ cacheReadTokens: 0, cacheWriteTokens: 0 });
+    expect(done).not.toHaveProperty('costUsd');
+  });
+
+  it('on a --resume run, uses the per-run cost, not the cumulative session total', async () => {
+    const promise = send({ resumeCliSessionId: RESUME_ID });
+    const child = await fake.waitForChild();
+    child.pushStdout(
+      ndjson([resultEvent({ totalCostUsd: 0.0063, runCostByModel: { 'claude-haiku-5-5': 0.0029 } })])
+    );
+    child.exit(0);
+    await promise;
+
+    expect(events.find((e) => e.type === 'done')).toMatchObject({ costUsd: 0.0029 });
+  });
+
+  it('on a --resume run with no per-run cost, reports no cost rather than the session total', async () => {
+    const promise = send({ resumeCliSessionId: RESUME_ID });
+    const child = await fake.waitForChild();
+    child.pushStdout(ndjson([resultEvent({ totalCostUsd: 0.0063 })]));
+    child.exit(0);
+    await promise;
+
+    expect(events.find((e) => e.type === 'done')).not.toHaveProperty('costUsd');
+  });
+
+  it('carries the exhausted attempt\'s usage on a max-turns error', async () => {
+    const promise = send();
+    const child = await fake.waitForChild();
+    child.pushStdout(
+      ndjson([
+        resultEvent({
+          subtype: 'error_max_turns',
+          isError: true,
+          inputTokens: 40,
+          outputTokens: 900,
+          cacheReadTokens: 500000,
+          cacheWriteTokens: 30000,
+          runCostByModel: { 'claude-opus-5-5': 1.25 },
+        }),
+      ])
+    );
+    child.exit(1);
+    await expect(promise).rejects.toThrow();
+
+    expect(events.find((e) => e.type === 'error')).toMatchObject({
+      isMaxTurns: true,
+      usage: { inputTokens: 40, outputTokens: 900, cacheReadTokens: 500000, cacheWriteTokens: 30000, costUsd: 1.25 },
+    });
+  });
+});
+
+describe('extractRunCostUsd', () => {
+  it('sums model_usage_since_last_result costs across models', () => {
+    expect(
+      extractRunCostUsd(
+        { total_cost_usd: 9, model_usage_since_last_result: { a: { costUSD: 0.5 }, b: { costUSD: 0.25 } } },
+        true,
+      ),
+    ).toBe(0.75);
+  });
+
+  it('falls back to total_cost_usd on a fresh run only', () => {
+    expect(extractRunCostUsd({ total_cost_usd: 0.4 }, false)).toBe(0.4);
+    expect(extractRunCostUsd({ total_cost_usd: 0.4 }, true)).toBeUndefined();
+  });
+
+  it('ignores malformed cost fields', () => {
+    expect(extractRunCostUsd({ model_usage_since_last_result: { a: { costUSD: 'x' } } }, false)).toBeUndefined();
+    expect(extractRunCostUsd({ model_usage_since_last_result: { a: null }, total_cost_usd: 0.2 }, false)).toBe(0.2);
+    expect(extractRunCostUsd({ total_cost_usd: Number.NaN }, false)).toBeUndefined();
   });
 });
 

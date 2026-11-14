@@ -40,7 +40,7 @@ function makeStats(overrides: Partial<BookStatistics> = {}): BookStatistics {
     ],
     totalCostEstimate: 2.5,
     wordsPerChapter: [{ slug: '02-opening', wordCount: 1500 }],
-    totalTokens: { input: 3000, output: 2000, thinking: 1000 },
+    totalTokens: { input: 3000, output: 2000, thinking: 1000, cacheRead: 0, cacheWrite: 0 },
     conversationCount: 5,
     ...overrides,
   };
@@ -52,7 +52,7 @@ const EMPTY_STATS = makeStats({
   perPhase: [],
   wordCountHistory: [],
   wordsPerChapter: [],
-  totalTokens: { input: 0, output: 0, thinking: 0 },
+  totalTokens: { input: 0, output: 0, thinking: 0, cacheRead: 0, cacheWrite: 0 },
   totalCostEstimate: 0,
   conversationCount: 0,
 });
@@ -76,7 +76,7 @@ describe('StatisticsView', () => {
     renderStats(makeStats());
 
     expect(await screen.findByText('6.0K')).toBeInTheDocument(); // total tokens
-    expect(screen.getByText('3.0K in / 2.0K out / 1.0K think')).toBeInTheDocument();
+    expect(screen.getByText('3.0K in / 0 cached / 2.0K out / 1.0K think')).toBeInTheDocument();
     expect(screen.getByText('5')).toBeInTheDocument(); // conversations
     expect(screen.getByText('~$2.50')).toBeInTheDocument();
 

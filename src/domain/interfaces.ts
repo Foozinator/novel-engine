@@ -67,6 +67,7 @@ import type {
   StreamEvent,
   StreamSessionRecord,
   UsageRecord,
+  NewUsageRecord,
   UsageTimePoint,
   UsageCostBasisRow,
   UsageSummary,
@@ -148,7 +149,7 @@ export interface IDatabaseService {
   getMessages(conversationId: string): Message[];
 
   // Usage
-  recordUsage(record: Omit<UsageRecord, 'timestamp'>): void;
+  recordUsage(record: NewUsageRecord): void;
   getUsageSummary(bookSlug?: string): UsageSummary;
   getUsageByConversation(conversationId: string): UsageRecord[];
 
@@ -586,13 +587,7 @@ export interface IChapterValidator {
 }
 
 export interface IUsageService {
-  recordUsage(params: {
-    conversationId: string;
-    inputTokens: number;
-    outputTokens: number;
-    thinkingTokens: number;
-    model: string;
-  }): void;
+  recordUsage(params: NewUsageRecord): void;
   getSummary(bookSlug?: string): UsageSummary;
   getByConversation(conversationId: string): UsageRecord[];
 }

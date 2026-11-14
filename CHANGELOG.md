@@ -4,6 +4,45 @@ All notable changes to Novel Engine are documented here.
 
 ---
 
+## [2026-11-14] — Cost estimates count prompt-cache tokens and use the CLI's own cost (#15)
+
+### Summary
+
+Token counts and cost estimates read far too low because NE recorded only `usage.input_tokens` from the Claude CLI result event. That field excludes prompt-cache reads and writes, which make up nearly all the input on a Claude Code run. NE now records cache-read and cache-write tokens, and stores the CLI's own cost for each run. `total_cost_usd` is cumulative across a `--resume`d CLI session, so the per-run cost comes from `model_usage_since_last_result[*].costUSD`. Statistics use the reported cost where there is one, and estimate the rest from `MODEL_PRICING` with cache multipliers. Separately, attempts that ran out of turns were recorded as zero usage. The CLI's `error_max_turns` result now carries its usage, and `AutoTurnResumer` adds it to the merged total.
+
+### Added
+- `src/application/streamUsage.ts` — `EMPTY_STREAM_USAGE`, `addStreamUsage()` (sums usage, keeps cost only while every part is priced), `pickStreamUsage()` (copies usage fields for recording).
+- `src/application/streamUsage.test.ts` — Tests for the helpers.
+
+### Changed
+- `src/domain/types.ts` — New `StreamUsage` type. `done` is now `StreamUsage & { filesTouched, isMaxTurns?, model? }`; `error` gains `usage?: StreamUsage`. `UsageRecord` gains `cacheReadTokens`, `cacheWriteTokens`, `costUsd: number | null`. New `NewUsageRecord` input type. `UsageSummary` gains `totalCacheReadTokens`/`totalCacheWriteTokens`. `UsageCostBasisRow` now carries `reportedCostUsd` plus `unreported*` token counts. `BookStatistics.totalTokens` gains `cacheRead`/`cacheWrite`.
+- `src/domain/interfaces.ts` — `IDatabaseService.recordUsage` and `IUsageService.recordUsage` take `NewUsageRecord`.
+- `src/domain/constants.ts` — Added `CACHE_READ_PRICE_MULTIPLIER` (0.1) and `CACHE_WRITE_PRICE_MULTIPLIER` (1.25).
+- `src/infrastructure/claude-cli/ClaudeCodeClient.ts` — `extractResultUsage()` reads cache tokens and cost from the result event. Exported `extractRunCostUsd()` uses the per-run cost and falls back to `total_cost_usd` only on runs without `--resume`. A max-turns `error` now carries `usage`.
+- `src/infrastructure/claude-cli/StreamSessionTracker.ts` — `markResumedRun()` / `isResumedRun()`.
+- `src/infrastructure/database/migrations.ts` — Optional `Migration.apply(db)`; v4 adds `token_usage.cache_read_tokens`, `cache_write_tokens`, `cost_usd`, each only if missing.
+- `src/infrastructure/database/DatabaseService.ts` — Inserts and reads the new columns. Summary totals include cache tokens. The cost basis sums `cost_usd` and counts tokens only from unpriced rows.
+- `src/application/AutoTurnResumer.ts` — Accumulates full `StreamUsage` across attempts, including max-turns attempts.
+- `src/application/StreamManager.ts`, `src/application/AuditService.ts` — Record usage via `pickStreamUsage(event)`.
+- `src/application/UsageService.ts` — Takes `NewUsageRecord`; doc comment no longer claims NE does no costing.
+- `src/application/StatisticsService.ts` — Cost = reported cost + estimate for unpriced rows (cache reads/writes at their multipliers). `totalTokens` includes cache counts.
+- `src/renderer/components/Statistics/StatisticsView.tsx` — Total Tokens card includes cached tokens and shows a "cached" figure.
+- Tests: `ClaudeCodeClient.test.ts`, `AutoTurnResumer.test.ts`, `StreamManager.test.ts`, `StatisticsService.test.ts`, `DatabaseService.usage.test.ts`, `migrations.test.ts`, plus fixture updates in `src/test/` and exact-shape expectations elsewhere.
+
+### Fixed
+- `src/infrastructure/claude-cli/ClaudeCodeClient.ts` — Cache tokens were dropped; cost estimates for Claude CLI calls left out most input.
+- `src/application/AutoTurnResumer.ts` — Usage from attempts that hit max turns was lost (counted as zero).
+
+### Architecture Impact
+- Schema change: `token_usage` gains `cache_read_tokens INTEGER NOT NULL DEFAULT 0`, `cache_write_tokens INTEGER NOT NULL DEFAULT 0`, `cost_usd REAL` (migration v4).
+- New application module: `streamUsage.ts` (pure helpers, no dependencies).
+- No new IPC channels, stores or DI wiring.
+
+### Migration Notes
+- Migration v4 runs on launch: `ALTER TABLE token_usage ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0; ALTER TABLE token_usage ADD COLUMN cache_write_tokens INTEGER NOT NULL DEFAULT 0; ALTER TABLE token_usage ADD COLUMN cost_usd REAL;` Each column is added only if missing. Existing rows keep 0 cache tokens and NULL cost, so their estimates stay as low as before. Upstream builds ignore the new columns (their INSERT names its columns).
+
+---
+
 ## [2026-11-12] — Revision Queue panel resizes horizontally (#12)
 
 ### Summary

@@ -30,6 +30,7 @@ Key behavior:
 | File | Purpose |
 |------|---------|
 | `schema.ts` | CREATE TABLE statements, WAL mode, foreign keys, migration guards |
+| `migrations.ts` | Forward-only `MIGRATIONS` list (v0–v4) and `runMigrations(db)`. A migration runs its `sql`, or its `apply(db)` function when set (used for idempotent `ADD COLUMN`). |
 | `DatabaseService.ts` | Implements `IDatabaseService`. Prepared statements for all queries. |
 | `index.ts` | Barrel export |
 
@@ -99,7 +100,8 @@ Key behavior:
 - `hasActiveProcesses()` / `hasActiveProcessesForBook()` for idle detection
 - EPIPE/ERR_STREAM_DESTROYED on stdin logged with diagnostic info (stdinBytes, writableFinished, writableEnded)
 - System prompt size guard: rejects prompts > 500KB with clear error before spawn
-- Max-turns signaling: emits `isMaxTurns: true` on the `error` StreamEvent when the CLI result subtype is `error_max_turns` (vs. `false` for other error subtypes like `error_during_execution`)
+- Max-turns signaling: emits `isMaxTurns: true` on the `error` StreamEvent when the CLI result subtype is `error_max_turns` (vs. `false` for other error subtypes like `error_during_execution`). That error also carries `usage` (the exhausted attempt's `StreamUsage`) so `AutoTurnResumer` counts it.
+- Usage from the result event: `inputTokens` ← `usage.input_tokens` (uncached only), `cacheReadTokens` ← `usage.cache_read_input_tokens`, `cacheWriteTokens` ← `usage.cache_creation_input_tokens`. `costUsd` comes from `extractRunCostUsd()`: the sum of `model_usage_since_last_result[*].costUSD` (this run only). `total_cost_usd` is cumulative over the CLI session, so it is used only as a fallback on runs without `--resume` (`StreamSessionTracker.isResumedRun()`).
 - Error label: `Claude CLI run failed (<subtype>): <result>`. The subtype is omitted when it is `success`, because a result can carry `subtype: "success"` with `is_error: true` (e.g. an API 400 "this CLI version does not support the model").
 
 
@@ -258,10 +260,15 @@ Index: `idx_messages_conversation_id` on `conversation_id`
 | `input_tokens` | INTEGER | NOT NULL DEFAULT 0 | |
 | `output_tokens` | INTEGER | NOT NULL DEFAULT 0 | |
 | `thinking_tokens` | INTEGER | NOT NULL DEFAULT 0 | |
+| `cache_read_tokens` | INTEGER | NOT NULL DEFAULT 0 | Prompt-cache reads (v4) |
+| `cache_write_tokens` | INTEGER | NOT NULL DEFAULT 0 | Prompt-cache writes (v4) |
+| `cost_usd` | REAL | nullable | Provider-reported cost of the call; NULL = not reported, estimated from `MODEL_PRICING` (v4) |
 | `model` | TEXT | NOT NULL | Model used |
 | `timestamp` | TEXT | NOT NULL | ISO 8601 |
 
-Index: `idx_token_usage_conversation_id` on `conversation_id`
+`input_tokens` is uncached input only. Index: `idx_token_usage_conversation_id` on `conversation_id`
+
+Migration: v4 in `migrations.ts` adds the three cache/cost columns through `Migration.apply` (each `ALTER TABLE` runs only when the column is missing; a missing table is skipped).
 
 ### `stream_events`
 

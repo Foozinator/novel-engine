@@ -76,6 +76,33 @@ describe('runMigrations', () => {
     expect(tableNames()).toContain('word_count_snapshots');
   });
 
+  it('adds cache-token and cost columns to an existing token_usage table, preserving rows', () => {
+    db.exec(`
+      CREATE TABLE conversations (id TEXT PRIMARY KEY, book_slug TEXT, agent_name TEXT);
+      CREATE TABLE token_usage (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        conversation_id TEXT NOT NULL,
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        model TEXT NOT NULL
+      );
+      INSERT INTO token_usage (conversation_id, input_tokens, model) VALUES ('c1', 7, 'opus');
+    `);
+    runMigrations(db);
+
+    const columns = (db.pragma('table_info(token_usage)') as { name: string }[]).map((c) => c.name);
+    expect(columns).toEqual(expect.arrayContaining(['cache_read_tokens', 'cache_write_tokens', 'cost_usd']));
+    expect(db.prepare('SELECT input_tokens, cache_read_tokens, cache_write_tokens, cost_usd FROM token_usage').get())
+      .toEqual({ input_tokens: 7, cache_read_tokens: 0, cache_write_tokens: 0, cost_usd: null });
+  });
+
+  it('skips the token_usage columns when they already exist', () => {
+    db.exec(`
+      CREATE TABLE conversations (id TEXT PRIMARY KEY, book_slug TEXT, agent_name TEXT);
+      CREATE TABLE token_usage (id INTEGER PRIMARY KEY, cache_read_tokens INTEGER, cache_write_tokens INTEGER, cost_usd REAL);
+    `);
+    expect(() => runMigrations(db)).not.toThrow();
+  });
+
   it('records every applied version and is a no-op when re-run', () => {
     db.exec(`CREATE TABLE conversations (id TEXT PRIMARY KEY, book_slug TEXT, agent_name TEXT);`);
     runMigrations(db);
