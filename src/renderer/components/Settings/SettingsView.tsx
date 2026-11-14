@@ -613,8 +613,8 @@ function ReadingSection(): React.ReactElement {
         )}
       </div>
       <p
-        className="rounded-md border border-zinc-200 px-3 py-2 text-[16.5px] leading-relaxed text-zinc-800 dark:border-zinc-700 dark:text-zinc-200"
-        style={{ fontFamily: previewFamily }}
+        className="rounded-md border border-zinc-200 px-3 py-2 leading-relaxed text-zinc-800 dark:border-zinc-700 dark:text-zinc-200"
+        style={{ fontFamily: previewFamily, fontSize: `${fontSize}px` }}
         data-testid="prose-font-preview"
       >
         The rain had not stopped for three days, and the gutters ran like small rivers toward the harbor.

@@ -137,6 +137,13 @@ describe('SettingsView', () => {
     );
     expect(screen.queryByRole('textbox', { name: 'Custom font name' })).not.toBeInTheDocument();
 
+    // The sample follows the prose font size
+    expect(screen.getByTestId('prose-font-preview').style.fontSize).toBe('16.5px');
+    fireEvent.click(screen.getByRole('button', { name: 'Increase prose font size' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('prose-font-preview').style.fontSize).toBe('17.5px'),
+    );
+
     fireEvent.change(select, { target: { value: 'custom' } });
     const input = await screen.findByRole('textbox', { name: 'Custom font name' });
     fireEvent.change(input, { target: { value: 'EB Garamond; color: red' } });
