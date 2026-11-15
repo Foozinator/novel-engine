@@ -711,6 +711,12 @@ Implemented by: `QueryService` (`src/application/QueryService.ts`)
 
 `Record<CreativeAgentName, QuickAction[]>` — pre-built prompt suggestions per agent.
 
+### PHASE_STARTER_ACTIONS / getPhaseStarterActions
+
+`Partial<Record<PipelinePhaseId, string[]>>` — curated starter labels per phase for the workbench phase starter card. Values are labels from the phase agent's `AGENT_QUICK_ACTIONS`, so prompts live in one place. Excludes Hot Take (PhaseHeader has a chip) and the granular-pass fallbacks. Every agent phase has an entry; `build` has none.
+
+`getPhaseStarterActions(phaseId, agent): QuickAction[]` — resolves the labels to actions in listed order, skipping unknown labels. A phase with no entry gets the agent's full list. No agent, Wrangler or Helper → `[]`.
+
 ### Context Budget Constants
 
 | Constant | Value | Purpose |

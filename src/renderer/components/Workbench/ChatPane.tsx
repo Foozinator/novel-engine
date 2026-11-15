@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AGENT_REGISTRY } from '@domain/constants';
+import { AGENT_REGISTRY, getPhaseStarterActions } from '@domain/constants';
 import type { CreativeAgentName, PipelinePhase } from '@domain/types';
 import { useBookStore } from '../../stores/bookStore';
 import { useChatStore } from '../../stores/chatStore';
@@ -9,6 +9,7 @@ import { agentColor } from '../common/agentColors';
 import { ChatInput } from '../Chat/ChatInput';
 import { MessageList } from '../Chat/MessageList';
 import { Icon } from '../common/Icon';
+import { PhaseStarterCard } from './PhaseStarterCard';
 import { usePhaseConversations } from './usePhaseConversations';
 
 function shortRelativeTime(isoDate: string): string {
@@ -117,6 +118,7 @@ export function ChatPane({ phase }: { phase: PipelinePhase | null }): React.Reac
     adhocConversationId && chatActive?.id === adhocConversationId ? chatActive : null;
 
   const activeConversation = adhocConversation ?? phaseConversation;
+  const messageCount = useChatStore((s) => s.messages.length);
 
   // Same default-budget derivation as ChatView.
   const defaultThinkingBudget = useMemo(() => {
@@ -139,6 +141,43 @@ export function ChatPane({ phase }: { phase: PipelinePhase | null }): React.Reac
     phase !== null &&
     phase.status !== 'active' &&
     phase.status !== 'pending-completion';
+
+  // Phase starter card (#6): a fresh phase shows curated starting points
+  // where the conversation goes. Picking one fills the input exactly like
+  // the Quick actions menu; the card disappears once the first message lands.
+  const starters = useMemo(
+    () => (phase ? getPhaseStarterActions(phase.id, phase.agent) : []),
+    [phase],
+  );
+  const [prefill, setPrefill] = useState<{ text: string; nonce: number } | null>(null);
+  useEffect(() => {
+    setPrefill(null);
+  }, [phase?.id]);
+
+  const showStarter =
+    phase !== null &&
+    phase.agent !== null &&
+    adhocConversation === null &&
+    !isReadOnly &&
+    !isStreaming &&
+    starters.length > 0 &&
+    (activeConversation === null || messageCount === 0);
+
+  const [startingConversation, setStartingConversation] = useState(false);
+  const handleStarterPick = useCallback(
+    async (prompt: string) => {
+      if (!activeConversation) {
+        setStartingConversation(true);
+        try {
+          await createConversation();
+        } finally {
+          setStartingConversation(false);
+        }
+      }
+      setPrefill({ text: prompt, nonce: Date.now() });
+    },
+    [activeConversation, createConversation],
+  );
 
   // Same send handling as ChatView, including the hot-take quick action.
   const handleSend = useCallback(
@@ -212,7 +251,16 @@ export function ChatPane({ phase }: { phase: PipelinePhase | null }): React.Reac
 
       {activeConversation ? (
         <>
-          <MessageList hideStreaming={isReadOnly} />
+          {showStarter && phase ? (
+            <PhaseStarterCard
+              phase={phase}
+              starters={starters}
+              onPick={(prompt) => void handleStarterPick(prompt)}
+              disabled={isStreaming}
+            />
+          ) : (
+            <MessageList hideStreaming={isReadOnly} />
+          )}
           <ChatInput
             onSend={(content) => void handleSend(content)}
             disabled={isStreaming || isReadOnly}
@@ -227,8 +275,17 @@ export function ChatPane({ phase }: { phase: PipelinePhase | null }): React.Reac
             defaultThinkingBudget={defaultThinkingBudget}
             onThinkingBudgetChange={setThinkingBudget}
             compact
+            prefill={prefill}
           />
         </>
+      ) : showStarter && phase && activeSlug ? (
+        <PhaseStarterCard
+          phase={phase}
+          starters={starters}
+          onPick={(prompt) => void handleStarterPick(prompt)}
+          onStartBlank={() => void createConversation()}
+          disabled={isStreaming || startingConversation}
+        />
       ) : (
         <div className="flex flex-1 items-center justify-center">
           <div className="text-center">

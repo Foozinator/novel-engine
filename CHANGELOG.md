@@ -128,6 +128,30 @@ Commit ef54cf9 (#35) committed two worktree symlinks, `notes` and `devtools`, th
 
 ---
 
+## [2026-11-14] — Phase starter card on a fresh workbench phase (#6)
+
+### Summary
+
+Opening a phase in the workbench used to show an empty chat (or "No conversation for this phase yet") with the starting prompts hidden in the small "Quick actions ▾" chip. A fresh phase now shows a card where the conversation goes. It has the phase label, agent and role, the phase description, and curated "Common starting points" buttons. A button fills and focuses the chat input exactly as the Quick actions menu does. If the phase has no conversation yet, it creates one first. The card disappears once the first message is sent. The Quick actions chip stays for mid-conversation steps and saved prompts.
+
+### Added
+- `src/renderer/components/Workbench/PhaseStarterCard.tsx` — The card. Props: `phase`, `starters`, `onPick(prompt)`, optional `onStartBlank`, `disabled`.
+- `src/renderer/components/Workbench/PhaseStarterCard.test.tsx` — Description and buttons render, pick passes the full prompt, blank-start option, disabled state.
+
+### Changed
+- `src/domain/constants.ts` — Added `PHASE_STARTER_ACTIONS` (phase → quick-action labels) and `getPhaseStarterActions(phaseId, agent)`, which resolves labels against `AGENT_QUICK_ACTIONS` and falls back to the agent's full list.
+- `src/renderer/components/Chat/ChatInput.tsx` — New optional `prefill: { text, nonce }` prop. Each new nonce runs the existing quick-action handler (set value, focus).
+- `src/renderer/components/Workbench/ChatPane.tsx` — Shows `PhaseStarterCard` instead of the empty `MessageList`, and instead of the "No conversation for this phase yet" block (its "Start with X" button becomes "Start a blank conversation"). Not shown on read-only phases, ad-hoc conversations or while streaming. Prefill resets on phase change. Conversation creation from a pick is guarded against double clicks.
+- `src/domain/constants.test.ts` — Every `PHASE_STARTER_ACTIONS` label must exist in its phase agent's quick actions; resolver order, fallback and non-creative agents.
+- `src/renderer/components/Chat/ChatInput.test.tsx` — Prefill applies, focuses, and re-applies on a new nonce.
+- `src/renderer/components/Workbench/ChatPane.test.tsx` — Card visibility rules, pick fills the input, pick with no conversation creates one first; empty-state test uses the new button label.
+- `docs/architecture/DOMAIN.md`, `docs/architecture/RENDERER.md` — New constant and helper; new Workbench/ component table.
+
+### Architecture Impact
+- None — no wiring changes. No new IPC channels or stores.
+
+### Migration Notes
+- None
 ## [2026-11-14] — Reading font selection (#35)
 
 ### Summary

@@ -9,7 +9,8 @@ import { useViewStore } from '../../stores/viewStore';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { renderApp } from '../../../test/renderWithState';
 import { resetStoresBeforeEach } from '../../../test/resetStores';
-import { makeAppSettings, makeConversation } from '../../../test/novelEngineMock';
+import { makeAppSettings, makeConversation, makeMessage } from '../../../test/novelEngineMock';
+import { AGENT_QUICK_ACTIONS } from '@domain/constants';
 
 resetStoresBeforeEach(
   useBookStore,
@@ -73,7 +74,7 @@ describe('ChatPane', () => {
       ],
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Start with Verity' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start a blank conversation' }));
     expect(createConversation).toHaveBeenCalledWith('Verity', 'book-a', 'scaffold');
   });
 
@@ -240,5 +241,109 @@ describe('ChatPane', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
     expect(screen.queryByText(/session was interrupted/)).toBeNull();
+  });
+  describe('phase starter card', () => {
+    const outlinePrompt =
+      AGENT_QUICK_ACTIONS.Verity.find((a) => a.label === 'Build scene outline')?.prompt ?? '';
+
+    it('replaces the empty message list on a fresh phase conversation and fills the input on pick', async () => {
+      const conv = scaffoldConv();
+      renderApp(<ChatPane phase={SCAFFOLD} />, {
+        stores: [
+          [useBookStore, { activeSlug: 'book-a' }],
+          [useChatStore, { conversations: [conv], activeConversation: conv, messages: [] }],
+        ],
+      });
+
+      expect(screen.getByText('Common starting points')).toBeInTheDocument();
+      expect(screen.getByText(SCAFFOLD.description)).toBeInTheDocument();
+      // Conversation exists — no "blank" option
+      expect(screen.queryByRole('button', { name: 'Start a blank conversation' })).toBeNull();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Build scene outline' }));
+
+      const textarea = screen.getByPlaceholderText('Type a message...');
+      await waitFor(() => expect(textarea).toHaveValue(outlinePrompt));
+    });
+
+    it('creates the phase conversation first when none exists, then fills the input', async () => {
+      const conv = scaffoldConv();
+      const createConversation = vi.fn(async () => {
+        useChatStore.setState({ conversations: [conv], activeConversation: conv, messages: [] });
+      });
+      renderApp(<ChatPane phase={SCAFFOLD} />, {
+        stores: [
+          [useBookStore, { activeSlug: 'book-a' }],
+          [useChatStore, { createConversation }],
+        ],
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Build scene outline' }));
+
+      expect(createConversation).toHaveBeenCalledWith('Verity', 'book-a', 'scaffold');
+      await waitFor(() =>
+        expect(screen.getByPlaceholderText('Type a message...')).toHaveValue(outlinePrompt),
+      );
+    });
+
+    it('is hidden once the conversation has messages', () => {
+      const conv = scaffoldConv();
+      renderApp(<ChatPane phase={SCAFFOLD} />, {
+        stores: [
+          [useBookStore, { activeSlug: 'book-a' }],
+          [
+            useChatStore,
+            {
+              conversations: [conv],
+              activeConversation: conv,
+              messages: [makeMessage({ conversationId: conv.id, content: 'Already started' })],
+            },
+          ],
+        ],
+      });
+
+      expect(screen.queryByText('Common starting points')).toBeNull();
+      expect(screen.getByText('Already started')).toBeInTheDocument();
+    });
+
+    it('is hidden on read-only (completed) phases', () => {
+      const conv = scaffoldConv();
+      renderApp(<ChatPane phase={{ ...SCAFFOLD, status: 'complete' }} />, {
+        stores: [
+          [useBookStore, { activeSlug: 'book-a' }],
+          [useChatStore, { conversations: [conv], activeConversation: conv, messages: [] }],
+        ],
+      });
+
+      expect(screen.queryByText('Common starting points')).toBeNull();
+    });
+
+    it('is hidden for ad-hoc conversations', () => {
+      const adhoc = makeConversation({ id: 'adhoc-1', agentName: 'Ghostlight', pipelinePhase: null });
+      renderApp(<ChatPane phase={SCAFFOLD} />, {
+        stores: [
+          [useBookStore, { activeSlug: 'book-a' }],
+          [useChatStore, { conversations: [adhoc], activeConversation: adhoc, messages: [] }],
+          [useWorkspaceStore, { adhocConversationId: 'adhoc-1' }],
+        ],
+      });
+
+      expect(screen.queryByText('Common starting points')).toBeNull();
+    });
+
+    it('is hidden while a stream is running', () => {
+      const conv = scaffoldConv();
+      renderApp(<ChatPane phase={SCAFFOLD} />, {
+        stores: [
+          [useBookStore, { activeSlug: 'book-a' }],
+          [
+            useChatStore,
+            { conversations: [conv], activeConversation: conv, messages: [], isStreaming: true },
+          ],
+        ],
+      });
+
+      expect(screen.queryByText('Common starting points')).toBeNull();
+    });
   });
 });
