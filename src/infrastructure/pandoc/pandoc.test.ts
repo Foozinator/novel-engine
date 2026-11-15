@@ -37,7 +37,7 @@ describe('resolvePandocPath', () => {
   it('respects packaged-style resources paths', () => {
     osState.platform = 'linux';
     osState.arch = 'x64';
-    const resources = '/Applications/Novel Engine.app/Contents/Resources';
+    const resources = '/Applications/Novel Engine Spur.app/Contents/Resources';
     expect(resolvePandocPath(resources)).toBe(
       path.join(resources, 'pandoc', 'pandoc-linux-x64')
     );

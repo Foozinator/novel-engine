@@ -1,4 +1,4 @@
-# Forge Config — Novel Engine
+# Forge Config — Novel Engine Spur
 
 > Persistent program-level configuration. Created on first Forge run.
 > Referenced by all feature builds. Edit directly to change defaults.
@@ -8,7 +8,7 @@
 
 ## Program
 
-**Name:** Novel Engine
+**Name:** Novel Engine Spur
 **Root:** /Users/the.phoenix/WebstormProjects/novel-engine/
 **Source directory:** src/
 

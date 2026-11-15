@@ -60,8 +60,12 @@ import type {
   SourceGenerationEvent,
   BookDashboardData,
   BookStatistics,
+  DataFolderInfo,
+  PromptSyncResult,
+  PromptSyncStatus,
 } from '@domain/types';
 import type { NotificationManager } from '../notifications';
+import { chooseDataFolder, relaunch, resetDataFolder } from '../dataFolderDialogs';
 
 /**
  * Check whether a BrowserWindow's webContents is still alive and sendable.
@@ -103,6 +107,8 @@ export function registerIpcHandlers(services: {
 }, paths: {
   userDataPath: string;
   booksDir: string;
+  dataFolder: DataFolderInfo;
+  promptSync: PromptSyncResult;
 }, hooks?: {
   onActiveBookChanged?: (slug: string) => void;
 }): void {
@@ -201,6 +207,37 @@ export function registerIpcHandlers(services: {
     const agent = await services.agents.load(name);
     const { systemPrompt: _prompt, ...meta } = agent;
     return meta as AgentMeta;
+  });
+
+  /** Result of this launch's bundled-prompt sync (#39). */
+  ipcMain.handle('agents:promptSync', (): PromptSyncStatus => ({
+    ...paths.promptSync,
+    agentsDir: path.join(paths.userDataPath, 'custom-agents'),
+  }));
+
+  // === Data Folder (#39) ===
+
+  ipcMain.handle('dataFolder:get', (): DataFolderInfo => paths.dataFolder);
+
+  /** Pick a folder, confirm, write the pointer and restart. False if cancelled. */
+  ipcMain.handle('dataFolder:change', async (event): Promise<boolean> => {
+    const { source, defaultDir, current } = paths.dataFolder;
+    if (source === 'flag' || source === 'env') return false; // overrides always win
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const chosen = await chooseDataFolder(win, defaultDir, current);
+    if (!chosen) return false;
+    relaunch();
+    return true;
+  });
+
+  /** Point back at the default folder and restart. False if cancelled. */
+  ipcMain.handle('dataFolder:reset', async (event): Promise<boolean> => {
+    const { source, defaultDir } = paths.dataFolder;
+    if (source !== 'pointer') return false; // already default, or overridden
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!(await resetDataFolder(win, defaultDir))) return false;
+    relaunch();
+    return true;
   });
 
   // === Books ===

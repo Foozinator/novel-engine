@@ -1,6 +1,6 @@
 {
-  "name": "novel-engine",
-  "productName": "Novel Engine",
+  "name": "novel-engine-spur",
+  "productName": "Novel Engine Spur",
   "version": "0.2.0",
   "description": "A multi-agent AI writing desktop application",
   "main": ".vite/build/index.js",
@@ -12,6 +12,7 @@
     "publish": "electron-forge publish",
     "download-pandoc": "node scripts/download-pandoc.js",
     "generate-icons": "node scripts/generate-icons.js",
+    "agent-hashes": "node scripts/agent-hashes.js",
     "ci-build": "node scripts/ci-build.js",
     "lint": "tsc --noEmit",
     "pretest": "node scripts/ensure-native-abi.js",
@@ -24,8 +25,7 @@
   },
   "keywords": [],
   "author": {
-    "name": "the.phoenix",
-    "email": "john.paul.ruf@gmail.com"
+    "name": "Andrew Searls"
   },
   "license": "AGPL-3.0-only",
   "devDependencies": {

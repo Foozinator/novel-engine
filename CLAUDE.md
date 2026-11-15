@@ -1,4 +1,4 @@
-# Novel Engine — Project Memory
+# Novel Engine Spur — Project Memory
 
 ## Session Program Output Directory
 
@@ -36,6 +36,8 @@ Project-level Forge configuration lives at `FORGE-CONFIG.md` (project root). Rea
 ## Fork conventions (Foozinator/novel-engine)
 
 This repo is a fork of `john-paul-ruf/novel-engine`. Upstream is frozen: the maintainer stopped work on the app in November 2026. The fork is now the project, and its issues are the backlog.
+
+The fork ships as **Novel Engine Spur** (#39). User-facing names, packaging IDs and the default data folder (`{appData}/Novel Engine Spur`) use that name. Code identifiers and on-disk names (`window.novelEngine`, `novel-engine.db`, `novel-asset://`, `NOVEL_ENGINE_DATA_DIR`) keep the original name so data folders stay compatible with upstream. Historical text (past CHANGELOG entries, `docs/releases/`, `prompts/`, `design/`, upstream's `docs/*.html` site) stays as written.
 
 ### Ground rules
 

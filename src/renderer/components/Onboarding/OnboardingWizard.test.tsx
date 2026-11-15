@@ -37,7 +37,7 @@ describe('OnboardingWizard', () => {
   it('starts on the welcome step', () => {
     renderWizard();
 
-    expect(screen.getByText('Novel Engine')).toBeInTheDocument();
+    expect(screen.getByText('Novel Engine Spur')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Get Started' })).toBeInTheDocument();
   });
 
@@ -107,7 +107,7 @@ describe('OnboardingWizard', () => {
     fireEvent.change(screen.getByPlaceholderText('My First Novel'), {
       target: { value: 'Debut' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Launch Novel Engine' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Launch Novel Engine Spur' }));
 
     await waitFor(() =>
       expect(bridge.settings.update).toHaveBeenCalledWith({ initialized: true }),
@@ -123,7 +123,7 @@ describe('OnboardingWizard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Skip for now' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Next' })); // model
     fireEvent.click(await screen.findByRole('button', { name: "Skip — I'll set this up later" }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Launch Novel Engine' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Launch Novel Engine Spur' }));
 
     await waitFor(() =>
       expect(bridge.settings.update).toHaveBeenCalledWith({ initialized: true }),

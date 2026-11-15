@@ -288,6 +288,16 @@ export function installNovelEngineMock(overrides: BridgeOverrides = {}): NovelEn
     agents: {
       list: vi.fn(async () => []),
       get: vi.fn(async () => makeAgentMeta()),
+      promptSync: vi.fn(async () => ({ updated: [], edited: [], agentsDir: '/fake/userData/custom-agents' })),
+    },
+    dataFolder: {
+      get: vi.fn(async () => ({
+        current: '/fake/userData',
+        defaultDir: '/fake/userData',
+        source: 'default' as const,
+      })),
+      change: vi.fn(async () => false),
+      reset: vi.fn(async () => false),
     },
     books: {
       list: vi.fn(async () => []),
