@@ -4,6 +4,25 @@ All notable changes to Novel Engine are documented here.
 
 ---
 
+## [2026-11-14] — Untrack accidentally committed `notes` and `devtools` symlinks
+
+### Summary
+
+Commit ef54cf9 (#35) committed two worktree symlinks, `notes` and `devtools`, that point at the main checkout. Both folders are personal and untracked. The local exclude patterns (`notes/`, `devtools/`) match only directories, so they missed the symlinks. When main was pulled into the root checkout, git replaced the real (ignored) folders with self-referencing symlinks and deleted their contents. This entry removes both paths from the index. Those folders hold only untracked personal tooling, so no tracked file changes.
+
+### Removed
+- `notes` — symlink committed by mistake; local working notes only
+- `devtools` — symlink committed by mistake; local dev tooling only
+
+### Architecture Impact
+- None — no wiring changes
+
+### Migration Notes
+- Local clones: change the `.git/info/exclude` entries `notes/` and `devtools/` to `/notes` and `/devtools`. The trailing-slash form matches only directories, so worktree symlinks get staged by `git add -A`.
+- A checkout that pulled ef54cf9 or later has self-referencing `notes`/`devtools` symlinks where its folders used to be. After pulling this fix, delete the symlinks and restore the folders from a backup.
+
+---
+
 ## [2026-11-14] — Reading font selection (#35)
 
 ### Summary
