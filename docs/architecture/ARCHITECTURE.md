@@ -1,6 +1,6 @@
 # Architecture — Novel Engine
 
-> Last updated: 2026-11-12 (program-030)
+> Last updated: 2026-11-14 (#37)
 
 Electron + React 18 + TypeScript 5 + Tailwind v4 + Zustand + better-sqlite3 + Claude Code CLI + Codex CLI + Ollama CLI + Pandoc
 
@@ -45,6 +45,8 @@ src/
 │   ├── database/
 │   │   ├── schema.ts                        # SQLite CREATE TABLE statements, WAL mode, foreign keys
 │   │   ├── DatabaseService.ts               # Conversations, messages, usage, stream events repos
+│   │   ├── bookHistory.ts                   # Per-book history snapshot export/merge (#37, #36 seam)
+│   │   ├── SourceDataFolder.ts              # Opens another data folder via a migrated temp DB copy
 │   │   └── index.ts
 │   ├── agents/
 │   │   ├── AgentService.ts                  # Reads agent .md files from disk, composite loading
@@ -96,6 +98,7 @@ src/
 │   ├── VersionService.ts                   # File versioning: snapshot, diff, revert, prune
 │   ├── ManuscriptImportService.ts           # DOCX/MD import, chapter detection, book creation
 │   ├── SeriesImportService.ts              # Batch import + series creation orchestration
+│   ├── DataFolderImportService.ts           # Import books + history from another data folder
 │   ├── SourceGenerationService.ts           # Multi-agent source document generation
 │   ├── HelperService.ts                     # In-app help assistant (user guide as context)
 │   ├── FindReplaceService.ts               # Bulk find & replace across chapter drafts; safe revert via snapshots
@@ -142,6 +145,7 @@ src/
     │   ├── motifLedgerStore.ts
     │   ├── queryStore.ts                   # Query tracker/submission state
     │   ├── importStore.ts
+    │   ├── dataFolderImportStore.ts        # Import-from-another-data-folder wizard state
     │   ├── helperStore.ts                # In-app help assistant panel state
     │   └── streamHandler.ts              # Shared stream event handler factory
     ├── tours/
@@ -158,7 +162,7 @@ src/
     │   ├── PitchRoom/                       # PitchRoomView
     │   ├── RevisionQueue/                   # RevisionQueueView, SessionCard, TaskProgress, etc.
     │   ├── MotifLedger/                     # MotifLedgerView + tabs (Entries, Systems, Foreshadow, etc.)
-    │   ├── Import/                          # ImportWizard, ChapterPreviewList, ImportSeriesWizard, VolumePreviewList
+    │   ├── Import/                          # ImportWizard, ChapterPreviewList, ImportSeriesWizard, VolumePreviewList, DataFolderImportWizard
     │   ├── CliActivity/                     # CliActivityPanel
     │   ├── CliUpdate/                       # CliUpdateBanner
     │   ├── Helper/                          # HelperButton, HelperPanel, HelperMessageList
@@ -239,6 +243,13 @@ ManuscriptImportService
 SeriesImportService
 ├── IManuscriptImportService (ManuscriptImportService)
 └── ISeriesService (SeriesService)
+
+DataFolderImportService
+├── IDatabaseService (DatabaseService)
+├── ISeriesService (SeriesService)
+├── OpenSourceDataFolder (makeSourceDataFolderOpener → DatabaseService on a temp copy)
+├── paths: { userDataPath, booksDir, tmpRoot: os.tmpdir() }
+└── defaultAuthorProfile: AUTHOR_PROFILE_TEMPLATE (bootstrap.ts)
 
 SourceGenerationService
 ├── ISettingsService (SettingsService)

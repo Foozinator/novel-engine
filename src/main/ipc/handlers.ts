@@ -19,6 +19,7 @@ import type {
   IVersionService,
   IProviderRegistry,
   IManuscriptImportService,
+  IDataFolderImportService,
   ISeriesService,
   ISourceGenerationService,
   ISeriesImportService,
@@ -55,6 +56,7 @@ import type {
   ProviderConfig,
   ProviderId,
   ImportCommitConfig,
+  DataFolderImportConfig,
   SeriesImportCommitConfig,
   SeriesMeta,
   SourceGenerationEvent,
@@ -93,6 +95,7 @@ export function registerIpcHandlers(services: {
   sourceGeneration: ISourceGenerationService;
   series: ISeriesService;
   seriesImport: ISeriesImportService;
+  dataFolderImport: IDataFolderImportService;
   helper: IHelperService;
   findReplace: IFindReplaceService;
   dashboard: IDashboardService;
@@ -330,6 +333,30 @@ export function registerIpcHandlers(services: {
       onStreamEvent: broadcastStreamEvent,
     });
   });
+
+  // ── Import from another data folder (#37) ─────────────────────────
+
+  ipcMain.handle('import:selectDataFolder', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) throw new Error('No window found');
+
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+      title: 'Import from another Novel Engine folder',
+      buttonLabel: 'Choose folder',
+      properties: ['openDirectory'],
+    });
+
+    if (canceled || filePaths.length === 0) return null;
+    return filePaths[0];
+  });
+
+  ipcMain.handle('import:dataFolderPreview', (_, sourcePath: string) =>
+    services.dataFolderImport.preview(sourcePath),
+  );
+
+  ipcMain.handle('import:dataFolderCommit', (_, config: DataFolderImportConfig) =>
+    services.dataFolderImport.commit(config),
+  );
 
   // ── Series Import ──────────────────────────────────────────────────
 

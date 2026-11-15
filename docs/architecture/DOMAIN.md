@@ -1,6 +1,6 @@
 # Domain — Types, Interfaces, Constants
 
-> Last updated: 2026-07-23 (program-030)
+> Last updated: 2026-11-14 (#37)
 
 Everything in `src/domain/`. Pure TypeScript declarations — zero imports from other layers.
 
@@ -207,6 +207,18 @@ Everything in `src/domain/`. Pure TypeScript declarations — zero imports from 
 | `SeriesImportCommitConfig` | `{ seriesName, existingSeriesSlug, author, volumes[] }` | SeriesImportService.commit() |
 | `SeriesImportResult` | `{ seriesSlug, seriesName, volumeResults, totalBooks, totalChapters, totalWordCount }` | ImportSeriesWizard success step |
 
+### Data Folder Import (#37)
+
+| Type | Shape | Used By |
+|------|-------|---------|
+| `DataFolderBookSummary` | `{ slug, title, author, wordCount, chapterCount, conversationCount, historyBytes, folderExists, alreadyImported }` | DataFolderImportService.preview(), DataFolderImportWizard |
+| `DataFolderPreview` | `{ sourcePath, sourceSchemaVersion, books[], hasAuthorProfile, seriesSlugs[] }` | dataFolderImportStore |
+| `DataFolderBookAction` | `'import' \| 'rename' \| 'skip'` | DataFolderImportConfig |
+| `DataFolderImportConfig` | `{ sourcePath, books: { slug, action, newTitle? }[], copyAuthorProfile, copySeries }` | DataFolderImportService.commit() |
+| `DataFolderImportResult` | `{ imported: { from, to, title, conversations, versions }[], skipped: { slug, reason }[], warnings[] }` | DataFolderImportWizard success step |
+| `BookHistoryCounts` | `{ conversations, messages, tokenUsage, fileVersions, wordCountSnapshots }` | IDatabaseService.exportBookHistory/importBookHistory |
+| `BookHistoryImportReceipt` | `{ targetSlug, conversationIds, firstFileVersionId, firstWordCountSnapshotId, counts }` | IDatabaseService.revertBookHistoryImport |
+
 ### Guided Tour
 
 | Type | Shape | Used By |
@@ -316,6 +328,13 @@ Implemented by: `DatabaseService` (`src/infrastructure/database/`)
 | `getUsageByConversation` | `(conversationId) => UsageRecord[]` | Usage records |
 | `getUsageCostBasis` | `(bookSlug?) => UsageCostBasisRow[]` | Token totals grouped by agent, phase (null → `adhoc`) and model |
 | `updateBookSlug` | `(oldSlug, newSlug) => void` | Migrates conversation references |
+| `exportBookHistory` | `(bookSlug, destFile) => BookHistoryCounts` | Writes one book's history to a new snapshot file |
+| `importBookHistory` | `(srcFile, targetSlug) => BookHistoryImportReceipt` | One-transaction merge; refuses newer schema or id clashes |
+| `revertBookHistoryImport` | `(receipt) => void` | Removes the rows a merge inserted |
+| `findExistingConversationIds` | `(ids) => string[]` | Ids already present |
+| `listConversationIds` | `(bookSlug) => string[]` | A book's conversation ids |
+| `getBookHistoryStats` | `(bookSlug) => { conversationCount, historyBytes }` | Version bytes + message text bytes |
+| `getSchemaVersion` | `() => number` | Highest applied migration |
 | `persistStreamEvent` | `(event) => void` | — |
 | `persistStreamEventBatch` | `(events) => void` | Transaction-wrapped bulk insert |
 | `getStreamEvents` | `(sessionId) => PersistedStreamEvent[]` | Ordered events |
@@ -546,6 +565,21 @@ Implemented by: `ManuscriptImportService` (`src/application/`)
 | `preview` | `(filePath: string) => Promise<ImportPreview>` | Chapter detection results + metadata |
 | `commit` | `(config: ImportCommitConfig) => Promise<ImportResult>` | Creates book, writes chapters, sets status to first-draft |
 
+### IDataFolderImportService
+
+Implemented by: `DataFolderImportService` (`src/application/`)
+
+| Method | Signature | Returns |
+|--------|-----------|---------|
+| `preview` | `(sourcePath: string) => Promise<DataFolderPreview>` | Books in another data folder, with clash and re-import flags. Never writes to the source. |
+| `commit` | `(config: DataFolderImportConfig) => Promise<DataFolderImportResult>` | Copies books (folder + DB history), all-or-nothing per book; optional series and author profile |
+
+### ISourceDataFolder / OpenSourceDataFolder
+
+Implemented by: `makeSourceDataFolderOpener(ownUserDataPath, tmpRoot)` (`src/infrastructure/database/SourceDataFolder.ts`)
+
+`OpenSourceDataFolder = (dataFolder) => Promise<ISourceDataFolder>`. `ISourceDataFolder` is `{ rootDir, booksDir, db: IDatabaseService, schemaVersion, close() }`, where `db` is a migrated temp copy of the source DB and `schemaVersion` is the source version before migration.
+
 ### ISourceGenerationService
 
 Implemented by: `SourceGenerationService` (`src/application/`)
@@ -672,6 +706,8 @@ Implemented by: `QueryService` (`src/application/QueryService.ts`)
 |----------|-------|---------|
 | `PITCH_ROOM_SLUG` | `'__pitch-room__'` | Reserved book slug for pitch room |
 | `HELPER_SLUG` | `'__helper__'` | Reserved book slug for helper conversations |
+| `BOOK_HISTORY_DIR` | `'.novel-engine'` | History dir inside a *staged* book folder (never in a live one) |
+| `BOOK_HISTORY_FILE` | `'history.sqlite'` | Per-book history snapshot file name |
 | `CREATIVE_AGENT_NAMES` | 7-element array | UI agent lists (excludes Wrangler) |
 | `WRANGLER_MODEL` | `'claude-sonnet-4-20250514'` | Model for plan parsing |
 | `AGENT_RESPONSE_BUFFER` | `Record<AgentName, number>` | Per-agent expected response sizes |

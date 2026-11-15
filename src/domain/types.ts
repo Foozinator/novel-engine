@@ -912,6 +912,77 @@ export type SeriesImportResult = {
   totalWordCount: number;
 };
 
+// === Data Folder Import (#37) ===
+
+/** One book found in another Novel Engine data folder. */
+export type DataFolderBookSummary = {
+  /** Folder name in the source `books/` directory. */
+  slug: string;
+  title: string;
+  author: string;
+  wordCount: number;
+  chapterCount: number;
+  conversationCount: number;
+  /** Bytes of version history plus message text held in the source DB. */
+  historyBytes: number;
+  /** A folder with this name already exists in the target `books/`. */
+  folderExists: boolean;
+  /** Some of this book's conversations already exist in the target DB. */
+  alreadyImported: boolean;
+};
+
+export type DataFolderPreview = {
+  /** The data folder the user picked (absolute). */
+  sourcePath: string;
+  /** schema_version of the source DB before it was migrated (on a temp copy). */
+  sourceSchemaVersion: number;
+  books: DataFolderBookSummary[];
+  hasAuthorProfile: boolean;
+  /** Series directories in the source `series/` folder. */
+  seriesSlugs: string[];
+};
+
+export type DataFolderBookAction = 'import' | 'rename' | 'skip';
+
+export type DataFolderImportConfig = {
+  sourcePath: string;
+  books: Array<{
+    slug: string;
+    action: DataFolderBookAction;
+    /** New title when action is 'rename'. The folder name is derived from it. */
+    newTitle?: string;
+  }>;
+  copyAuthorProfile: boolean;
+  copySeries: boolean;
+};
+
+export type DataFolderImportResult = {
+  imported: Array<{ from: string; to: string; title: string; conversations: number; versions: number }>;
+  skipped: Array<{ slug: string; reason: string }>;
+  warnings: string[];
+};
+
+/** Row counts merged by IDatabaseService.importBookHistory. */
+export type BookHistoryCounts = {
+  conversations: number;
+  messages: number;
+  tokenUsage: number;
+  fileVersions: number;
+  wordCountSnapshots: number;
+};
+
+/**
+ * What importBookHistory inserted, so a failed install can undo it.
+ * Integer-id rows are identified by the first id assigned during the merge.
+ */
+export type BookHistoryImportReceipt = {
+  targetSlug: string;
+  conversationIds: string[];
+  firstFileVersionId: number;
+  firstWordCountSnapshotId: number;
+  counts: BookHistoryCounts;
+};
+
 // === Source Document Generation ===
 
 export type SourceGenerationStep = {

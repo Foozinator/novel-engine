@@ -4,7 +4,7 @@ import { constants as fsConstants } from 'node:fs';
 
 const INITIALIZED_FLAG = '.initialized';
 
-const AUTHOR_PROFILE_TEMPLATE = `# Author Profile
+export const AUTHOR_PROFILE_TEMPLATE = `# Author Profile
 
 Describe your writing voice, themes, genres, and style here.
 This is loaded by Spark and Quill to understand your creative DNA.

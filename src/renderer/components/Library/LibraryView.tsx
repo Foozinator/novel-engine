@@ -6,6 +6,7 @@ import { useSeriesStore } from '../../stores/seriesStore';
 import { useDashboardStore } from '../../stores/dashboardStore';
 import { useImportStore } from '../../stores/importStore';
 import { useSeriesImportStore } from '../../stores/seriesImportStore';
+import { useDataFolderImportStore } from '../../stores/dataFolderImportStore';
 import { useViewStore } from '../../stores/viewStore';
 import { usePaletteStore } from '../../stores/paletteStore';
 import { usePitchShelfStore } from '../../stores/pitchShelfStore';
@@ -353,6 +354,7 @@ export function LibraryView(): React.ReactElement {
   const navigate = useViewStore((s) => s.navigate);
   const startImport = useImportStore((s) => s.startImport);
   const startSeriesImport = useSeriesImportStore((s) => s.startImport);
+  const startDataFolderImport = useDataFolderImportStore((s) => s.startImport);
   const dashboardLoadedSlug = useDashboardStore((s) => s.loadedSlug);
   const loadDashboard = useDashboardStore((s) => s.load);
 
@@ -609,6 +611,7 @@ export function LibraryView(): React.ReactElement {
           onClose={() => setShowImportChoice(false)}
           onImportBook={() => startImport()}
           onImportSeries={() => startSeriesImport()}
+          onImportFromDataFolder={() => void startDataFolderImport()}
         />
       )}
     </div>

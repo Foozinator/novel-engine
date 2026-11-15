@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, nativeTheme, protocol, net } from 'electron';
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { execFile as execFileCb } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -50,7 +51,7 @@ if (squirrelStartup) {
 
 // Infrastructure
 import { SettingsService } from '@infra/settings';
-import { DatabaseService } from '@infra/database';
+import { DatabaseService, makeSourceDataFolderOpener } from '@infra/database';
 import { AgentService } from '@infra/agents';
 import { FileSystemService, BookWatcher, BooksDirWatcher } from '@infra/filesystem';
 import { ClaudeCodeClient, ClaudeCliUpdater, FableProbe } from '@infra/claude-cli';
@@ -81,6 +82,7 @@ import { VersionService } from '@app/VersionService';
 import { ManuscriptImportService } from '@app/ManuscriptImportService';
 import { SourceGenerationService } from '@app/SourceGenerationService';
 import { SeriesImportService } from '@app/SeriesImportService';
+import { DataFolderImportService } from '@app/DataFolderImportService';
 import { FindReplaceService } from '@app/FindReplaceService';
 import { DashboardService } from '@app/DashboardService';
 import { StatisticsService } from '@app/StatisticsService';
@@ -96,7 +98,7 @@ import { registerIpcHandlers } from './ipc/handlers';
 import { NotificationManager } from './notifications';
 
 // Bootstrap
-import { bootstrap, needsBootstrap, ensureAgents, ensureUserGuide } from './bootstrap';
+import { bootstrap, needsBootstrap, ensureAgents, ensureUserGuide, AUTHOR_PROFILE_TEMPLATE } from './bootstrap';
 
 // Vite globals injected by Electron Forge
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
@@ -575,6 +577,13 @@ async function initializeApp(): Promise<void> {
   const findReplace = new FindReplaceService(fs, version);
   const manuscriptImport = new ManuscriptImportService(fs, pandocPath);
   const seriesImport = new SeriesImportService(manuscriptImport, series);
+  const dataFolderImport = new DataFolderImportService(
+    db,
+    series,
+    makeSourceDataFolderOpener(userDataPath, tmpdir()),
+    { userDataPath, booksDir, tmpRoot: tmpdir() },
+    AUTHOR_PROFILE_TEMPLATE,
+  );
   const sourceGeneration = new SourceGenerationService(settings, agents, db, fs, providers);
   const helper = new HelperService(settings, agents, db, fs, providers, streamManager, userDataPath);
   const dashboard = new DashboardService(db, fs, pipeline);
@@ -683,7 +692,7 @@ async function initializeApp(): Promise<void> {
 
   // 8. Register IPC handlers (with hook to switch watcher on book change)
   registerIpcHandlers(
-    { settings, agents, db, fs, chat, audit, pipeline, build, usage, revisionQueue, motifLedger, notifications, version, providerRegistry: providers, manuscriptImport, sourceGeneration, series, seriesImport, helper, findReplace, dashboard, statistics, query: queryService, claudeCliUpdate, fableAccess },
+    { settings, agents, db, fs, chat, audit, pipeline, build, usage, revisionQueue, motifLedger, notifications, version, providerRegistry: providers, manuscriptImport, sourceGeneration, series, seriesImport, dataFolderImport, helper, findReplace, dashboard, statistics, query: queryService, claudeCliUpdate, fableAccess },
     { userDataPath, booksDir },
     {
       onActiveBookChanged: (slug: string) => {
