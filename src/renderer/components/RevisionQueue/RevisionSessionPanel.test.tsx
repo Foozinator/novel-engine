@@ -87,7 +87,7 @@ describe('RevisionSessionPanel', () => {
 
   it('a gate shows approval controls that answer through the bridge', async () => {
     const { bridge } = renderApp(<RevisionSessionPanel />, {
-      stores: seedPanel({ gateSessionId: 's1', gateText: 'Proceed?' }),
+      stores: seedPanel({ gateSessionId: 's1', gateText: 'Proceed?', gateKind: 'confirm' }),
     });
 
     expect(screen.getByText('Verity is waiting for your approval')).toBeInTheDocument();
@@ -103,9 +103,9 @@ describe('RevisionSessionPanel', () => {
     );
   });
 
-  it('sends gate feedback text as a reject-with-message', async () => {
+  it('sends gate feedback text as a reply action', async () => {
     const { bridge } = renderApp(<RevisionSessionPanel />, {
-      stores: seedPanel({ gateSessionId: 's1', gateText: 'Proceed?' }),
+      stores: seedPanel({ gateSessionId: 's1', gateText: 'Proceed?', gateKind: 'confirm' }),
     });
 
     const textarea = screen.getByPlaceholderText('Send feedback to Verity...');
@@ -116,9 +116,32 @@ describe('RevisionSessionPanel', () => {
       expect(bridge.revision.respondToGate).toHaveBeenCalledWith(
         'plan-1',
         's1',
-        'reject',
+        'reply',
         'Change the opening',
       ),
+    );
+  });
+
+  it('a choice gate hides quick approvals and asks for a typed answer', () => {
+    renderApp(<RevisionSessionPanel />, {
+      stores: seedPanel({ gateSessionId: 's1', gateText: 'A) cut\nB) keep\n\nWhich?', gateKind: 'choice' }),
+    });
+
+    expect(screen.getByText('Verity is asking you to choose — answer below')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve All' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Skip' })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Type your answer…')).toBeInTheDocument();
+  });
+
+  it('Mark Complete answers the gate with the complete action', async () => {
+    const { bridge } = renderApp(<RevisionSessionPanel />, {
+      stores: seedPanel({ gateSessionId: 's1', gateText: 'Proceed?', gateKind: 'confirm' }),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mark Complete' }));
+    await waitFor(() =>
+      expect(bridge.revision.respondToGate).toHaveBeenCalledWith('plan-1', 's1', 'complete', undefined),
     );
   });
 

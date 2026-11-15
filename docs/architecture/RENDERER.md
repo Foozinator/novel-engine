@@ -230,7 +230,7 @@ Manages shelved pitches listing, reading, deleting, restoring.
 
 File: `stores/revisionQueueStore.ts`
 
-Manages revision plan state, session execution, approval gates.
+Manages revision plan state, session execution, approval gates. Gate state: `gateSessionId`, `gateText`, `gateKind` (`GateKind`, reset to `'confirm'`). `sendGateMessage(text)` answers with the `reply` action.
 
 ### autoDraftStore
 
@@ -542,8 +542,8 @@ Gate: `App.tsx` checks `settings.initialized` — if false, renders `OnboardingW
 | `RevisionQueueModal.tsx` | Floating revision queue panel (expanded / minimized bar / other-book badge). Expanded panel is anchored right and resizable from its left edge via `useResizeHandle` (480 px min, viewport − 32 px max, default 600 px, persisted under `novel-engine:revision-queue-width`; double-click resets). |
 | `SessionCard.tsx` | Individual revision session display |
 | `TaskProgress.tsx` | Task completion progress bar |
-| `RevisionSessionPanel.tsx` | Expanded session detail panel |
-| `QueueControls.tsx` | Queue mode selector, run/pause buttons |
+| `RevisionSessionPanel.tsx` | Expanded session detail panel. Gate bar: `confirm` → Approve, Approve All, Mark Complete, Skip; `choice` → Mark Complete, Skip, and a typed answer (no quick approvals). |
+| `QueueControls.tsx` | Queue mode selector (auto modes answer yes/no stops; choices pause), run/pause buttons |
 | `index.ts` | Barrel export |
 
 ### MotifLedger/
