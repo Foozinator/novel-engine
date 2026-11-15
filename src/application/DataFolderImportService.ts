@@ -171,7 +171,9 @@ export class DataFolderImportService implements IDataFolderImportService {
     const pending = path.join(this.paths.booksDir, `_importing-${targetSlug}`);
     const finalDir = path.join(this.paths.booksDir, targetSlug);
     await rm(pending, { recursive: true, force: true });
-    await cp(stage, pending, { recursive: true, filter: (p) => p !== historyDir });
+    // Copy, then drop the history dir: a cp filter compares path strings, which differ in form on Windows.
+    await cp(stage, pending, { recursive: true });
+    await rm(path.join(pending, BOOK_HISTORY_DIR), { recursive: true, force: true });
 
     let receipt: ReturnType<IDatabaseService['importBookHistory']> | null = null;
     try {
