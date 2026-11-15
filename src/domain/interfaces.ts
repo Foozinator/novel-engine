@@ -8,6 +8,8 @@ import type {
   ApprovalAction,
   AuditResult,
   BookDashboardData,
+  BookHistoryCounts,
+  BookHistoryImportReceipt,
   BookMeta,
   BookStatistics,
   BookSummary,
@@ -15,6 +17,9 @@ import type {
   ChapterEditStatus,
   ContextDiagnostics,
   Conversation,
+  DataFolderImportConfig,
+  DataFolderImportResult,
+  DataFolderPreview,
   ConversationPurpose,
   FileDiff,
   FileEntry,
@@ -154,6 +159,31 @@ export interface IDatabaseService {
 
   // Book slug migration
   updateBookSlug(oldSlug: string, newSlug: string): void;
+
+  // Per-book history snapshots (#37; the seam #36 archive/backup builds on)
+  /**
+   * Write one book's conversations, messages, token usage, file versions and
+   * word-count snapshots into a new SQLite file at `destFile`, plus the
+   * schema_version rows. Stream tables are excluded. `destFile` must not exist.
+   */
+  exportBookHistory(bookSlug: string, destFile: string): BookHistoryCounts;
+  /**
+   * Merge a snapshot written by exportBookHistory into this DB under
+   * `targetSlug`, in one transaction. Conversation and message ids are kept;
+   * integer ids are reassigned. Throws if the snapshot's schema is newer
+   * than this app's, or on any id clash (nothing is written in that case).
+   */
+  importBookHistory(srcFile: string, targetSlug: string): BookHistoryImportReceipt;
+  /** Undo an importBookHistory merge. */
+  revertBookHistoryImport(receipt: BookHistoryImportReceipt): void;
+  /** Which of the given conversation ids already exist. */
+  findExistingConversationIds(ids: string[]): string[];
+  /** Conversation ids belonging to a book. */
+  listConversationIds(bookSlug: string): string[];
+  /** Size of a book's history: conversations, plus bytes of versions and message text. */
+  getBookHistoryStats(bookSlug: string): { conversationCount: number; historyBytes: number };
+  /** Highest applied migration version. */
+  getSchemaVersion(): number;
 
   // Stream event persistence
   persistStreamEvent(event: Omit<PersistedStreamEvent, 'id'>): void;
@@ -901,6 +931,36 @@ export interface ISeriesImportService {
    * is reported in the result.
    */
   commit(config: SeriesImportCommitConfig): Promise<SeriesImportResult>;
+}
+
+/**
+ * A read-only view of another Novel Engine data folder. The source DB is a
+ * migrated temp copy, so the source folder itself is never written.
+ */
+export interface ISourceDataFolder {
+  /** Absolute path of the source data folder. */
+  rootDir: string;
+  /** The source `books/` directory. */
+  booksDir: string;
+  /** The temp copy of the source DB, migrated to this app's schema. */
+  db: IDatabaseService;
+  /** Source schema version before migration. */
+  schemaVersion: number;
+  /** Close the copy and delete the temp files. */
+  close(): Promise<void>;
+}
+
+/** Opens a source data folder snapshot (see ISourceDataFolder). */
+export type OpenSourceDataFolder = (dataFolder: string) => Promise<ISourceDataFolder>;
+
+export interface IDataFolderImportService {
+  /** List the books in another data folder. Never writes to it. */
+  preview(sourcePath: string): Promise<DataFolderPreview>;
+  /**
+   * Copy the chosen books (folders plus DB history) into this data folder.
+   * Each book is all-or-nothing. The source is never written.
+   */
+  commit(config: DataFolderImportConfig): Promise<DataFolderImportResult>;
 }
 
 export interface IHelperService {

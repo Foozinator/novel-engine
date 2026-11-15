@@ -325,6 +325,11 @@ export function installNovelEngineMock(overrides: BridgeOverrides = {}): NovelEn
         subscribe('import:generationProgress', callback),
       ),
     },
+    dataFolderImport: {
+      selectFolder: vi.fn(async () => null),
+      preview: notStubbed('dataFolderImport.preview'),
+      commit: notStubbed('dataFolderImport.commit'),
+    },
     seriesImport: {
       selectFiles: vi.fn(async () => null),
       preview: notStubbed('seriesImport.preview'),

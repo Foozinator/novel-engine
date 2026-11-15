@@ -1,6 +1,6 @@
 # Application — Services & Orchestration
 
-> Last updated: 2026-07-23 (program-030)
+> Last updated: 2026-11-14 (#37)
 
 Everything in `src/application/`. Business logic that orchestrates infrastructure through injected interfaces.
 
@@ -405,6 +405,31 @@ Dependencies: `IManuscriptImportService`, `ISeriesService`
 - Sequential import: books created one at a time to avoid filesystem contention
 - No rollback on partial failure: previously imported books remain if a later one fails
 - Volumes sorted by `volumeNumber` before import to ensure correct series ordering
+
+### DataFolderImportService
+
+File: `src/application/DataFolderImportService.ts`
+
+Dependencies: `IDatabaseService` (target), `ISeriesService`, `OpenSourceDataFolder`, paths `{ userDataPath, booksDir, tmpRoot }`, `defaultAuthorProfile` (bootstrap template)
+
+| Method | What It Does |
+|--------|-------------|
+| `preview(sourcePath)` | Opens a source snapshot. For each live book folder it reports `about.json` title/author, body-chapter word/chapter counts, conversation count and history bytes. It also flags `folderExists` (slug taken) and `alreadyImported` (conversation ids already here), plus the source's series dirs and non-template author profile. |
+| `commit(config)` | For each selected book: resolves the target slug (rename = `slugify(newTitle)`), re-checks clashes, stages it, installs it. Then copies series and the author profile. Returns imported / skipped (with reasons) / warnings. |
+
+**Key behaviors:**
+- **Slug taken** means a folder in `books/` or `books/_archived/`, or leftover DB rows under that slug.
+- **Stage** (temp dir): copy the source folder. On rename, rewrite the `about.json` title. Write `.novel-engine/history.sqlite` with `exportBookHistory` on the source copy.
+- **Install:**
+  1. Copy the staged folder without `.novel-engine/` to `books/_importing-<slug>`.
+  2. `importBookHistory` into the target DB.
+  3. `rename` to `books/<slug>`.
+  - On failure: revert the merged rows and remove the pending folder. A book lands whole or not at all.
+- Only slugs found as live book folders in the source are accepted. That blocks path tricks in renderer input.
+- **Series:** copies source series that contain an imported book, if no series with that slug exists here. Volume slugs are mapped through renames. Volumes whose book is neither imported nor already here are dropped with a warning. Calls `series.invalidateCache()`.
+- **Author profile:** copied only when the target's is missing, empty or the bootstrap template. Otherwise a warning.
+- Never copies `custom-agents/` or `settings.json`.
+- Stage and install are the export and import halves that #36's archive/backup zips will reuse.
 
 ### SourceGenerationService
 

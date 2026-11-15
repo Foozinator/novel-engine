@@ -2,6 +2,8 @@ import Database from 'better-sqlite3';
 import { nanoid } from 'nanoid';
 import type { IDatabaseService } from '@domain/interfaces';
 import type {
+  BookHistoryCounts,
+  BookHistoryImportReceipt,
   Conversation,
   ConversationPurpose,
   AgentName,
@@ -22,6 +24,7 @@ import type {
   WordCountSnapshot,
 } from '@domain/types';
 import { initializeSchema } from './schema';
+import * as bookHistory from './bookHistory';
 
 export class DatabaseService implements IDatabaseService {
   private db: Database.Database;
@@ -714,6 +717,36 @@ export class DatabaseService implements IDatabaseService {
       chapterCount: r.chapter_count,
       recordedAt: r.recorded_at,
     }));
+  }
+
+  // === Per-book history snapshots ===
+
+  exportBookHistory(bookSlug: string, destFile: string): BookHistoryCounts {
+    return bookHistory.exportBookHistory(this.db, bookSlug, destFile);
+  }
+
+  importBookHistory(srcFile: string, targetSlug: string): BookHistoryImportReceipt {
+    return bookHistory.importBookHistory(this.db, srcFile, targetSlug);
+  }
+
+  revertBookHistoryImport(receipt: BookHistoryImportReceipt): void {
+    bookHistory.revertBookHistoryImport(this.db, receipt);
+  }
+
+  findExistingConversationIds(ids: string[]): string[] {
+    return bookHistory.findExistingConversationIds(this.db, ids);
+  }
+
+  listConversationIds(bookSlug: string): string[] {
+    return bookHistory.listConversationIds(this.db, bookSlug);
+  }
+
+  getBookHistoryStats(bookSlug: string): { conversationCount: number; historyBytes: number } {
+    return bookHistory.getBookHistoryStats(this.db, bookSlug);
+  }
+
+  getSchemaVersion(): number {
+    return bookHistory.getSchemaVersion(this.db);
   }
 
   // === Lifecycle ===

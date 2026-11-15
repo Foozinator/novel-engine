@@ -6,10 +6,16 @@ function setup() {
   const onClose = vi.fn();
   const onImportBook = vi.fn();
   const onImportSeries = vi.fn();
+  const onImportFromDataFolder = vi.fn();
   render(
-    <ImportChoiceModal onClose={onClose} onImportBook={onImportBook} onImportSeries={onImportSeries} />,
+    <ImportChoiceModal
+      onClose={onClose}
+      onImportBook={onImportBook}
+      onImportSeries={onImportSeries}
+      onImportFromDataFolder={onImportFromDataFolder}
+    />,
   );
-  return { onClose, onImportBook, onImportSeries };
+  return { onClose, onImportBook, onImportSeries, onImportFromDataFolder };
 }
 
 describe('ImportChoiceModal', () => {
@@ -33,6 +39,15 @@ describe('ImportChoiceModal', () => {
     expect(onImportSeries).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(onImportBook).not.toHaveBeenCalled();
+  });
+
+  it('From another folder fires onImportFromDataFolder and closes', () => {
+    const { onClose, onImportBook, onImportSeries, onImportFromDataFolder } = setup();
+    fireEvent.click(screen.getByRole('button', { name: /another Novel Engine folder/ }));
+    expect(onImportFromDataFolder).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onImportBook).not.toHaveBeenCalled();
+    expect(onImportSeries).not.toHaveBeenCalled();
   });
 
   it('Cancel only closes', () => {

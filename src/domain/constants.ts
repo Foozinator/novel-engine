@@ -103,6 +103,16 @@ export const PITCH_ROOM_SLUG = '__pitch-room__';
 /** Reserved book slug used for Helper agent conversations. */
 export const HELPER_SLUG = '__helper__';
 
+/**
+ * Directory inside a staged (exported) book folder that holds its DB history.
+ * Never present in a live book folder: it exists only in staging, and later
+ * inside #36 archive zips.
+ */
+export const BOOK_HISTORY_DIR = '.novel-engine';
+
+/** Per-book history snapshot file inside BOOK_HISTORY_DIR. */
+export const BOOK_HISTORY_FILE = 'history.sqlite';
+
 // Creative agents only — excludes Wrangler (used for UI agent lists)
 export const CREATIVE_AGENT_NAMES: CreativeAgentName[] = ['Spark', 'Verity', 'Ghostlight', 'Lumen', 'Sable', 'Forge', 'Quill'];
 

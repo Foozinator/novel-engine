@@ -12,6 +12,9 @@ import type {
   ChapterEditStatus,
   ContextDiagnostics,
   Conversation,
+  DataFolderImportConfig,
+  DataFolderImportResult,
+  DataFolderPreview,
   ConversationPurpose,
   DataFolderInfo,
   PromptSyncStatus,
@@ -156,6 +159,16 @@ const api = {
       ipcRenderer.on('import:generationProgress', handler);
       return () => ipcRenderer.removeListener('import:generationProgress', handler);
     },
+  },
+
+  // Import from another Novel Engine data folder (#37)
+  dataFolderImport: {
+    selectFolder: (): Promise<string | null> =>
+      ipcRenderer.invoke('import:selectDataFolder'),
+    preview: (sourcePath: string): Promise<DataFolderPreview> =>
+      ipcRenderer.invoke('import:dataFolderPreview', sourcePath),
+    commit: (config: DataFolderImportConfig): Promise<DataFolderImportResult> =>
+      ipcRenderer.invoke('import:dataFolderCommit', config),
   },
 
   // Series Import

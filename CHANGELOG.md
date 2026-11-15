@@ -53,6 +53,62 @@ The fork is renamed **Novel Engine Spur**. Upstream and the fork shared the prod
 
 ---
 
+## [2026-11-14] — Import books from another Novel Engine data folder (#37)
+
+### Summary
+
+The import menu has a third choice, "From another Novel Engine folder…". It lists the books in another data folder, such as an old install, a copy from another machine, or a restore. Each book shows its word count, chats and history size. The chosen books are copied with their chats, token usage, version history and word-count snapshots. The source is never written: its `novel-engine.db` and `-wal` are copied to a temp dir, and only the copy is opened and migrated. Each book is staged as its folder plus `.novel-engine/history.sqlite`, which is the per-book snapshot from the spike #36 design. Installing a book merges the snapshot into this DB in one transaction and then moves the folder into `books/`. If any step fails, neither rows nor a folder are left behind. A clash with a live or archived folder, or with leftover DB rows under that slug, is resolved by renaming the import or skipping it. A book whose conversations already exist here is treated as already imported. Series that include imported books can be copied, with renamed volumes rewritten. The author profile is copied only over an empty or template profile. `custom-agents/` and `settings.json` are never copied.
+
+### Added
+- `src/infrastructure/database/bookHistory.ts` — Per-book history snapshot functions:
+  - `exportBookHistory` (ATTACH plus CREATE TABLE AS SELECT; covers conversations, messages, token_usage, file_versions, word_count_snapshots and schema_version).
+  - `importBookHistory`: one-transaction merge. It copies columns by name, keeps TEXT ids, reassigns integer ids, pins `book_slug`, and refuses a snapshot from a newer schema.
+  - `revertBookHistoryImport`, `findExistingConversationIds`, `listConversationIds`, `getBookHistoryStats`, `getSchemaVersion`, `APP_SCHEMA_VERSION`.
+- `src/infrastructure/database/SourceDataFolder.ts` — `makeSourceDataFolderOpener(ownUserDataPath, tmpRoot)`:
+  - Validates the folder and refuses this app's own data folder.
+  - Copies the source DB and its `-wal` to a temp dir, then reads the pre-migration schema version.
+  - Opens and migrates the copy only.
+- `src/application/DataFolderImportService.ts` — Implements `IDataFolderImportService`:
+  - `preview()` lists source books and flags clashes and earlier imports.
+  - `commit()` stages and installs each book, then copies series and the author profile.
+- `src/renderer/stores/dataFolderImportStore.ts` — Wizard state: steps, per-book choices (import/rename/skip), series and author-profile toggles.
+- `src/renderer/components/Import/DataFolderImportWizard.tsx` — Book list with sizes, inline rename for clashes, result summary with warnings.
+- Tests:
+  - `src/infrastructure/database/bookHistory.test.ts`
+  - `src/infrastructure/database/SourceDataFolder.test.ts` (a live WAL source stays byte-for-byte unchanged; a v0 source migrates on the copy)
+  - `src/application/DataFolderImportService.test.ts`
+  - `src/renderer/stores/dataFolderImportStore.test.ts`
+  - `src/renderer/components/Import/DataFolderImportWizard.test.tsx`
+
+### Changed
+- `src/domain/types.ts` — Added `DataFolderBookSummary`, `DataFolderPreview`, `DataFolderBookAction`, `DataFolderImportConfig`, `DataFolderImportResult`, `BookHistoryCounts`, `BookHistoryImportReceipt`.
+- `src/domain/interfaces.ts`:
+  - `IDatabaseService` gained `exportBookHistory`, `importBookHistory`, `revertBookHistoryImport`, `findExistingConversationIds`, `listConversationIds`, `getBookHistoryStats`, `getSchemaVersion`.
+  - Added `ISourceDataFolder`, `OpenSourceDataFolder`, `IDataFolderImportService`.
+- `src/domain/constants.ts` — Added `BOOK_HISTORY_DIR` (`.novel-engine`) and `BOOK_HISTORY_FILE` (`history.sqlite`).
+- `src/infrastructure/database/DatabaseService.ts` — Delegates the new history methods to `bookHistory.ts`.
+- `src/infrastructure/database/index.ts` — Exports `makeSourceDataFolderOpener`.
+- `src/main/bootstrap.ts` — Exports `AUTHOR_PROFILE_TEMPLATE`.
+- `src/main/index.ts` — Constructs `DataFolderImportService` (tmp root `os.tmpdir()`) and passes it to `registerIpcHandlers`.
+- `src/main/ipc/handlers.ts` — Added the `import:selectDataFolder`, `import:dataFolderPreview` and `import:dataFolderCommit` handlers.
+- `src/preload/index.ts` — Added the `dataFolderImport` namespace: `selectFolder`, `preview`, `commit`.
+- `src/test/novelEngineMock.ts`, `src/preload/index.test.ts` — Cover the new namespace.
+- `src/renderer/components/Sidebar/ImportChoiceModal.tsx` (+ test) — Third card and `onImportFromDataFolder` prop.
+- `src/renderer/components/Library/LibraryView.tsx` — Wires the card to `useDataFolderImportStore.startImport`.
+- `src/renderer/components/Layout/AppLayout.tsx` — Mounts `DataFolderImportWizard` in `GlobalBookModals`.
+
+### Architecture Impact
+- New service: `DataFolderImportService` → `IDatabaseService`, `ISeriesService`, `OpenSourceDataFolder` (infra `makeSourceDataFolderOpener`).
+- New IPC channels: `import:selectDataFolder`, `import:dataFolderPreview`, `import:dataFolderCommit`.
+- New preload namespace: `window.novelEngine.dataFolderImport`.
+- New Zustand store: `dataFolderImportStore`.
+- Per-book history snapshot format (`<book>/.novel-engine/history.sqlite`). It exists only in staging today; #36 archive/backup zips are meant to reuse it.
+
+### Migration Notes
+- None. No schema change. A temporary `books/_importing-<slug>` folder exists only while a book is being installed. `listBooks` skips it because of the `_` prefix.
+
+---
+
 ## [2026-11-14] — Untrack accidentally committed `notes` and `devtools` symlinks
 
 ### Summary

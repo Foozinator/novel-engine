@@ -1,6 +1,6 @@
 # IPC — Channels, Preload Bridge, Handler Registry
 
-> Last updated: 2026-11-14 (#39 data folder selection)
+> Last updated: 2026-11-15 (#37, after #39)
 
 Everything in `src/main/ipc/` and `src/preload/`. Thin adapter layer between application services and the renderer.
 
@@ -86,6 +86,9 @@ Everything in `src/main/ipc/` and `src/preload/`. Thin adapter layer between app
 | `import:selectFiles` | invoke | `dialog.showOpenDialog()` — multi-select file picker for .md/.markdown/.docx | `string[] \| null` |
 | `import:seriesPreview` | invoke | `seriesImport.preview(filePaths)` | `SeriesImportPreview` |
 | `import:seriesCommit` | invoke | `seriesImport.commit(config)` + triggers `onActiveBookChanged` for first volume | `SeriesImportResult` |
+| `import:selectDataFolder` | invoke | `dialog.showOpenDialog({ properties: ['openDirectory'] })` | `string \| null` |
+| `import:dataFolderPreview` | invoke | `dataFolderImport.preview(sourcePath)` | `DataFolderPreview` |
+| `import:dataFolderCommit` | invoke | `dataFolderImport.commit(config)` | `DataFolderImportResult` |
 
 ### files:*
 
@@ -374,6 +377,12 @@ window.novelEngine: {
     onGenerationProgress(callback: (event: SourceGenerationEvent) => void): () => void
   }
 
+  dataFolderImport: {
+    selectFolder(): Promise<string | null>
+    preview(sourcePath: string): Promise<DataFolderPreview>
+    commit(config: DataFolderImportConfig): Promise<DataFolderImportResult>
+  }
+
   seriesImport: {
     selectFiles(): Promise<string[] | null>
     preview(filePaths: string[]): Promise<SeriesImportPreview>
@@ -559,7 +568,7 @@ window.novelEngine: {
 
 `registerIpcHandlers(services, paths, hooks)` in `src/main/ipc/handlers.ts`:
 
-- **services**: all service instances (settings, agents, db, fs, chat, pipeline, build, usage, revisionQueue, motifLedger, notifications, version, providerRegistry, manuscriptImport, sourceGeneration, series, seriesImport, helper, findReplace, dashboard, statistics, query)
+- **services**: all service instances (settings, agents, db, fs, chat, pipeline, build, usage, revisionQueue, motifLedger, notifications, version, providerRegistry, manuscriptImport, sourceGeneration, series, seriesImport, dataFolderImport, helper, findReplace, dashboard, statistics, query)
 - **paths**: `{ userDataPath, booksDir, dataFolder: DataFolderInfo, promptSync: PromptSyncResult }`
 - **hooks**: `{ onActiveBookChanged(slug) }` — triggers BookWatcher switch
 

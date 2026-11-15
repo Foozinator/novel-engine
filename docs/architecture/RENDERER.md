@@ -1,6 +1,6 @@
 # Renderer — Stores, Components, Views
 
-> Last updated: 2026-11-14 (#39)
+> Last updated: 2026-11-15 (#37, after #39)
 
 Everything in `src/renderer/`. React + Zustand UI layer. Talks to backend only through `window.novelEngine`.
 
@@ -306,6 +306,27 @@ File: `stores/importStore.ts`
 | `startGeneration()` | Starts source doc generation, subscribes to progress events |
 | `reset()` | Cleans up generation listener, resets to idle |
 
+### dataFolderImportStore
+
+File: `stores/dataFolderImportStore.ts`
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `step` | `'idle' \| 'loading' \| 'preview' \| 'importing' \| 'success' \| 'error'` | State machine phase |
+| `preview` | `DataFolderPreview \| null` | Books in the source folder |
+| `choices` | `Record<slug, { selected, action: 'import' \| 'rename', newTitle }>` | Per-book choice. Clashes default to unchecked + rename to "<title> (imported)". Already-imported books are locked off. |
+| `copyAuthorProfile` / `copySeries` | `boolean` | Default on when the source has them |
+| `result` | `DataFolderImportResult \| null` | Commit result |
+| `error` | `string` | Error message |
+
+| Action | What It Does |
+|--------|-------------|
+| `startImport()` | Folder picker → `dataFolderImport.preview` → builds default choices |
+| `toggleBook(slug)` / `setAllSelected(bool)` | Selection (blocked books ignored) |
+| `setNewTitle(slug, title)` | Edits a clash's new title |
+| `commitImport()` | Sends import/rename/skip per book via bridge |
+| `reset()` | Back to idle |
+
 ### seriesImportStore
 
 File: `stores/seriesImportStore.ts`
@@ -556,6 +577,7 @@ Gate: `App.tsx` checks `settings.initialized` — if false, renders `OnboardingW
 | `ImportWizard.tsx` | Modal wizard for manuscript import. Renders per-step UI: loading spinner, preview (title/author inputs + chapter list), importing spinner, success (stats + "Open Book" / "Generate Source Documents"), generating (step checklist with progress), generated (summary), error (with retry). |
 | `ChapterPreviewList.tsx` | Editable chapter list with inline title rename, word count badges, content preview snippets, "Merge ↓" and "×" actions, summary bar. Reads directly from `importStore`. |
 | `ImportSeriesWizard.tsx` | Modal wizard for batch series import. Steps: loading, preview (series name/author/existing toggle + volume list), importing, success (per-volume breakdown), error. |
+| `DataFolderImportWizard.tsx` | Modal wizard for importing books from another Novel Engine data folder (#37). Steps: loading, preview (book checklist with words/chapters/chats/history size, inline rename for clashes, series and author-profile toggles), importing, success (imported/not imported/warnings; Done opens the first imported book), error (with retry). Mounted in `AppLayout` `GlobalBookModals`. |
 | `VolumePreviewList.tsx` | Editable volume list with inline title editing, reorder up/down arrows, skip toggles, chapter/word count badges, ambiguity warnings. |
 
 ### CliActivity/
