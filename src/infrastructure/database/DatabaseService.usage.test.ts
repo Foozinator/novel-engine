@@ -32,6 +32,16 @@ describe('recordUsage / getUsageByConversation', () => {
     expect(records[1].model).toBe('model-b');
   });
 
+  it('stores cache tokens and reported cost, defaulting to 0 and null', () => {
+    const conv = makeConversation(db);
+    makeUsage(db, conv.id, { cacheReadTokens: 500, cacheWriteTokens: 40, costUsd: 0.12 });
+    makeUsage(db, conv.id);
+
+    const [priced, unpriced] = db.getUsageByConversation(conv.id);
+    expect(priced).toMatchObject({ cacheReadTokens: 500, cacheWriteTokens: 40, costUsd: 0.12 });
+    expect(unpriced).toMatchObject({ cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: null });
+  });
+
   it('returns an empty array for a conversation with no usage', () => {
     expect(db.getUsageByConversation('none')).toEqual([]);
   });
@@ -49,6 +59,8 @@ describe('getUsageSummary', () => {
       totalInputTokens: 600,
       totalOutputTokens: 60,
       totalThinkingTokens: 6,
+      totalCacheReadTokens: 0,
+      totalCacheWriteTokens: 0,
       conversationCount: 2,
     });
   });
@@ -63,6 +75,8 @@ describe('getUsageSummary', () => {
       totalInputTokens: 5,
       totalOutputTokens: 5,
       totalThinkingTokens: 5,
+      totalCacheReadTokens: 0,
+      totalCacheWriteTokens: 0,
       conversationCount: 1,
     });
   });
@@ -72,6 +86,8 @@ describe('getUsageSummary', () => {
       totalInputTokens: 0,
       totalOutputTokens: 0,
       totalThinkingTokens: 0,
+      totalCacheReadTokens: 0,
+      totalCacheWriteTokens: 0,
       conversationCount: 0,
     });
   });
@@ -143,13 +159,45 @@ describe('getUsageCostBasis', () => {
 
     const rows = db.getUsageCostBasis('test-book');
     const key = (r: { agentName: string; phase: string; model: string }) => `${r.agentName}|${r.phase}|${r.model}`;
-    expect(Object.fromEntries(rows.map((r) => [key(r), [r.inputTokens, r.outputTokens, r.thinkingTokens]]))).toEqual({
+    expect(Object.fromEntries(rows.map((r) => [key(r), [r.unreportedInputTokens, r.unreportedOutputTokens, r.unreportedThinkingTokens]]))).toEqual({
       'Spark|pitch|opus': [15, 2, 2],
       'Spark|pitch|claude-opus-5-5': [7, 0, 0],
       'Verity|adhoc|sonnet': [3, 0, 0],
     });
     expect(db.getUsageCostBasis()).toHaveLength(3);
     expect(db.getUsageCostBasis('unknown-book')).toEqual([]);
+  });
+});
+
+describe('getUsageCostBasis — reported cost', () => {
+  it('sums reported costs and counts tokens only from unpriced rows', () => {
+    const conv = makeConversation(db, { agentName: 'Verity', pipelinePhase: 'first-draft' });
+    makeUsage(db, conv.id, { inputTokens: 10, outputTokens: 5, thinkingTokens: 0, cacheReadTokens: 900, cacheWriteTokens: 90, costUsd: 0.5, model: 'opus' });
+    makeUsage(db, conv.id, { inputTokens: 20, outputTokens: 6, thinkingTokens: 1, cacheReadTokens: 100, cacheWriteTokens: 10, costUsd: 0.25, model: 'opus' });
+    makeUsage(db, conv.id, { inputTokens: 3, outputTokens: 2, thinkingTokens: 1, cacheReadTokens: 7, cacheWriteTokens: 4, model: 'opus' });
+
+    expect(db.getUsageCostBasis('test-book')).toEqual([
+      {
+        agentName: 'Verity',
+        phase: 'first-draft',
+        model: 'opus',
+        reportedCostUsd: 0.75,
+        unreportedInputTokens: 3,
+        unreportedOutputTokens: 2,
+        unreportedThinkingTokens: 1,
+        unreportedCacheReadTokens: 7,
+        unreportedCacheWriteTokens: 4,
+      },
+    ]);
+  });
+});
+
+describe('getUsageSummary — cache tokens', () => {
+  it('totals cache reads and writes', () => {
+    const conv = makeConversation(db);
+    makeUsage(db, conv.id, { cacheReadTokens: 100, cacheWriteTokens: 10 });
+    makeUsage(db, conv.id, { cacheReadTokens: 50, cacheWriteTokens: 5 });
+    expect(db.getUsageSummary()).toMatchObject({ totalCacheReadTokens: 150, totalCacheWriteTokens: 15 });
   });
 });
 

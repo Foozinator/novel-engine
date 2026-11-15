@@ -1,5 +1,6 @@
 import type { IDatabaseService, IUsageService } from '@domain/interfaces';
 import type { ActiveStreamInfo, AgentName, FileTouchMap, ProgressStage, StreamEvent } from '@domain/types';
+import { pickStreamUsage } from './streamUsage';
 
 /**
  * Parameters needed to start a managed stream.
@@ -145,9 +146,7 @@ export class StreamManager {
         // Record token usage
         this.usage.recordUsage({
           conversationId,
-          inputTokens: event.inputTokens,
-          outputTokens: event.outputTokens,
-          thinkingTokens: event.thinkingTokens,
+          ...pickStreamUsage(event),
           model: event.model ?? model,
         });
 

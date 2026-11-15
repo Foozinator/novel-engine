@@ -10,9 +10,11 @@ import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-nati
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
-    name: 'Novel Engine',
-    executableName: 'novel-engine',
-    appBundleId: 'com.novel-engine.app',
+    // Fork identity (#39): every name and ID differs from upstream Novel Engine
+    // so both install side by side with separate data folders.
+    name: 'Novel Engine Spur',
+    executableName: 'novel-engine-spur',
+    appBundleId: 'io.github.foozinator.novel-engine-spur',
     icon: './assets/icon', // .icns / .ico resolved per platform
 
     // Bundle these with the app
@@ -57,7 +59,8 @@ const config: ForgeConfig = {
 
     // Windows
     new MakerSquirrel({
-      name: 'NovelEngine',
+      // Squirrel app ID: installs to %LOCALAPPDATA%\NovelEngineSpur, separate from upstream's NovelEngine.
+      name: 'NovelEngineSpur',
       setupIcon: './assets/icon.ico',
       // Windows code signing (if cert available)
       ...(process.env.WINDOWS_CERTIFICATE_FILE && {
@@ -69,20 +72,20 @@ const config: ForgeConfig = {
     // Linux
     new MakerDeb({
       options: {
-        name: 'novel-engine',
-        productName: 'Novel Engine',
+        name: 'novel-engine-spur',
+        productName: 'Novel Engine Spur',
         genericName: 'AI Writing Tool',
         description: 'Multi-agent AI system for writing novels',
         categories: ['Office', 'TextEditor'],
         section: 'text',
         icon: './assets/icon.png',
-        mimeType: ['application/x-novel-engine'],
+        mimeType: ['application/x-novel-engine-spur'],
       },
     }),
     new MakerRpm({
       options: {
-        name: 'novel-engine',
-        productName: 'Novel Engine',
+        name: 'novel-engine-spur',
+        productName: 'Novel Engine Spur',
         genericName: 'AI Writing Tool',
         description: 'Multi-agent AI system for writing novels',
         categories: ['Office', 'TextEditor'],

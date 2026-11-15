@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import type { CreativeAgentName } from '@domain/types';
 import {
   isVersionAtLeast,
   parseClaudeCliVersion,
   parseClaudeCliVersionError,
   formatModelLabel,
   getModelPricing,
+  getPhaseStarterActions,
   AGENT_MULTI_CALL_STEPS,
   AGENT_QUICK_ACTIONS,
   AGENT_READ_GUIDANCE,
@@ -26,8 +28,12 @@ import {
   MODEL_PRICING,
   PHASE_OUTPUT_CONTENT_MARKERS,
   PHASE_OUTPUT_FILES,
+  PHASE_STARTER_ACTIONS,
   PIPELINE_PHASES,
   PITCH_ROOM_SLUG,
+  PROSE_FONTS,
+  resolveProseFontStack,
+  sanitizeFontFamilyName,
   TURN_BUDGET_THRESHOLDS,
   TURN_KEEP_COUNTS,
   VERITY_PHASE_FILES,
@@ -95,6 +101,52 @@ describe('AGENT_QUICK_ACTIONS', () => {
         expect(action.prompt.length).toBeGreaterThan(0);
       }
     }
+  });
+});
+
+describe('PHASE_STARTER_ACTIONS', () => {
+  it('keys are real phase ids', () => {
+    for (const id of Object.keys(PHASE_STARTER_ACTIONS)) expect(PHASE_IDS).toContain(id);
+  });
+
+  it('every label resolves in its phase agent quick actions', () => {
+    for (const [id, labels] of Object.entries(PHASE_STARTER_ACTIONS)) {
+      const phase = PIPELINE_PHASES.find((p) => p.id === id);
+      const agent = phase?.agent;
+      expect(agent, `phase ${id} needs an agent`).toBeTruthy();
+      if (!agent || !(CREATIVE_AGENT_NAMES as string[]).includes(agent)) continue;
+      const available = AGENT_QUICK_ACTIONS[agent as CreativeAgentName].map((a) => a.label);
+      expect(labels.length).toBeGreaterThan(0);
+      for (const label of labels) {
+        expect(available, `"${label}" missing from ${agent} quick actions (phase ${id})`).toContain(label);
+      }
+    }
+  });
+});
+
+describe('getPhaseStarterActions', () => {
+  it('returns the curated actions in order with their prompts', () => {
+    const actions = getPhaseStarterActions('scaffold', 'Verity');
+    expect(actions.map((a) => a.label)).toEqual(['Build scene outline', 'Build story bible']);
+    expect(actions[0].prompt).toBe(
+      AGENT_QUICK_ACTIONS.Verity.find((a) => a.label === 'Build scene outline')?.prompt,
+    );
+  });
+
+  it('falls back to the agent full list when the phase has no curated entry', () => {
+    const original = PHASE_STARTER_ACTIONS.pitch;
+    delete PHASE_STARTER_ACTIONS.pitch;
+    try {
+      expect(getPhaseStarterActions('pitch', 'Spark')).toEqual(AGENT_QUICK_ACTIONS.Spark);
+    } finally {
+      PHASE_STARTER_ACTIONS.pitch = original;
+    }
+  });
+
+  it('returns nothing for agent-less phases and Wrangler', () => {
+    expect(getPhaseStarterActions('build', null)).toEqual([]);
+    expect(getPhaseStarterActions('pitch', 'Wrangler')).toEqual([]);
+    expect(getPhaseStarterActions('pitch', 'Helper')).toEqual([]);
   });
 });
 
@@ -388,5 +440,35 @@ describe('Claude CLI version helpers', () => {
     ['1.99.99', '2.0.0', false],
   ])('isVersionAtLeast(%s, %s) → %s', (v, min, expected) => {
     expect(isVersionAtLeast(v, min)).toBe(expected);
+  });
+});
+
+describe('reading font helpers', () => {
+  it('resolves presets to their stacks and unknown ids to the default', () => {
+    expect(resolveProseFontStack('fraunces')).toBe(PROSE_FONTS[0].stack);
+    expect(resolveProseFontStack('mono')).toContain('JetBrains Mono');
+    expect(resolveProseFontStack(undefined)).toBe(PROSE_FONTS[0].stack);
+    expect(resolveProseFontStack('bogus' as never)).toBe(PROSE_FONTS[0].stack);
+  });
+
+  it('quotes a custom name in front of the default stack', () => {
+    expect(resolveProseFontStack('custom', 'EB Garamond')).toBe(`'EB Garamond', ${PROSE_FONTS[0].stack}`);
+  });
+
+  it('falls back to the default stack for an empty custom name', () => {
+    expect(resolveProseFontStack('custom', '  ')).toBe(PROSE_FONTS[0].stack);
+    expect(resolveProseFontStack('custom', "';{}")).toBe(PROSE_FONTS[0].stack);
+  });
+
+  it('strips CSS syntax from custom names and keeps letters in any script', () => {
+    expect(sanitizeFontFamilyName("Foo'; color: red }")).toBe('Foo color red');
+    expect(sanitizeFontFamilyName('  Noto   Serif  JP ')).toBe('Noto Serif JP');
+    expect(sanitizeFontFamilyName('Ünïcode Sérif')).toBe('Ünïcode Sérif');
+    expect(sanitizeFontFamilyName('x'.repeat(100))).toHaveLength(64);
+  });
+
+  it('defaults the reading font to Fraunces', () => {
+    expect(DEFAULT_SETTINGS.proseFont).toBe('fraunces');
+    expect(DEFAULT_SETTINGS.proseFontCustom).toBe('');
   });
 });

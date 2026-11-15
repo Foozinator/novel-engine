@@ -1,6 +1,6 @@
 # Infrastructure — Implementations
 
-> Last updated: 2026-07-23 (program-030)
+> Last updated: 2026-11-14 (#37)
 
 Everything in `src/infrastructure/`. Implements domain interfaces using Node.js builtins and npm packages.
 
@@ -30,8 +30,11 @@ Key behavior:
 | File | Purpose |
 |------|---------|
 | `schema.ts` | CREATE TABLE statements, WAL mode, foreign keys, migration guards |
+| `migrations.ts` | Forward-only `MIGRATIONS` list (v0–v4) and `runMigrations(db)`. A migration runs its `sql`, or its `apply(db)` function when set (used for idempotent `ADD COLUMN`). |
 | `DatabaseService.ts` | Implements `IDatabaseService`. Prepared statements for all queries. |
-| `index.ts` | Barrel export |
+| `bookHistory.ts` | Per-book history snapshots: export, merge, revert, stats (#37; the seam for #36 archives) |
+| `SourceDataFolder.ts` | `makeSourceDataFolderOpener`: opens another data folder via a migrated temp copy of its DB |
+| `index.ts` | Barrel export (`DatabaseService`, `makeSourceDataFolderOpener`) |
 
 Key behavior:
 - WAL mode + foreign keys enabled at connection time
@@ -39,7 +42,23 @@ Key behavior:
 - Explicit snake_case → camelCase mapping in every query method
 - `pruneStreamEvents(olderThanDays)` deletes old event data
 - `persistStreamEventBatch()` wraps inserts in a transaction for bulk efficiency
-- `updateBookSlug` migrates conversation references on slug rename
+- `updateBookSlug` migrates conversation references on slug rename. It does not rewrite `file_versions`, `word_count_snapshots` or `stream_sessions` (known gap, spike #36).
+
+Per-book history snapshot (`bookHistory.ts`):
+- The snapshot is a standalone SQLite file. It holds `conversations`, `messages` and `token_usage` (both selected through the book's conversation ids), `file_versions`, `word_count_snapshots`, and a copy of `schema_version`. Stream tables are excluded.
+- Export: `ATTACH` the new file, then `CREATE TABLE … AS SELECT` per table in one transaction. Refuses an existing file.
+- Import: `ATTACH` the snapshot and check that all six tables exist and that `schema_version ≤ APP_SCHEMA_VERSION`. Then one transaction runs `INSERT … SELECT` over the columns both sides share:
+  - Conversation and message TEXT ids are kept.
+  - Integer ids are reassigned, in source id order.
+  - `book_slug` is set to the target slug.
+  - Any PK clash rolls back the whole merge.
+- The receipt records the conversation ids and the first new `file_versions` / `word_count_snapshots` ids, so `revertBookHistoryImport` can undo the merge.
+
+Source data folder (`SourceDataFolder.ts`):
+- Requires `novel-engine.db` and `books/`. Refuses the app's own userData (compared by `realpath`).
+- Copies `novel-engine.db` and `-wal` (not `-shm`) into `mkdtemp(tmpRoot)`. It reads the pre-migration `schema_version` with a raw connection, then opens the copy with `DatabaseService`, which migrates the copy.
+- The source files are never opened, so even a live WAL source stays byte-for-byte unchanged.
+- `close()` closes the copy and removes the temp dir.
 
 ### agents/ — Agent Prompt Loader
 
@@ -99,7 +118,8 @@ Key behavior:
 - `hasActiveProcesses()` / `hasActiveProcessesForBook()` for idle detection
 - EPIPE/ERR_STREAM_DESTROYED on stdin logged with diagnostic info (stdinBytes, writableFinished, writableEnded)
 - System prompt size guard: rejects prompts > 500KB with clear error before spawn
-- Max-turns signaling: emits `isMaxTurns: true` on the `error` StreamEvent when the CLI result subtype is `error_max_turns` (vs. `false` for other error subtypes like `error_during_execution`)
+- Max-turns signaling: emits `isMaxTurns: true` on the `error` StreamEvent when the CLI result subtype is `error_max_turns` (vs. `false` for other error subtypes like `error_during_execution`). That error also carries `usage` (the exhausted attempt's `StreamUsage`) so `AutoTurnResumer` counts it.
+- Usage from the result event: `inputTokens` ← `usage.input_tokens` (uncached only), `cacheReadTokens` ← `usage.cache_read_input_tokens`, `cacheWriteTokens` ← `usage.cache_creation_input_tokens`. `costUsd` comes from `extractRunCostUsd()`: the sum of `model_usage_since_last_result[*].costUSD` (this run only). `total_cost_usd` is cumulative over the CLI session, so it is used only as a fallback on runs without `--resume` (`StreamSessionTracker.isResumedRun()`).
 - Error label: `Claude CLI run failed (<subtype>): <result>`. The subtype is omitted when it is `success`, because a result can carry `subtype: "success"` with `is_error: true` (e.g. an API 400 "this CLI version does not support the model").
 
 
@@ -258,10 +278,15 @@ Index: `idx_messages_conversation_id` on `conversation_id`
 | `input_tokens` | INTEGER | NOT NULL DEFAULT 0 | |
 | `output_tokens` | INTEGER | NOT NULL DEFAULT 0 | |
 | `thinking_tokens` | INTEGER | NOT NULL DEFAULT 0 | |
+| `cache_read_tokens` | INTEGER | NOT NULL DEFAULT 0 | Prompt-cache reads (v4) |
+| `cache_write_tokens` | INTEGER | NOT NULL DEFAULT 0 | Prompt-cache writes (v4) |
+| `cost_usd` | REAL | nullable | Provider-reported cost of the call; NULL = not reported, estimated from `MODEL_PRICING` (v4) |
 | `model` | TEXT | NOT NULL | Model used |
 | `timestamp` | TEXT | NOT NULL | ISO 8601 |
 
-Index: `idx_token_usage_conversation_id` on `conversation_id`
+`input_tokens` is uncached input only. Index: `idx_token_usage_conversation_id` on `conversation_id`
+
+Migration: v4 in `migrations.ts` adds the three cache/cost columns through `Migration.apply` (each `ALTER TABLE` runs only when the column is missing; a missing table is skipped).
 
 ### `stream_events`
 

@@ -80,7 +80,7 @@ const EMPTY_STATS: BookStatistics = {
   wordCountHistory: [],
   totalCostEstimate: 0,
   wordsPerChapter: [],
-  totalTokens: { input: 0, output: 0, thinking: 0 },
+  totalTokens: { input: 0, output: 0, thinking: 0, cacheRead: 0, cacheWrite: 0 },
   conversationCount: 0,
 };
 
@@ -164,7 +164,7 @@ describe('App smoke', () => {
       settings: { load: vi.fn(async () => makeAppSettings({ initialized: false })) },
     });
 
-    expect(await screen.findByText('Novel Engine')).toBeInTheDocument();
+    expect(await screen.findByText('Novel Engine Spur')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Get Started' })).toBeInTheDocument();
     expect(screen.queryByText('Your bookshelf')).not.toBeInTheDocument();
   });

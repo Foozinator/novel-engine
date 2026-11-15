@@ -29,6 +29,7 @@ export class StreamSessionTracker {
   private hasEmittedText = false;
   private hasErrorResult = false;
   private resolvedModel: string | undefined;
+  private resumedRun = false;
   private currentToolName = '';
   private currentToolId = '';
   private toolInputBuffer = '';
@@ -72,6 +73,15 @@ export class StreamSessionTracker {
 
   setResolvedModel(model: string): void {
     this.resolvedModel = model;
+  }
+
+  /** True when this run continues an earlier CLI session via `--resume`. */
+  isResumedRun(): boolean {
+    return this.resumedRun;
+  }
+
+  markResumedRun(): void {
+    this.resumedRun = true;
   }
 
   getCurrentToolName(): string {

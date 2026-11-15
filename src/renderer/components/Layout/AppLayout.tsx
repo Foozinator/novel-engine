@@ -10,6 +10,7 @@ import { usePipelineStore } from '../../stores/pipelineStore';
 import { useFileChangeStore } from '../../stores/fileChangeStore';
 import { useImportStore } from '../../stores/importStore';
 import { useSeriesImportStore } from '../../stores/seriesImportStore';
+import { useDataFolderImportStore } from '../../stores/dataFolderImportStore';
 import { useSeriesStore } from '../../stores/seriesStore';
 import { TOUR_DEFINITIONS } from '../../tours/tourDefinitions';
 import { SettingsView } from '../Settings/SettingsView';
@@ -36,6 +37,7 @@ import { usePaletteStore } from '../../stores/paletteStore';
 import { PitchPreviewModal } from '../Sidebar/PitchPreviewModal';
 import { ImportWizard } from '../Import/ImportWizard';
 import { ImportSeriesWizard } from '../Import/ImportSeriesWizard';
+import { DataFolderImportWizard } from '../Import/DataFolderImportWizard';
 import { SeriesModal } from '../Series/SeriesModal';
 
 /**
@@ -102,6 +104,7 @@ function BookDataManager(): null {
 function GlobalBookModals(): React.ReactElement {
   const importStep = useImportStore((s) => s.step);
   const seriesImportStep = useSeriesImportStore((s) => s.step);
+  const dataFolderImportStep = useDataFolderImportStore((s) => s.step);
   const seriesModalOpen = useSeriesStore((s) => s.isModalOpen);
 
   return (
@@ -109,6 +112,7 @@ function GlobalBookModals(): React.ReactElement {
       <PitchPreviewModal />
       {importStep !== 'idle' && <ImportWizard />}
       {seriesImportStep !== 'idle' && <ImportSeriesWizard />}
+      {dataFolderImportStep !== 'idle' && <DataFolderImportWizard />}
       {seriesModalOpen && <SeriesModal />}
     </>
   );

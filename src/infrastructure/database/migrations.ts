@@ -4,7 +4,17 @@ export type Migration = {
   version: number;
   description: string;
   sql: string;
+  /** Runs instead of `sql` when set — for changes SQLite can't express idempotently (e.g. ADD COLUMN IF NOT EXISTS). */
+  apply?: (db: Database.Database) => void;
 };
+
+/** Add a column unless the table already has it. Skips a missing table. */
+function addColumnIfMissing(db: Database.Database, table: string, column: string, definition: string): void {
+  const columns = db.pragma(`table_info(${table})`) as { name: string }[];
+  if (columns.length === 0) return;
+  if (columns.some((c) => c.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
 
 /**
  * Forward-only migration list. Each entry runs exactly once.
@@ -64,6 +74,16 @@ export const MIGRATIONS: Migration[] = [
         ON word_count_snapshots(book_slug, recorded_at);
     `,
   },
+  {
+    version: 4,
+    description: 'Add prompt-cache token counts and provider-reported cost to token_usage',
+    sql: '',
+    apply: (db) => {
+      addColumnIfMissing(db, 'token_usage', 'cache_read_tokens', 'INTEGER NOT NULL DEFAULT 0');
+      addColumnIfMissing(db, 'token_usage', 'cache_write_tokens', 'INTEGER NOT NULL DEFAULT 0');
+      addColumnIfMissing(db, 'token_usage', 'cost_usd', 'REAL'); // NULL = cost not reported
+    },
+  },
 ];
 
 /**
@@ -107,6 +127,8 @@ export function runMigrations(db: Database.Database): void {
         if (!columns.some((c) => c.name === 'purpose')) {
           db.exec(`ALTER TABLE conversations ADD COLUMN purpose TEXT NOT NULL DEFAULT 'pipeline'`);
         }
+      } else if (migration.apply) {
+        migration.apply(db);
       } else if (migration.sql.trim()) {
         db.exec(migration.sql);
       }

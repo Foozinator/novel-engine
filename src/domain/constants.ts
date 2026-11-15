@@ -3,7 +3,23 @@
  * (value imports, not type-only). Permitted for pure data constants
  * with zero Node.js dependencies. See docs/architecture/ARCHITECTURE.md.
  */
-import type { AgentName, AgentMeta, AuditSeverity, CreativeAgentName, PipelinePhaseId, AppSettings, ProviderId, ProviderConfig, ModelInfo } from './types';
+import type { AgentName, AgentMeta, AuditSeverity, CreativeAgentName, PipelinePhaseId, AppSettings, ProseFontId, ProviderId, ProviderConfig, ModelInfo } from './types';
+
+// === Product Identity ===
+
+/**
+ * Display name of this fork. Must match `productName` in package.json, which
+ * also names the default data folder (`{appData}/Novel Engine Spur`).
+ * Code identifiers (`window.novelEngine`, `novel-engine.db`, `novel-asset://`)
+ * keep the original name so data folders stay compatible with upstream.
+ */
+export const APP_NAME = 'Novel Engine Spur';
+
+/** Fork repository, for bug reports and the About section. */
+export const APP_REPO_URL = 'https://github.com/Foozinator/novel-engine';
+
+/** The upstream project this fork is based on (frozen since November 2026). */
+export const UPSTREAM_REPO_URL = 'https://github.com/john-paul-ruf/novel-engine';
 
 // === Per-Agent Read Guidance ===
 
@@ -87,6 +103,16 @@ export const PITCH_ROOM_SLUG = '__pitch-room__';
 /** Reserved book slug used for Helper agent conversations. */
 export const HELPER_SLUG = '__helper__';
 
+/**
+ * Directory inside a staged (exported) book folder that holds its DB history.
+ * Never present in a live book folder: it exists only in staging, and later
+ * inside #36 archive zips.
+ */
+export const BOOK_HISTORY_DIR = '.novel-engine';
+
+/** Per-book history snapshot file inside BOOK_HISTORY_DIR. */
+export const BOOK_HISTORY_FILE = 'history.sqlite';
+
 // Creative agents only — excludes Wrangler (used for UI agent lists)
 export const CREATIVE_AGENT_NAMES: CreativeAgentName[] = ['Spark', 'Verity', 'Ghostlight', 'Lumen', 'Sable', 'Forge', 'Quill'];
 
@@ -113,8 +139,9 @@ export const PIPELINE_PHASES: { id: PipelinePhaseId; label: string; agent: Agent
  * Maps pipeline phases to the output file(s) each agent is expected to write.
  *
  * Used by:
- * - Post-stream file extraction: when a non-tool-use provider finishes a
- *   pipeline conversation, the response text is written to these paths.
+ * - Post-stream file extraction: when a non-Claude-CLI pipeline turn makes
+ *   no tool calls and none of these paths has content yet, the response
+ *   text is written to them.
  * - Capability guard: ChatService warns the user when the active provider
  *   lacks tool-use and these files will be auto-extracted instead.
  *
@@ -352,6 +379,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoCollapseThinking: true,
   enableNotifications: true,
   theme: 'dark',
+  proseFontSize: 16.5,
+  showChapterLineNumbers: false,
+  proseFont: 'fraunces',
+  proseFontCustom: '',
   initialized: false,
   authorName: '',
   providers: BUILT_IN_PROVIDER_CONFIGS,
@@ -362,6 +393,47 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lastClaudeCliUpdateCheck: null,
   lastFableProbe: null,
 };
+
+// === Reading View ===
+
+export const PROSE_FONT_SIZE_DEFAULT = 16.5;
+export const PROSE_FONT_SIZE_MIN = 12;
+export const PROSE_FONT_SIZE_MAX = 28;
+export const PROSE_FONT_SIZE_STEP = 1;
+
+/** Clamp a prose font size to the allowed range, rounded to half pixels. Non-finite → default. */
+export function clampProseFontSize(size: number): number {
+  if (!Number.isFinite(size)) return PROSE_FONT_SIZE_DEFAULT;
+  const clamped = Math.min(PROSE_FONT_SIZE_MAX, Math.max(PROSE_FONT_SIZE_MIN, size));
+  return Math.round(clamped * 2) / 2;
+}
+
+/** Reading font presets. Fraunces, Inter and JetBrains Mono are bundled; Georgia falls back to the system serif. */
+export const PROSE_FONTS: ReadonlyArray<{ id: Exclude<ProseFontId, 'custom'>; label: string; stack: string }> = [
+  { id: 'fraunces', label: 'Fraunces (default)', stack: "'Fraunces Variable', Georgia, serif" },
+  { id: 'classic-serif', label: 'Classic serif (Georgia)', stack: "Georgia, 'Times New Roman', serif" },
+  { id: 'sans', label: 'Sans (Inter)', stack: "'Inter', system-ui, sans-serif" },
+  { id: 'mono', label: 'Monospace (JetBrains Mono)', stack: "'JetBrains Mono', ui-monospace, monospace" },
+];
+
+/** Keep only characters that can appear in a font family name; trims and caps length. */
+export function sanitizeFontFamilyName(name: string): string {
+  return name.replace(/[^\p{L}\p{N} _.-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 64);
+}
+
+/**
+ * CSS font-family stack for a reading-font setting. A custom name is quoted
+ * and falls back to the default stack, so an uninstalled or empty name still
+ * renders in Fraunces.
+ */
+export function resolveProseFontStack(font: ProseFontId | undefined, custom = ''): string {
+  const fallback = PROSE_FONTS[0].stack;
+  if (font === 'custom') {
+    const name = sanitizeFontFamilyName(custom);
+    return name ? `'${name}', ${fallback}` : fallback;
+  }
+  return PROSE_FONTS.find((f) => f.id === font)?.stack ?? fallback;
+}
 
 // === Claude CLI Updates ===
 
@@ -487,6 +559,44 @@ Read the full manuscript and scene outline. Write in present tense, third person
   ],
 };
 
+/**
+ * Curated starting points for a fresh phase conversation, shown on the
+ * workbench phase starter card. Values are labels from the phase agent's
+ * AGENT_QUICK_ACTIONS list, so each prompt is defined once.
+ * Phases without an entry fall back to the agent's full list.
+ */
+export const PHASE_STARTER_ACTIONS: Partial<Record<PipelinePhaseId, string[]>> = {
+  'pitch':             ['Pitch me a story', 'I have an idea...', 'Revisit the pitch'],
+  'scaffold':          ['Build scene outline', 'Build story bible'],
+  'first-draft':       ['Next chapter'],
+  'first-read':        ['Read the manuscript'],
+  'first-assessment':  ['Full assessment', 'Pacing & scenes', 'Character arcs'],
+  'revision-plan-1':   ['Create revision plan', 'Plan from my feedback'],
+  'revision':          ['Revise chapter...'],
+  'second-read':       ['Read the manuscript'],
+  'second-assessment': ['Full assessment', 'Pacing & scenes', 'Character arcs'],
+  'copy-edit':         ['Copy edit', 'Build style sheet'],
+  'revision-plan-2':   ['Plan copy fixes', 'Plan from my feedback'],
+  'mechanical-fixes':  ['Revise chapter...'],
+  'publish':           ['Prepare for publication', 'Generate metadata'],
+  'query-agents':      ['Analyze for queries', 'Find agents for this book', 'Query Letter (Traditional)', 'Synopsis (Traditional)'],
+};
+
+/**
+ * Resolves a phase's starter actions against its agent's quick actions.
+ * Unknown labels are skipped; a phase without a curated list gets the
+ * agent's full list. No agent, or a non-creative agent → empty.
+ */
+export function getPhaseStarterActions(phaseId: PipelinePhaseId, agent: AgentName | null): QuickAction[] {
+  if (!agent || !(CREATIVE_AGENT_NAMES as AgentName[]).includes(agent)) return [];
+  const actions = AGENT_QUICK_ACTIONS[agent as CreativeAgentName] ?? [];
+  const labels = PHASE_STARTER_ACTIONS[phaseId];
+  if (!labels) return actions;
+  return labels
+    .map((label) => actions.find((a) => a.label === label))
+    .filter((a): a is QuickAction => a !== undefined);
+}
+
 // Token estimation: ~4 chars per token for English
 export const CHARS_PER_TOKEN = 4;
 // Opus context window (used for budget fraction calculations)
@@ -528,6 +638,15 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   'claude-opus-4-20250514': { inputPer1M: 15, outputPer1M: 75 },
   'claude-sonnet-4-20250514': { inputPer1M: 3, outputPer1M: 15 },
 };
+
+/**
+ * Prompt-cache prices as multiples of a model's input price (Anthropic list
+ * pricing). Used only to estimate usage with no provider-reported cost; the
+ * Claude CLI reports its own cost per run. Cache writes are priced at the
+ * 5-minute rate (1.25×); 1-hour writes cost 2×, so this is a lower bound.
+ */
+export const CACHE_READ_PRICE_MULTIPLIER = 0.1;
+export const CACHE_WRITE_PRICE_MULTIPLIER = 1.25;
 
 const CLAUDE_FAMILY_PATTERN = /^claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/;
 
@@ -651,6 +770,35 @@ export const VERITY_PHASE_FILES: Partial<Record<PipelinePhaseId, string>> = {
 export const VERITY_LEDGER_FILE = 'VERITY-LEDGER.md';
 
 export const VERITY_AUDIT_AGENT_FILE = 'VERITY-AUDIT.md';
+
+// === Revision queue gates ===
+
+/**
+ * Verity ends a revision-queue session's final message with this line when
+ * every task is done. The queue completes a session only when it sees it;
+ * any other ending is treated as a gate. An HTML comment so markdown views
+ * don't render it.
+ */
+export const REVISION_SESSION_COMPLETE_MARKER = '<!-- session-complete -->';
+
+/** Appended to Verity's system prompt for every revision-queue session. */
+export const REVISION_QUEUE_PROTOCOL = `## Revision Queue Protocol
+
+You are running inside Novel Engine's revision queue. The queue reads the end of each of your messages to decide whether you are waiting for the author or finished.
+
+- When you stop to ask the author anything (approval, a choice between options, a question), end your message with the question. Do not add the completion marker.
+- Only when every task in this session is finished and you need nothing more from the author, end your final message with this exact line on its own:
+
+${REVISION_SESSION_COMPLETE_MARKER}
+
+Never emit that line in a message that asks the author anything.`;
+
+/**
+ * Most quick replies the queue sends on its own (auto-approve, auto-skip,
+ * Approve All) in one session run before it pauses for the author. Guards
+ * against a loop when Verity never emits the completion marker.
+ */
+export const MAX_AUTO_GATE_REPLIES = 8;
 
 /** Model used for the audit pass — the secondary Claude CLI model (faster/cheaper). Derived from BUILT_IN_PROVIDER_CONFIGS. */
 export const VERITY_AUDIT_MODEL: string = CLAUDE_CLI_SECONDARY_MODEL;

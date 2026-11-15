@@ -12,7 +12,12 @@ import type {
   ChapterEditStatus,
   ContextDiagnostics,
   Conversation,
+  DataFolderImportConfig,
+  DataFolderImportResult,
+  DataFolderPreview,
   ConversationPurpose,
+  DataFolderInfo,
+  PromptSyncStatus,
   FileDiff,
   FileEntry,
   FileVersion,
@@ -90,6 +95,14 @@ const api = {
   agents: {
     list: (): Promise<AgentMeta[]> => ipcRenderer.invoke('agents:list'),
     get: (name: AgentName): Promise<AgentMeta> => ipcRenderer.invoke('agents:get', name),
+    promptSync: (): Promise<PromptSyncStatus> => ipcRenderer.invoke('agents:promptSync'),
+  },
+
+  // Data folder (#39) — change/reset restart the app on success
+  dataFolder: {
+    get: (): Promise<DataFolderInfo> => ipcRenderer.invoke('dataFolder:get'),
+    change: (): Promise<boolean> => ipcRenderer.invoke('dataFolder:change'),
+    reset: (): Promise<boolean> => ipcRenderer.invoke('dataFolder:reset'),
   },
 
   // Books
@@ -146,6 +159,16 @@ const api = {
       ipcRenderer.on('import:generationProgress', handler);
       return () => ipcRenderer.removeListener('import:generationProgress', handler);
     },
+  },
+
+  // Import from another Novel Engine data folder (#37)
+  dataFolderImport: {
+    selectFolder: (): Promise<string | null> =>
+      ipcRenderer.invoke('import:selectDataFolder'),
+    preview: (sourcePath: string): Promise<DataFolderPreview> =>
+      ipcRenderer.invoke('import:dataFolderPreview', sourcePath),
+    commit: (config: DataFolderImportConfig): Promise<DataFolderImportResult> =>
+      ipcRenderer.invoke('import:dataFolderCommit', config),
   },
 
   // Series Import

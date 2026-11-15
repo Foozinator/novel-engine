@@ -74,6 +74,10 @@ export function makeAppSettings(overrides: Partial<AppSettings> = {}): AppSettin
     autoCollapseThinking: false,
     enableNotifications: false,
     theme: 'system',
+    proseFontSize: 16.5,
+    showChapterLineNumbers: false,
+    proseFont: 'fraunces',
+    proseFontCustom: '',
     initialized: true,
     authorName: 'Test Author',
     providers: [],
@@ -164,6 +168,9 @@ export function makeUsageRecord(overrides: Partial<UsageRecord> = {}): UsageReco
     inputTokens: 100,
     outputTokens: 200,
     thinkingTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    costUsd: null,
     model: 'test-model',
     timestamp: ISO,
     ...overrides,
@@ -284,6 +291,16 @@ export function installNovelEngineMock(overrides: BridgeOverrides = {}): NovelEn
     agents: {
       list: vi.fn(async () => []),
       get: vi.fn(async () => makeAgentMeta()),
+      promptSync: vi.fn(async () => ({ updated: [], edited: [], agentsDir: '/fake/userData/custom-agents' })),
+    },
+    dataFolder: {
+      get: vi.fn(async () => ({
+        current: '/fake/userData',
+        defaultDir: '/fake/userData',
+        source: 'default' as const,
+      })),
+      change: vi.fn(async () => false),
+      reset: vi.fn(async () => false),
     },
     books: {
       list: vi.fn(async () => []),
@@ -310,6 +327,11 @@ export function installNovelEngineMock(overrides: BridgeOverrides = {}): NovelEn
       onGenerationProgress: vi.fn((callback: (event: never) => void) =>
         subscribe('import:generationProgress', callback),
       ),
+    },
+    dataFolderImport: {
+      selectFolder: vi.fn(async () => null),
+      preview: notStubbed('dataFolderImport.preview'),
+      commit: notStubbed('dataFolderImport.commit'),
     },
     seriesImport: {
       selectFiles: vi.fn(async () => null),
@@ -402,6 +424,8 @@ export function installNovelEngineMock(overrides: BridgeOverrides = {}): NovelEn
         totalInputTokens: 0,
         totalOutputTokens: 0,
         totalThinkingTokens: 0,
+        totalCacheReadTokens: 0,
+        totalCacheWriteTokens: 0,
         conversationCount: 0,
       })),
       byConversation: vi.fn(async () => []),

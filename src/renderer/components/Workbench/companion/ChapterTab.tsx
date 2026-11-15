@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useBookStore } from '../../../stores/bookStore';
 import { useDashboardStore } from '../../../stores/dashboardStore';
+import { useSettingsStore } from '../../../stores/settingsStore';
 import { useViewStore } from '../../../stores/viewStore';
 import { Icon } from '../../common/Icon';
 import { ProseViewer, useBookFile } from '../../common/ProseViewer';
@@ -34,6 +35,7 @@ export function ChapterTab(): React.ReactElement {
   const chapters = useBookStore((s) => s.chapters);
   const dashboardData = useDashboardStore((s) => s.data);
   const { navigate } = useViewStore();
+  const showLineNumbers = useSettingsStore((s) => s.settings?.showChapterLineNumbers ?? false);
 
   const [selected, setSelected] = useState<string | null>(null);
   const [historyPath, setHistoryPath] = useState<string | null>(null);
@@ -132,7 +134,7 @@ export function ChapterTab(): React.ReactElement {
         ) : loading ? (
           <div className="pt-8 text-center text-sm text-ne-ink-faint">Loading…</div>
         ) : (
-          <ProseViewer content={content} />
+          <ProseViewer content={content} lineNumbers={showLineNumbers} />
         )}
       </div>
 

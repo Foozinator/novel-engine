@@ -1,6 +1,6 @@
 # Domain — Types, Interfaces, Constants
 
-> Last updated: 2026-07-23 (program-030)
+> Last updated: 2026-11-15 (#37, after #39)
 
 Everything in `src/domain/`. Pure TypeScript declarations — zero imports from other layers.
 
@@ -79,7 +79,7 @@ Everything in `src/domain/`. Pure TypeScript declarations — zero imports from 
 | `PersistedStreamEvent` | `{ id, sessionId, conversationId, sequenceNumber, eventType, payload, timestamp }` | Stream event replay |
 | `StreamSessionRecord` | `{ id, conversationId, agentName, model, bookSlug, startedAt, endedAt, finalStage, filesTouched, interrupted }` | Orphan recovery |
 | `StreamEventSource` | `'chat' \| 'auto-draft' \| 'hot-take' \| 'adhoc-revision' \| 'revision' \| 'audit' \| 'fix' \| 'motif-audit' \| 'query'` | IPC source discriminator |
-| `StreamEvent` | Discriminated union (18 variants: `callStart`, `status`, `modelResolved` (`model` — the concrete model an alias resolved to), `cliSession` (`sessionId` — the Claude CLI session ID from the init event; consumed by `AutoTurnResumer` for `--resume`, not forwarded), `blockStart`, `thinkingDelta`, `textDelta`, `blockEnd`, `toolUse`, `filesChanged`, `done` (+`isMaxTurns?`, +`model?` resolved model), `progressStage`, `thinkingSummary`, `toolDuration`, `warning`, `error` (+`isMaxTurns?`), `multiCallProgress`, `maxTurnsResume`) | IPC streaming |
+| `StreamEvent` | Discriminated union (18 variants: `callStart`, `status`, `modelResolved` (`model` — the concrete model an alias resolved to), `cliSession` (`sessionId` — the Claude CLI session ID from the init event; consumed by `AutoTurnResumer` for `--resume`, not forwarded), `blockStart`, `thinkingDelta`, `textDelta`, `blockEnd`, `toolUse`, `filesChanged`, `done` (`StreamUsage` + `filesTouched`, +`isMaxTurns?`, +`model?` resolved model), `progressStage`, `thinkingSummary`, `toolDuration`, `warning`, `error` (+`isMaxTurns?`, +`usage?: StreamUsage` on a max-turns error), `multiCallProgress`, `maxTurnsResume`) | IPC streaming |
 | `ActiveStreamInfo` | `{ conversationId, agentName, model, bookSlug, startedAt, sessionId, callId, progressStage, filesTouched, thinkingBuffer, textBuffer }` | Renderer refresh recovery |
 
 ### Model Providers
@@ -98,7 +98,8 @@ Everything in `src/domain/`. Pure TypeScript declarations — zero imports from 
 
 | Type | Shape | Used By |
 |------|-------|---------|
-| `AppSettings` | `{ hasClaudeCli, hasOllamaCli, hasCodexCli, model, secondaryModel, maxTokens, enableThinking, thinkingBudget, overrideThinkingBudget, autoCollapseThinking, enableNotifications, theme, initialized, authorName, providers, activeProviderId, completedTours, savedPrompts, claudeCliUpdateReminder, lastClaudeCliUpdateCheck, lastFableProbe }` | SettingsService, SettingsView, tourStore, ClaudeCliUpdateService, FableAccessService |
+| `AppSettings` | `{ hasClaudeCli, hasOllamaCli, hasCodexCli, model, secondaryModel, maxTokens, enableThinking, thinkingBudget, overrideThinkingBudget, autoCollapseThinking, enableNotifications, theme, proseFontSize, showChapterLineNumbers, proseFont, proseFontCustom, initialized, authorName, providers, activeProviderId, completedTours, savedPrompts, claudeCliUpdateReminder, lastClaudeCliUpdateCheck, lastFableProbe }` | SettingsService, SettingsView, tourStore, ClaudeCliUpdateService, FableAccessService |
+| `ProseFontId` | `'fraunces' \| 'classic-serif' \| 'sans' \| 'mono' \| 'custom'` | `AppSettings.proseFont`, ProseViewer, SettingsView |
 | `FableProbeStatus` | `'available' \| 'unavailable' \| 'error'` | FableProbe, FableAccessService |
 | `FableProbeResult` | `{ status: FableProbeStatus, checkedAt, detail? }` | `AppSettings.lastFableProbe`, `claudeCli:checkFableAccess` |
 
@@ -106,24 +107,27 @@ Everything in `src/domain/`. Pure TypeScript declarations — zero imports from 
 
 | Type | Shape | Used By |
 |------|-------|---------|
-| `UsageRecord` | `{ conversationId, inputTokens, outputTokens, thinkingTokens, model, timestamp }` | UsageService |
-| `UsageSummary` | `{ totalInputTokens, totalOutputTokens, totalThinkingTokens, conversationCount }` | SettingsView |
+| `StreamUsage` | `{ inputTokens, outputTokens, thinkingTokens, cacheReadTokens?, cacheWriteTokens?, costUsd? }` | `done` / max-turns `error` events, `streamUsage.ts` helpers. `inputTokens` is uncached input; `costUsd` is the provider-reported cost when there is one |
+| `UsageRecord` | `{ conversationId, inputTokens, outputTokens, thinkingTokens, cacheReadTokens, cacheWriteTokens, costUsd: number \| null, model, timestamp }` | UsageService |
+| `NewUsageRecord` | `UsageRecord` minus `timestamp`, with cache counts and `costUsd` optional (default 0 / null) | `recordUsage` on IUsageService and IDatabaseService |
+| `UsageSummary` | `{ totalInputTokens, totalOutputTokens, totalThinkingTokens, totalCacheReadTokens, totalCacheWriteTokens, conversationCount }` | SettingsView, StatisticsService |
 | `ClaudeCliUpdateResult` | `{ status: 'updated' \| 'up-to-date' \| 'failed' \| 'busy' \| 'not-installed', output, versionBefore, versionAfter, manualCommand }` | Claude CLI update flow |
 | `ClaudeCliUpdateReminder` | `{ due, version }` | Weekly update offer |
-| `UsageCostBasisRow` | `{ agentName, phase, model, inputTokens, outputTokens, thinkingTokens }` | StatisticsService (per-model pricing) |
+| `UsageCostBasisRow` | `{ agentName, phase, model, reportedCostUsd, unreportedInputTokens, unreportedOutputTokens, unreportedThinkingTokens, unreportedCacheReadTokens, unreportedCacheWriteTokens }` | StatisticsService. Reported costs are summed; token counts cover only rows with no reported cost |
 
 ### Revision Queue
 
 | Type | Shape | Used By |
 |------|-------|---------|
 | `RevisionSessionStatus` | `'pending' \| 'running' \| 'awaiting-approval' \| 'approved' \| 'rejected' \| 'skipped'` | RevisionQueueView |
-| `ApprovalAction` | `'approve' \| 'approve-all' \| 'reject' \| 'skip' \| 'retry'` | Gate handling |
+| `ApprovalAction` | `'approve' \| 'approve-all' \| 'reply' \| 'complete' \| 'skip' \| 'retry'` | Gate handling. `reply` sends the author's typed text; `complete` approves the session with no further call. `approve`/`approve-all` are ignored on a `choice` gate. |
+| `GateKind` | `'confirm' \| 'choice'` | `confirm`: a quick reply can answer it. `choice`: options or an open question; only a typed answer can. |
 | `QueueMode` | `'manual' \| 'auto-approve' \| 'auto-skip' \| 'selective'` | Queue controls |
 | `QueueStatus` | `{ planId, isRunning, activeSessionId }` | Frontend status recovery |
 | `RevisionSession` | `{ id, index, title, chapters, taskNumbers, model, prompt, notes, status, conversationId, response }` | RevisionQueueView |
 | `RevisionPlanPhase` | `{ number, name, taskCount, completedCount, taskNumbers? }` | Progress display |
 | `RevisionPlan` | `{ id, bookSlug, sessions, totalTasks, completedTaskNumbers, phases, mode, createdAt, verificationConversationId }` | RevisionQueueService |
-| `RevisionQueueEvent` | Discriminated union (10 variants: `session:status`, `session:chunk`, `session:thinking`, `session:done`, `session:gate`, `session:streamEvent`, `plan:progress`, `plan:loading-step`, `queue:done`, `error`). `session:streamEvent` includes optional `conversationId`. | Event bus |
+| `RevisionQueueEvent` | Discriminated union (10 variants: `session:status`, `session:chunk`, `session:thinking`, `session:done`, `session:gate`, `session:streamEvent`, `plan:progress`, `plan:loading-step`, `queue:done`, `error`). `session:streamEvent` includes optional `conversationId`. `session:gate` carries `gateText` and `gateKind`. | Event bus |
 
 ### Verity Audit
 
@@ -146,6 +150,16 @@ Everything in `src/domain/`. Pure TypeScript declarations — zero imports from 
 | Type | Shape | Used By |
 |------|-------|---------|
 | `FileEntry` | `{ name, path, isDirectory, children? }` | FileTree, FileBrowser |
+
+### Data Folder & Prompt Sync
+
+| Type | Shape | Used By |
+|------|-------|---------|
+| `DataFolderSource` | `'flag' \| 'env' \| 'pointer' \| 'default'` | dataLocation, Settings → Data Folder |
+| `DataFolderKind` | `'empty' \| 'novel-engine' \| 'other'` | `classifyFolder()`, confirm dialogs |
+| `DataFolderInfo` | `{ current, defaultDir, source }` | `dataFolder:get`, DataFolderSection |
+| `PromptSyncResult` | `{ updated: string[], edited: string[] }` | `ensureAgents()` return, IPC `paths.promptSync` |
+| `PromptSyncStatus` | `PromptSyncResult & { agentsDir }` | `agents:promptSync`, AgentPromptsSection |
 
 ### Version Control
 
@@ -205,6 +219,18 @@ Everything in `src/domain/`. Pure TypeScript declarations — zero imports from 
 | `SeriesImportPreview` | `{ seriesName, volumes, totalWordCount, totalChapterCount }` | ImportSeriesWizard |
 | `SeriesImportCommitConfig` | `{ seriesName, existingSeriesSlug, author, volumes[] }` | SeriesImportService.commit() |
 | `SeriesImportResult` | `{ seriesSlug, seriesName, volumeResults, totalBooks, totalChapters, totalWordCount }` | ImportSeriesWizard success step |
+
+### Data Folder Import (#37)
+
+| Type | Shape | Used By |
+|------|-------|---------|
+| `DataFolderBookSummary` | `{ slug, title, author, wordCount, chapterCount, conversationCount, historyBytes, folderExists, alreadyImported }` | DataFolderImportService.preview(), DataFolderImportWizard |
+| `DataFolderPreview` | `{ sourcePath, sourceSchemaVersion, books[], hasAuthorProfile, seriesSlugs[] }` | dataFolderImportStore |
+| `DataFolderBookAction` | `'import' \| 'rename' \| 'skip'` | DataFolderImportConfig |
+| `DataFolderImportConfig` | `{ sourcePath, books: { slug, action, newTitle? }[], copyAuthorProfile, copySeries }` | DataFolderImportService.commit() |
+| `DataFolderImportResult` | `{ imported: { from, to, title, conversations, versions }[], skipped: { slug, reason }[], warnings[] }` | DataFolderImportWizard success step |
+| `BookHistoryCounts` | `{ conversations, messages, tokenUsage, fileVersions, wordCountSnapshots }` | IDatabaseService.exportBookHistory/importBookHistory |
+| `BookHistoryImportReceipt` | `{ targetSlug, conversationIds, firstFileVersionId, firstWordCountSnapshotId, counts }` | IDatabaseService.revertBookHistoryImport |
 
 ### Guided Tour
 
@@ -313,8 +339,15 @@ Implemented by: `DatabaseService` (`src/infrastructure/database/`)
 | `recordUsage` | `(record) => void` | — |
 | `getUsageSummary` | `(bookSlug?) => UsageSummary` | Aggregated usage |
 | `getUsageByConversation` | `(conversationId) => UsageRecord[]` | Usage records |
-| `getUsageCostBasis` | `(bookSlug?) => UsageCostBasisRow[]` | Token totals grouped by agent, phase (null → `adhoc`) and model |
+| `getUsageCostBasis` | `(bookSlug?) => UsageCostBasisRow[]` | Reported cost plus unpriced token totals, grouped by agent, phase (null → `adhoc`) and model |
 | `updateBookSlug` | `(oldSlug, newSlug) => void` | Migrates conversation references |
+| `exportBookHistory` | `(bookSlug, destFile) => BookHistoryCounts` | Writes one book's history to a new snapshot file |
+| `importBookHistory` | `(srcFile, targetSlug) => BookHistoryImportReceipt` | One-transaction merge; refuses newer schema or id clashes |
+| `revertBookHistoryImport` | `(receipt) => void` | Removes the rows a merge inserted |
+| `findExistingConversationIds` | `(ids) => string[]` | Ids already present |
+| `listConversationIds` | `(bookSlug) => string[]` | A book's conversation ids |
+| `getBookHistoryStats` | `(bookSlug) => { conversationCount, historyBytes }` | Version bytes + message text bytes |
+| `getSchemaVersion` | `() => number` | Highest applied migration |
 | `persistStreamEvent` | `(event) => void` | — |
 | `persistStreamEventBatch` | `(events) => void` | Transaction-wrapped bulk insert |
 | `getStreamEvents` | `(sessionId) => PersistedStreamEvent[]` | Ordered events |
@@ -545,6 +578,21 @@ Implemented by: `ManuscriptImportService` (`src/application/`)
 | `preview` | `(filePath: string) => Promise<ImportPreview>` | Chapter detection results + metadata |
 | `commit` | `(config: ImportCommitConfig) => Promise<ImportResult>` | Creates book, writes chapters, sets status to first-draft |
 
+### IDataFolderImportService
+
+Implemented by: `DataFolderImportService` (`src/application/`)
+
+| Method | Signature | Returns |
+|--------|-----------|---------|
+| `preview` | `(sourcePath: string) => Promise<DataFolderPreview>` | Books in another data folder, with clash and re-import flags. Never writes to the source. |
+| `commit` | `(config: DataFolderImportConfig) => Promise<DataFolderImportResult>` | Copies books (folder + DB history), all-or-nothing per book; optional series and author profile |
+
+### ISourceDataFolder / OpenSourceDataFolder
+
+Implemented by: `makeSourceDataFolderOpener(ownUserDataPath, tmpRoot)` (`src/infrastructure/database/SourceDataFolder.ts`)
+
+`OpenSourceDataFolder = (dataFolder) => Promise<ISourceDataFolder>`. `ISourceDataFolder` is `{ rootDir, booksDir, db: IDatabaseService, schemaVersion, close() }`, where `db` is a migrated temp copy of the source DB and `schemaVersion` is the source version before migration.
+
 ### ISourceGenerationService
 
 Implemented by: `SourceGenerationService` (`src/application/`)
@@ -625,6 +673,14 @@ Implemented by: `QueryService` (`src/application/QueryService.ts`)
 
 ## Constants
 
+### Product Identity
+
+| Constant | Value | Used By |
+|----------|-------|---------|
+| `APP_NAME` | `'Novel Engine Spur'` (must match `package.json` `productName`) | dataFolderDialogs, Settings → About |
+| `APP_REPO_URL` | `'https://github.com/Foozinator/novel-engine'` | Settings → About |
+| `UPSTREAM_REPO_URL` | `'https://github.com/john-paul-ruf/novel-engine'` | Settings → About credit |
+
 ### AGENT_REGISTRY
 
 `Record<AgentName, Omit<AgentMeta, 'name'>>` — metadata for all 9 agents.
@@ -655,6 +711,12 @@ Implemented by: `QueryService` (`src/application/QueryService.ts`)
 
 `Record<CreativeAgentName, QuickAction[]>` — pre-built prompt suggestions per agent.
 
+### PHASE_STARTER_ACTIONS / getPhaseStarterActions
+
+`Partial<Record<PipelinePhaseId, string[]>>` — curated starter labels per phase for the workbench phase starter card. Values are labels from the phase agent's `AGENT_QUICK_ACTIONS`, so prompts live in one place. Excludes Hot Take (PhaseHeader has a chip) and the granular-pass fallbacks. Every agent phase has an entry; `build` has none.
+
+`getPhaseStarterActions(phaseId, agent): QuickAction[]` — resolves the labels to actions in listed order, skipping unknown labels. A phase with no entry gets the agent's full list. No agent, Wrangler or Helper → `[]`.
+
 ### Context Budget Constants
 
 | Constant | Value | Purpose |
@@ -670,7 +732,12 @@ Implemented by: `QueryService` (`src/application/QueryService.ts`)
 | Constant | Value | Purpose |
 |----------|-------|---------|
 | `PITCH_ROOM_SLUG` | `'__pitch-room__'` | Reserved book slug for pitch room |
+| `REVISION_SESSION_COMPLETE_MARKER` | `'<!-- session-complete -->'` | Verity's last line when a revision-queue session is finished. The queue completes a session only on this marker. |
+| `REVISION_QUEUE_PROTOCOL` | `string` | Appended to Verity's system prompt for every revision-queue session. Tells her when to emit the marker. |
+| `MAX_AUTO_GATE_REPLIES` | `8` | Quick replies the queue sends on its own (auto modes, Approve All) per session run before it pauses for the author |
 | `HELPER_SLUG` | `'__helper__'` | Reserved book slug for helper conversations |
+| `BOOK_HISTORY_DIR` | `'.novel-engine'` | History dir inside a *staged* book folder (never in a live one) |
+| `BOOK_HISTORY_FILE` | `'history.sqlite'` | Per-book history snapshot file name |
 | `CREATIVE_AGENT_NAMES` | 7-element array | UI agent lists (excludes Wrangler) |
 | `WRANGLER_MODEL` | `'claude-sonnet-4-20250514'` | Model for plan parsing |
 | `AGENT_RESPONSE_BUFFER` | `Record<AgentName, number>` | Per-agent expected response sizes |
@@ -692,6 +759,13 @@ Implemented by: `QueryService` (`src/application/QueryService.ts`)
 | `CLAUDE_CLI_SECONDARY_MODEL` | `'sonnet'` | First Claude model that differs from the primary |
 | `MODEL_PRICING` | `Record<string, ModelPricing>` | USD per 1M tokens. Alias entries first (`opus` $4/$20, `sonnet` $2/$10, `haiku` $0.10/$0.50, `fable` $10/$50, as of 2026-10), then the full IDs they resolved to (`claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1`), then legacy dated IDs. The first entry is the fallback price. |
 | `getModelPricing(modelId)` | `(string) => ModelPricing` | Exact entry → family alias for an unlisted `claude-<family>-N[-M]` ID → first entry. Used by `StatisticsService`. |
+| `CACHE_READ_PRICE_MULTIPLIER` | `number` (0.1) | Cache-read price as a multiple of input price. Only for usage with no reported cost. |
+| `CACHE_WRITE_PRICE_MULTIPLIER` | `number` (1.25) | Cache-write price as a multiple of input price (5-minute rate; 1-hour writes cost 2×, so a lower bound). Only for usage with no reported cost. |
+| `PROSE_FONT_SIZE_DEFAULT` / `_MIN` / `_MAX` / `_STEP` | `number` | Reading font size for `ProseViewer`: 16.5 px default, 12–28 px range, 1 px step |
+| `clampProseFontSize(size)` | `(number) => number` | Clamps to the range, rounds to 0.5 px; non-finite → default |
+| `PROSE_FONTS` | `ReadonlyArray<{ id, label, stack }>` | Reading font presets: Fraunces (default), Classic serif (Georgia), Sans (Inter), Monospace (JetBrains Mono) |
+| `sanitizeFontFamilyName(name)` | `(string) => string` | Keeps letters, digits, space, `_ . -`; collapses spaces; max 64 chars |
+| `resolveProseFontStack(font, custom?)` | `(ProseFontId \| undefined, string?) => string` | CSS `font-family` for a reading-font setting. Custom names are sanitised, quoted and followed by the Fraunces stack; empty or unknown → Fraunces stack |
 | `CLAUDE_CLI_UPDATE_CHECK_INTERVAL_MS` | `number` | 7 days — minimum gap between launch-time update offers |
 | `CLAUDE_CLI_MANUAL_UPDATE_COMMAND` | `'claude update'` | Shown when the in-app update can't update the install |
 | `parseClaudeCliVersion(output)` | `(string) => string \| null` | Version from `claude --version` output |

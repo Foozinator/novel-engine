@@ -9,7 +9,11 @@ import type {
   PhaseUsageBreakdown,
   UsageCostBasisRow,
 } from '@domain/types';
-import { getModelPricing } from '@domain/constants';
+import {
+  CACHE_READ_PRICE_MULTIPLIER,
+  CACHE_WRITE_PRICE_MULTIPLIER,
+  getModelPricing,
+} from '@domain/constants';
 
 export class StatisticsService implements IStatisticsService {
   constructor(
@@ -68,6 +72,8 @@ export class StatisticsService implements IStatisticsService {
         input: usageSummary.totalInputTokens,
         output: usageSummary.totalOutputTokens,
         thinking: usageSummary.totalThinkingTokens,
+        cacheRead: usageSummary.totalCacheReadTokens,
+        cacheWrite: usageSummary.totalCacheWriteTokens,
       },
       conversationCount: usageSummary.conversationCount,
     };
@@ -84,15 +90,22 @@ export class StatisticsService implements IStatisticsService {
   }
 
   /**
-   * Unrounded cost of one usage group, priced at the model that ran it
-   * (see getModelPricing for how unlisted models are priced). Best-effort:
-   * cache reads/writes are not in the recorded token counts.
+   * Unrounded cost of one usage group: the provider-reported cost, plus an
+   * estimate for the group's unpriced rows at the model that ran them (see
+   * getModelPricing for how unlisted models are priced). Rows recorded
+   * before cache counts were stored have no cache tokens, so their estimate
+   * stays low.
    */
   private rawCost(row: UsageCostBasisRow): number {
     const pricing = getModelPricing(row.model);
-    const inputCost = (row.inputTokens / 1_000_000) * pricing.inputPer1M;
-    const outputCost = ((row.outputTokens + row.thinkingTokens) / 1_000_000) * pricing.outputPer1M;
-    return inputCost + outputCost;
+    const inputPerToken = pricing.inputPer1M / 1_000_000;
+    const inputCost =
+      row.unreportedInputTokens * inputPerToken +
+      row.unreportedCacheReadTokens * inputPerToken * CACHE_READ_PRICE_MULTIPLIER +
+      row.unreportedCacheWriteTokens * inputPerToken * CACHE_WRITE_PRICE_MULTIPLIER;
+    const outputCost =
+      ((row.unreportedOutputTokens + row.unreportedThinkingTokens) / 1_000_000) * pricing.outputPer1M;
+    return row.reportedCostUsd + inputCost + outputCost;
   }
 }
 

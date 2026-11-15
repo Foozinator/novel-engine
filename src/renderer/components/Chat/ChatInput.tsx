@@ -24,6 +24,11 @@ type ChatInputProps = {
    * the legacy chat view is unaffected.
    */
   compact?: boolean;
+  /**
+   * External request to fill the textarea (e.g. the workbench phase starter
+   * card). Each new `nonce` applies `text` exactly like a quick-action pick.
+   */
+  prefill?: { text: string; nonce: number } | null;
 };
 
 /** Chip that opens a popover hosting the existing ThinkingBudgetSlider. */
@@ -67,7 +72,7 @@ function ThinkingChip({
   );
 }
 
-export function ChatInput({ onSend, disabled, lockedAgentName, agentName, readOnly = false, thinkingBudget, defaultThinkingBudget, onThinkingBudgetChange, compact = false }: ChatInputProps): React.ReactElement {
+export function ChatInput({ onSend, disabled, lockedAgentName, agentName, readOnly = false, thinkingBudget, defaultThinkingBudget, onThinkingBudgetChange, compact = false, prefill = null }: ChatInputProps): React.ReactElement {
   const [value, setValue] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -96,6 +101,15 @@ export function ChatInput({ onSend, disabled, lockedAgentName, agentName, readOn
     // Focus the textarea so the user can edit or just hit Enter
     setTimeout(() => textareaRef.current?.focus(), 0);
   }, []);
+
+  // Apply an external prefill (same path as a quick-action pick).
+  const prefillNonce = prefill?.nonce ?? null;
+  const prefillText = prefill?.text ?? '';
+  useEffect(() => {
+    if (prefillNonce === null) return;
+    handleQuickAction(prefillText);
+    // Keyed on the nonce only: the same text may be requested twice.
+  }, [prefillNonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-resize textarea
   useEffect(() => {

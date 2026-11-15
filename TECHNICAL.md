@@ -1,4 +1,6 @@
-# Novel Engine — Technical Guide
+# Novel Engine Spur — Technical Guide
+
+> Novel Engine Spur is a fork of [Novel Engine](https://github.com/john-paul-ruf/novel-engine). Code identifiers (`window.novelEngine`, `novel-engine.db`, `novel-asset://`) keep the original name so data folders stay compatible.
 
 > Engineering documentation for developers and the technically curious. For the writer-facing overview, see the [README](./README.md). For layer-by-layer architecture docs, see [docs/architecture/](./docs/architecture/ARCHITECTURE.md).
 
@@ -20,11 +22,11 @@
 
 ## Multi-Provider AI Backends
 
-Novel Engine routes every agent call through a provider registry, so the same editorial pipeline runs on whichever AI backend you have:
+Novel Engine Spur routes every agent call through a provider registry, so the same editorial pipeline runs on whichever AI backend you have:
 
 - **Claude Code CLI** — the flagship path. Full agent mode with file tools, streamed NDJSON, extended thinking. Invocation: `claude --print --output-format stream-json --verbose --model <model> --max-turns <N> --system-prompt-file <tmp> --allowedTools Read,Write,Edit,LS,Bash(mkdir:*),... --add-dir <booksDir> [--effort high]`. Large system prompts are passed via a temp file to dodge Windows' ~32K command-line limit.
 - **Codex CLI** — detected at startup (`codex --version`) and registered with model discovery; runs sandboxed via `codex exec --json --sandbox workspace-write`, with `--add-dir` support feature-detected from `codex exec --help` and graceful degradation when absent.
-- **Ollama (CLI-first)** — fully local. Novel Engine detects the `ollama` CLI, discovers models from `ollama list`, can start `ollama serve` itself, and drives models through its own built-in agentic tool loop (`Read`/`Write`/`Edit`/`LS` with path-traversal sandboxing and tolerant argument parsing for smaller models). Old tool results are proactively compacted at 80% of the model's context window; the loop only stops if usage would exceed 98% after compaction. Per-model context windows are discovered via `/api/show` with CLI fallback.
+- **Ollama (CLI-first)** — fully local. Novel Engine Spur detects the `ollama` CLI, discovers models from `ollama list`, can start `ollama serve` itself, and drives models through its own built-in agentic tool loop (`Read`/`Write`/`Edit`/`LS` with path-traversal sandboxing and tolerant argument parsing for smaller models). Old tool results are proactively compacted at 80% of the model's context window; the loop only stops if usage would exceed 98% after compaction. Per-model context windows are discovered via `/api/show` with CLI fallback.
 - **llama-server** — any llama.cpp-compatible OpenAI endpoint (SSE streaming), with `<think>` tag parsing for reasoning models like QwQ and DeepSeek-R1 and accumulation of fragmented streamed tool calls. Shares the Ollama tool executor and compactor.
 - **OpenAI-compatible endpoints** — bring your own base URL and API key (LM Studio, self-hosted, etc.).
 
@@ -95,6 +97,7 @@ Electron Forge config lives in [`forge.config.ts`](./forge.config.ts):
 - **macOS**: ZIP + DMG makers. Signing/notarization activate only when `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` are set — public builds are currently **unsigned** (hence the right-click-Open dance in the README)
 - **Windows**: Squirrel maker; optional signing via `WINDOWS_CERTIFICATE_FILE`/`WINDOWS_CERTIFICATE_PASSWORD`
 - **Linux**: Deb + Rpm makers
+- **Identity**: product name `Novel Engine Spur`, executable `novel-engine-spur`, macOS bundle ID `io.github.foozinator.novel-engine-spur`, Squirrel ID `NovelEngineSpur`, deb/rpm package `novel-engine-spur`. All differ from upstream, so both apps install side by side.
 - Utility scripts: `scripts/ci-build.js` (installer collection + checksums), `scripts/generate-icons.js`, `scripts/download-pandoc.js`
 
 ## Project Structure
@@ -159,14 +162,15 @@ src/
 
 ### User data directory
 
-All user data lives outside the app bundle (`~/Library/Application Support/Novel Engine` on macOS):
+All user data lives outside the app bundle, in the **data folder**. The default is `{appData}/Novel Engine Spur`: `~/Library/Application Support/Novel Engine Spur` on macOS, `%APPDATA%\Novel Engine Spur` on Windows, `~/.config/Novel Engine Spur` on Linux. The user can pick another folder in Settings → Profile → Data Folder (a `data-location.json` pointer in the default folder), and `--data-dir=<abs>` or `NOVEL_ENGINE_DATA_DIR` override it for one run. On first launch, if the pre-rename `{appData}/Novel Engine` folder holds data, Spur offers to copy it, use it in place, or start fresh.
+
 
 ```
 {userData}/
 ├── .initialized · settings.json · active-book.json · author-profile.md · USER_GUIDE.md
 ├── novel-engine.db               # SQLite: conversations, messages, usage, streams,
 │                                 #   file versions, word-count snapshots
-├── custom-agents/                # Editable agent .md prompts — restored, never overwritten
+├── custom-agents/                # Editable agent .md prompts — unedited ones update with the app (.bundled-manifest.json)
 ├── series/{slug}/                # series.json + series-bible.md
 └── books/
     ├── _archived/{slug}/         # Archived books
@@ -207,7 +211,7 @@ All user data lives outside the app bundle (`~/Library/Application Support/Novel
 
 ## Architecture
 
-Novel Engine follows **Clean Architecture** with five strict layers:
+Novel Engine Spur follows **Clean Architecture** with five strict layers:
 
 ```
 DOMAIN ← INFRASTRUCTURE ← APPLICATION ← IPC/MAIN ← RENDERER

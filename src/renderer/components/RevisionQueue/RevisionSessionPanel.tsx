@@ -198,9 +198,11 @@ function StreamingBubble() {
 function ChatInput({ sessionId }: { sessionId: string }) {
   const [input, setInput] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { gateSessionId, respondToGate, sendGateMessage, runSession, isRunning } = useRevisionQueueStore();
+  const { gateSessionId, gateKind, respondToGate, sendGateMessage, runSession, isRunning } = useRevisionQueueStore();
 
   const isAtGate = gateSessionId === sessionId;
+  // A choice can only be answered in words — no quick-approve buttons.
+  const isChoice = isAtGate && gateKind === 'choice';
   const session = useRevisionQueueStore(s => s.plan?.sessions.find(ss => ss.id === sessionId));
   const canRun = session?.status === 'pending' || session?.status === 'rejected';
 
@@ -229,19 +231,33 @@ function ChatInput({ sessionId }: { sessionId: string }) {
       {isAtGate && (
         <div className="flex items-center gap-2 px-4 py-2 bg-amber-500/5 border-b border-amber-500/20">
           <span className="text-amber-500 text-sm">&#9888;</span>
-          <span className="text-xs font-medium text-amber-700 dark:text-amber-300">Verity is waiting for your approval</span>
+          <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
+            {isChoice ? 'Verity is asking you to choose — answer below' : 'Verity is waiting for your approval'}
+          </span>
           <div className="ml-auto flex items-center gap-1.5">
+            {!isChoice && (
+              <>
+                <button
+                  onClick={() => respondToGate('approve')}
+                  className="bg-green-600 hover:bg-green-700 text-white rounded px-3 py-1 text-xs font-medium transition-colors"
+                >
+                  Approve
+                </button>
+                <button
+                  onClick={() => respondToGate('approve-all')}
+                  title="Auto-approve this session's later yes/no stops. Questions with options still pause."
+                  className="bg-green-600/80 hover:bg-green-700 text-white rounded px-3 py-1 text-xs font-medium transition-colors"
+                >
+                  Approve All
+                </button>
+              </>
+            )}
             <button
-              onClick={() => respondToGate('approve')}
-              className="bg-green-600 hover:bg-green-700 text-white rounded px-3 py-1 text-xs font-medium transition-colors"
+              onClick={() => respondToGate('complete')}
+              title="Verity is done — mark the session complete without another call"
+              className="bg-blue-600/80 hover:bg-blue-700 text-white rounded px-3 py-1 text-xs font-medium transition-colors"
             >
-              Approve
-            </button>
-            <button
-              onClick={() => respondToGate('approve-all')}
-              className="bg-green-600/80 hover:bg-green-700 text-white rounded px-3 py-1 text-xs font-medium transition-colors"
-            >
-              Approve All
+              Mark Complete
             </button>
             <button
               onClick={() => respondToGate('skip')}
@@ -261,7 +277,7 @@ function ChatInput({ sessionId }: { sessionId: string }) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Send feedback to Verity..."
+              placeholder={isChoice ? 'Type your answer…' : 'Send feedback to Verity...'}
               rows={1}
               className="flex-1 bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />

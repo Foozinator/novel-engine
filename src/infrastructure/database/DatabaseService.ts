@@ -2,6 +2,8 @@ import Database from 'better-sqlite3';
 import { nanoid } from 'nanoid';
 import type { IDatabaseService } from '@domain/interfaces';
 import type {
+  BookHistoryCounts,
+  BookHistoryImportReceipt,
   Conversation,
   ConversationPurpose,
   AgentName,
@@ -17,11 +19,13 @@ import type {
   StreamSessionRecord,
   UsageCostBasisRow,
   UsageRecord,
+  NewUsageRecord,
   UsageSummary,
   UsageTimePoint,
   WordCountSnapshot,
 } from '@domain/types';
 import { initializeSchema } from './schema';
+import * as bookHistory from './bookHistory';
 
 export class DatabaseService implements IDatabaseService {
   private db: Database.Database;
@@ -121,8 +125,8 @@ export class DatabaseService implements IDatabaseService {
     `);
 
     this.stmtInsertUsage = this.db.prepare(`
-      INSERT INTO token_usage (conversation_id, input_tokens, output_tokens, thinking_tokens, model, timestamp)
-      VALUES (?, ?, ?, ?, ?, datetime('now'))
+      INSERT INTO token_usage (conversation_id, input_tokens, output_tokens, thinking_tokens, cache_read_tokens, cache_write_tokens, cost_usd, model, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     `);
 
     this.stmtGetUsageSummaryAll = this.db.prepare(`
@@ -130,6 +134,8 @@ export class DatabaseService implements IDatabaseService {
         COALESCE(SUM(input_tokens), 0)    AS total_input_tokens,
         COALESCE(SUM(output_tokens), 0)   AS total_output_tokens,
         COALESCE(SUM(thinking_tokens), 0) AS total_thinking_tokens,
+        COALESCE(SUM(cache_read_tokens), 0)  AS total_cache_read_tokens,
+        COALESCE(SUM(cache_write_tokens), 0) AS total_cache_write_tokens,
         COUNT(DISTINCT conversation_id)    AS conversation_count
       FROM token_usage
     `);
@@ -139,6 +145,8 @@ export class DatabaseService implements IDatabaseService {
         COALESCE(SUM(tu.input_tokens), 0)    AS total_input_tokens,
         COALESCE(SUM(tu.output_tokens), 0)   AS total_output_tokens,
         COALESCE(SUM(tu.thinking_tokens), 0) AS total_thinking_tokens,
+        COALESCE(SUM(tu.cache_read_tokens), 0)  AS total_cache_read_tokens,
+        COALESCE(SUM(tu.cache_write_tokens), 0) AS total_cache_write_tokens,
         COUNT(DISTINCT tu.conversation_id)    AS conversation_count
       FROM token_usage tu
       JOIN conversations c ON c.id = tu.conversation_id
@@ -146,7 +154,8 @@ export class DatabaseService implements IDatabaseService {
     `);
 
     this.stmtGetUsageByConversation = this.db.prepare(`
-      SELECT conversation_id, input_tokens, output_tokens, thinking_tokens, model, timestamp
+      SELECT conversation_id, input_tokens, output_tokens, thinking_tokens,
+             cache_read_tokens, cache_write_tokens, cost_usd, model, timestamp
       FROM token_usage WHERE conversation_id = ? ORDER BY timestamp ASC
     `);
 
@@ -320,9 +329,12 @@ export class DatabaseService implements IDatabaseService {
         c.agent_name,
         COALESCE(c.pipeline_phase, 'adhoc') AS phase,
         tu.model,
-        COALESCE(SUM(tu.input_tokens), 0)    AS input_tokens,
-        COALESCE(SUM(tu.output_tokens), 0)   AS output_tokens,
-        COALESCE(SUM(tu.thinking_tokens), 0) AS thinking_tokens
+        COALESCE(SUM(tu.cost_usd), 0) AS reported_cost_usd,
+        COALESCE(SUM(CASE WHEN tu.cost_usd IS NULL THEN tu.input_tokens END), 0)       AS input_tokens,
+        COALESCE(SUM(CASE WHEN tu.cost_usd IS NULL THEN tu.output_tokens END), 0)      AS output_tokens,
+        COALESCE(SUM(CASE WHEN tu.cost_usd IS NULL THEN tu.thinking_tokens END), 0)    AS thinking_tokens,
+        COALESCE(SUM(CASE WHEN tu.cost_usd IS NULL THEN tu.cache_read_tokens END), 0)  AS cache_read_tokens,
+        COALESCE(SUM(CASE WHEN tu.cost_usd IS NULL THEN tu.cache_write_tokens END), 0) AS cache_write_tokens
       FROM token_usage tu
       JOIN conversations c ON c.id = tu.conversation_id`;
     const usageCostBasisGroup = `
@@ -423,12 +435,15 @@ export class DatabaseService implements IDatabaseService {
 
   // === Usage ===
 
-  recordUsage(record: Omit<UsageRecord, 'timestamp'>): void {
+  recordUsage(record: NewUsageRecord): void {
     this.stmtInsertUsage.run(
       record.conversationId,
       record.inputTokens,
       record.outputTokens,
       record.thinkingTokens,
+      record.cacheReadTokens ?? 0,
+      record.cacheWriteTokens ?? 0,
+      record.costUsd ?? null,
       record.model,
     );
   }
@@ -442,6 +457,8 @@ export class DatabaseService implements IDatabaseService {
       totalInputTokens: row.total_input_tokens,
       totalOutputTokens: row.total_output_tokens,
       totalThinkingTokens: row.total_thinking_tokens,
+      totalCacheReadTokens: row.total_cache_read_tokens,
+      totalCacheWriteTokens: row.total_cache_write_tokens,
       conversationCount: row.conversation_count,
     };
   }
@@ -693,9 +710,12 @@ export class DatabaseService implements IDatabaseService {
       agentName: r.agent_name,
       phase: r.phase,
       model: r.model,
-      inputTokens: r.input_tokens,
-      outputTokens: r.output_tokens,
-      thinkingTokens: r.thinking_tokens,
+      reportedCostUsd: r.reported_cost_usd,
+      unreportedInputTokens: r.input_tokens,
+      unreportedOutputTokens: r.output_tokens,
+      unreportedThinkingTokens: r.thinking_tokens,
+      unreportedCacheReadTokens: r.cache_read_tokens,
+      unreportedCacheWriteTokens: r.cache_write_tokens,
     }));
   }
 
@@ -714,6 +734,36 @@ export class DatabaseService implements IDatabaseService {
       chapterCount: r.chapter_count,
       recordedAt: r.recorded_at,
     }));
+  }
+
+  // === Per-book history snapshots ===
+
+  exportBookHistory(bookSlug: string, destFile: string): BookHistoryCounts {
+    return bookHistory.exportBookHistory(this.db, bookSlug, destFile);
+  }
+
+  importBookHistory(srcFile: string, targetSlug: string): BookHistoryImportReceipt {
+    return bookHistory.importBookHistory(this.db, srcFile, targetSlug);
+  }
+
+  revertBookHistoryImport(receipt: BookHistoryImportReceipt): void {
+    bookHistory.revertBookHistoryImport(this.db, receipt);
+  }
+
+  findExistingConversationIds(ids: string[]): string[] {
+    return bookHistory.findExistingConversationIds(this.db, ids);
+  }
+
+  listConversationIds(bookSlug: string): string[] {
+    return bookHistory.listConversationIds(this.db, bookSlug);
+  }
+
+  getBookHistoryStats(bookSlug: string): { conversationCount: number; historyBytes: number } {
+    return bookHistory.getBookHistoryStats(this.db, bookSlug);
+  }
+
+  getSchemaVersion(): number {
+    return bookHistory.getSchemaVersion(this.db);
   }
 
   // === Lifecycle ===
@@ -749,6 +799,8 @@ type UsageSummaryRow = {
   total_input_tokens: number;
   total_output_tokens: number;
   total_thinking_tokens: number;
+  total_cache_read_tokens: number;
+  total_cache_write_tokens: number;
   conversation_count: number;
 };
 
@@ -757,6 +809,9 @@ type UsageRow = {
   input_tokens: number;
   output_tokens: number;
   thinking_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  cost_usd: number | null;
   model: string;
   timestamp: string;
 };
@@ -798,9 +853,12 @@ type UsageCostBasisDbRow = {
   agent_name: string;
   phase: string;
   model: string;
+  reported_cost_usd: number;
   input_tokens: number;
   output_tokens: number;
   thinking_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
 };
 
 type WordCountSnapshotRow = {
@@ -855,6 +913,9 @@ function mapUsageRow(row: UsageRow): UsageRecord {
     inputTokens: row.input_tokens,
     outputTokens: row.output_tokens,
     thinkingTokens: row.thinking_tokens,
+    cacheReadTokens: row.cache_read_tokens,
+    cacheWriteTokens: row.cache_write_tokens,
+    costUsd: row.cost_usd,
     model: row.model,
     timestamp: row.timestamp,
   };

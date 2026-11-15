@@ -1,6 +1,6 @@
 # IPC — Channels, Preload Bridge, Handler Registry
 
-> Last updated: 2026-07-12 (program-019 SESSION-07)
+> Last updated: 2026-11-15 (#37, after #39)
 
 Everything in `src/main/ipc/` and `src/preload/`. Thin adapter layer between application services and the renderer.
 
@@ -47,6 +47,15 @@ Everything in `src/main/ipc/` and `src/preload/`. Thin adapter layer between app
 |---------|-----------|---------|---------|
 | `agents:list` | invoke | `agentService.loadAll()` → strips systemPrompt | `AgentMeta[]` |
 | `agents:get` | invoke | `agentService.load(name)` → strips systemPrompt | `AgentMeta` |
+| `agents:promptSync` | invoke | `paths.promptSync` from this launch's `ensureAgents()` + `custom-agents` path | `PromptSyncStatus` |
+
+### dataFolder:*
+
+| Channel | Direction | Handler | Returns |
+|---------|-----------|---------|---------|
+| `dataFolder:get` | invoke | `paths.dataFolder` | `DataFolderInfo` |
+| `dataFolder:change` | invoke | `chooseDataFolder()` (picker + native confirm) → writes pointer → `relaunch()`. Refused (`false`) under a flag/env override | `boolean` (false = cancelled) |
+| `dataFolder:reset` | invoke | `resetDataFolder()` (native confirm) → pointer `dataDir: null` → `relaunch()`. Only when source is `pointer` | `boolean` (false = cancelled) |
 
 ### books:*
 
@@ -77,6 +86,9 @@ Everything in `src/main/ipc/` and `src/preload/`. Thin adapter layer between app
 | `import:selectFiles` | invoke | `dialog.showOpenDialog()` — multi-select file picker for .md/.markdown/.docx | `string[] \| null` |
 | `import:seriesPreview` | invoke | `seriesImport.preview(filePaths)` | `SeriesImportPreview` |
 | `import:seriesCommit` | invoke | `seriesImport.commit(config)` + triggers `onActiveBookChanged` for first volume | `SeriesImportResult` |
+| `import:selectDataFolder` | invoke | `dialog.showOpenDialog({ properties: ['openDirectory'] })` | `string \| null` |
+| `import:dataFolderPreview` | invoke | `dataFolderImport.preview(sourcePath)` | `DataFolderPreview` |
+| `import:dataFolderCommit` | invoke | `dataFolderImport.commit(config)` | `DataFolderImportResult` |
 
 ### files:*
 
@@ -202,7 +214,7 @@ Everything in `src/main/ipc/` and `src/preload/`. Thin adapter layer between app
 | `revision:clearCache` | invoke | `revisionQueue.clearCache(bookSlug)` | `void` |
 | `revision:runSession` | invoke | `revisionQueue.runSession(planId, sessionId)` | `void` |
 | `revision:runAll` | invoke | `revisionQueue.runAll(planId, selectedIds?)` | `void` |
-| `revision:respondToGate` | invoke | `revisionQueue.respondToGate(planId, sessionId, action, message?)` | `void` |
+| `revision:respondToGate` | invoke | `revisionQueue.respondToGate(planId, sessionId, action, message?)` — `action`: `approve`, `approve-all`, `reply`, `complete`, `skip`, `retry` | `void` |
 | `revision:approveSession` | invoke | `revisionQueue.approveSession(planId, sessionId)` | `void` |
 | `revision:rejectSession` | invoke | `revisionQueue.rejectSession(planId, sessionId)` | `void` |
 | `revision:skipSession` | invoke | `revisionQueue.skipSession(planId, sessionId)` | `void` |
@@ -331,6 +343,13 @@ window.novelEngine: {
   agents: {
     list(): Promise<AgentMeta[]>
     get(name: AgentName): Promise<AgentMeta>
+    promptSync(): Promise<PromptSyncStatus>
+  }
+
+  dataFolder: {
+    get(): Promise<DataFolderInfo>
+    change(): Promise<boolean>   // restarts the app on success
+    reset(): Promise<boolean>    // restarts the app on success
   }
 
   books: {
@@ -356,6 +375,12 @@ window.novelEngine: {
     commit(config: ImportCommitConfig): Promise<ImportResult>
     generateSources(bookSlug: string): Promise<void>
     onGenerationProgress(callback: (event: SourceGenerationEvent) => void): () => void
+  }
+
+  dataFolderImport: {
+    selectFolder(): Promise<string | null>
+    preview(sourcePath: string): Promise<DataFolderPreview>
+    commit(config: DataFolderImportConfig): Promise<DataFolderImportResult>
   }
 
   seriesImport: {
@@ -543,8 +568,8 @@ window.novelEngine: {
 
 `registerIpcHandlers(services, paths, hooks)` in `src/main/ipc/handlers.ts`:
 
-- **services**: all service instances (settings, agents, db, fs, chat, pipeline, build, usage, revisionQueue, motifLedger, notifications, version, providerRegistry, manuscriptImport, sourceGeneration, series, seriesImport, helper, findReplace, dashboard, statistics, query)
-- **paths**: `{ userDataPath, booksDir }`
+- **services**: all service instances (settings, agents, db, fs, chat, pipeline, build, usage, revisionQueue, motifLedger, notifications, version, providerRegistry, manuscriptImport, sourceGeneration, series, seriesImport, dataFolderImport, helper, findReplace, dashboard, statistics, query)
+- **paths**: `{ userDataPath, booksDir, dataFolder: DataFolderInfo, promptSync: PromptSyncResult }`
 - **hooks**: `{ onActiveBookChanged(slug) }` — triggers BookWatcher switch
 
 Revision queue events are forwarded to renderer via `revisionQueue.onEvent()` listener registered at the bottom of `registerIpcHandlers`. Also forwards `session:streamEvent` sub-events to `chat:streamEvent` channel with `rev:` prefixed callId, `conversationId` (falls back to `sessionId` if absent), and `source: 'revision'`.
@@ -576,12 +601,25 @@ File: `src/main/bootstrap.ts`
 
 First-run initialization:
 1. Creates `books/` and `custom-agents/` directories
-2. Copies bundled agent `.md` files (non-destructive via `COPYFILE_EXCL`)
+2. Syncs bundled agent `.md` files via `ensureAgents`
 3. Creates template `author-profile.md`
 4. Creates `active-book.json`
 5. Writes `.initialized` flag
 
-`ensureAgents` runs on every startup to recover missing agent files.
+`ensureAgents(agentsDir, agentsSourceDir): Promise<PromptSyncResult>` runs on every startup:
+- Copies missing prompts.
+- Replaces a prompt the user hasn't edited when the bundled version changes. "Unedited" means its hash matches `custom-agents/.bundled-manifest.json` (`{ version: 1, files: { [filename]: sha256 } }`). For files with no manifest entry (installs from before the manifest), it means the hash appears in the bundled `agents/prompt-history.json`.
+- Leaves edited prompts alone and returns them in `edited`. An edited file without a manifest entry gets no baseline recorded.
+- Hashes are SHA-256 of the content with CRLF normalised to LF (`hashPrompt()`).
+- `agents/prompt-history.json` is generated by `npm run agent-hashes` (`scripts/agent-hashes.js`) from git history plus the working tree. A test fails if a current prompt is missing from it.
+
+### Data Folder
+
+Files: `src/main/dataLocation.ts`, `src/main/dataFolderDialogs.ts`
+
+- `resolveDataDir({ defaultDir, argv, env })` runs at module top level in `index.ts`, before `whenReady`. Priority: `--data-dir=` › `NOVEL_ENGINE_DATA_DIR` › pointer `data-location.json` in the default folder › default. Returns `{ dir, source, confirmed, problem?, requested? }`. On a problem, `dir` is the default.
+- `runStartupDataFolderChecks(defaultDir, legacyDir, resolved)` runs first in `initializeApp()`. An unusable folder gets [Choose another folder… / Use default folder this session / Quit] (no choice under a flag/env override). First launch with app data only in the pre-rename `{appData}/Novel Engine` folder (`needsLegacyImport()`) gets [Copy it here / Use the old folder in place / Start fresh]. Copy runs `copyAppData()` (skips Chromium profile entries, `Singleton*` and the pointer; never overwrites; removes partial copies on failure, then offers Try again / Start fresh / Quit). Every answer writes the pointer, so the question is asked once. Returns `true` when relaunching or quitting.
+- `chooseDataFolder()` classifies the picked folder (`empty` / `novel-engine` / `other`) for the confirm text, then writes the pointer atomically. Nothing is copied or moved.
 
 ### Custom Protocol
 

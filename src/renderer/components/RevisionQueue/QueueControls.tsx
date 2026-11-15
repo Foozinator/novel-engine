@@ -4,8 +4,8 @@ import type { QueueMode } from '@domain/types';
 
 const MODE_OPTIONS: { value: QueueMode; label: string; description: string }[] = [
   { value: 'manual', label: 'Manual', description: 'Approve each step' },
-  { value: 'auto-approve', label: 'Auto-Approve', description: 'Run all, auto-approve gates' },
-  { value: 'auto-skip', label: 'Auto-Skip', description: 'Run all, skip all gates' },
+  { value: 'auto-approve', label: 'Auto-Approve', description: 'Run all, approve yes/no stops (choices pause)' },
+  { value: 'auto-skip', label: 'Auto-Skip', description: 'Run all, skip yes/no stops (choices pause)' },
   { value: 'selective', label: 'Selective', description: 'Pick sessions to run' },
 ];
 

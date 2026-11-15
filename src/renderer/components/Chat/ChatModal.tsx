@@ -44,7 +44,7 @@ const PURPOSE_LABELS: Record<ConversationPurpose, { title: string; subtitle: str
   },
   helper: {
     title: 'Help Assistant',
-    subtitle: 'Ask questions about Novel Engine',
+    subtitle: 'Ask questions about Novel Engine Spur',
     badge: 'Help',
   },
 };

@@ -161,6 +161,8 @@ describe('stream lifecycle', () => {
         inputTokens: 12,
         outputTokens: 7,
         thinkingTokens: 3,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
         model: DEFAULT_SETTINGS.model,
       },
     ]);

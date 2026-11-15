@@ -1,6 +1,6 @@
 # Renderer — Stores, Components, Views
 
-> Last updated: 2026-11-12 (#12)
+> Last updated: 2026-11-15 (#37, after #39)
 
 Everything in `src/renderer/`. React + Zustand UI layer. Talks to backend only through `window.novelEngine`.
 
@@ -230,7 +230,7 @@ Manages shelved pitches listing, reading, deleting, restoring.
 
 File: `stores/revisionQueueStore.ts`
 
-Manages revision plan state, session execution, approval gates.
+Manages revision plan state, session execution, approval gates. Gate state: `gateSessionId`, `gateText`, `gateKind` (`GateKind`, reset to `'confirm'`). `sendGateMessage(text)` answers with the `reply` action.
 
 ### autoDraftStore
 
@@ -305,6 +305,27 @@ File: `stores/importStore.ts`
 | `commitImport()` | Commits import via bridge, transitions to `success` |
 | `startGeneration()` | Starts source doc generation, subscribes to progress events |
 | `reset()` | Cleans up generation listener, resets to idle |
+
+### dataFolderImportStore
+
+File: `stores/dataFolderImportStore.ts`
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `step` | `'idle' \| 'loading' \| 'preview' \| 'importing' \| 'success' \| 'error'` | State machine phase |
+| `preview` | `DataFolderPreview \| null` | Books in the source folder |
+| `choices` | `Record<slug, { selected, action: 'import' \| 'rename', newTitle }>` | Per-book choice. Clashes default to unchecked + rename to "<title> (imported)". Already-imported books are locked off. |
+| `copyAuthorProfile` / `copySeries` | `boolean` | Default on when the source has them |
+| `result` | `DataFolderImportResult \| null` | Commit result |
+| `error` | `string` | Error message |
+
+| Action | What It Does |
+|--------|-------------|
+| `startImport()` | Folder picker → `dataFolderImport.preview` → builds default choices |
+| `toggleBook(slug)` / `setAllSelected(bool)` | Selection (blocked books ignored) |
+| `setNewTitle(slug, title)` | Edits a clash's new title |
+| `commitImport()` | Sends import/rename/skip per book via bridge |
+| `reset()` | Back to idle |
 
 ### seriesImportStore
 
@@ -409,6 +430,7 @@ Gate: `App.tsx` checks `settings.initialized` — if false, renders `OnboardingW
 
 | File | Purpose |
 |------|---------|
+| `ProseViewer.tsx` | Shared typeset markdown renderer (companion tabs, Manuscript reader) plus `useBookFile()` live file read. Font size from `settings.proseFontSize`; font family from `resolveProseFontStack(settings.proseFont, settings.proseFontCustom)`. `lineNumbers` prop renders via `renderWithLineNumbers()`: each top-level block is tagged `data-line` with its source line, and `.ne-prose-lines` in `globals.css` draws the gutter. ChapterTab and the Manuscript chapter reader pass `settings.showChapterLineNumbers`. |
 | `Tooltip.tsx` | Reusable tooltip with portal rendering, configurable placement/delay, arrow, multi-line support. Suppressed during active tours via `useTourStore`. `aria-describedby` for accessibility. |
 | `GuidedTourOverlay.tsx` | Spotlight-based tour overlay with CSS clip-path cutout, keyboard navigation, step popovers. Handles window resize + `ResizeObserver`. Auto-focuses Next button. `aria-modal`, `aria-live="polite"`. |
 
@@ -439,7 +461,7 @@ Gate: `App.tsx` checks `settings.initialized` — if false, renders `OnboardingW
 
 | File | Purpose |
 |------|---------|
-| `SettingsView.tsx` | Full settings panel: built-in CLI status for Claude/Codex/Ollama, providers, primary/secondary model selection from the same `window.novelEngine.models.getAvailable()` provider groups, thinking, theme, author profile, usage stats, catalog export. Primary model changes switch the active provider; stale primary selections show a warning and visually fall back to the first available model until updated. Secondary model changes only persist `secondaryModel`. When the Claude CLI is installed and `fable` is not listed, Model Selection shows a "Check for Fable access" button (`FableAccessCheck`) with the last `lastFableProbe` result and a paid-credits warning; it calls `claudeCli.checkFableAccess()`, then reloads settings and models. Nothing probes automatically. Ollama copy points users to `ollama pull model-name` and `ollama list` for local discovery. |
+| `SettingsView.tsx` | Full settings panel: built-in CLI status for Claude/Codex/Ollama, providers, primary/secondary model selection from the same `window.novelEngine.models.getAvailable()` provider groups, thinking, theme, reading (font preset select with custom installed-font name and preview, prose font size stepper, chapter line-number toggle), author profile, usage stats, catalog export, data folder (`DataFolderSection`: current path and source from `dataFolder.get()`, Open/Change…/Use Default Folder; Change and Reset call `dataFolder.change()`/`reset()`, which show native confirms in main and restart the app; disabled under a `--data-dir`/env override), and agent prompts (`AgentPromptsSection`: prompts updated this launch and prompts the user edited, from `agents.promptSync()`, plus Open Prompts Folder). Data Folder and Agent Prompts sit on the Profile tab. About (Appearance tab) shows `APP_NAME` and `v{__APP_VERSION__}` (defined from `package.json` in `vite.renderer.config.ts` and the vitest jsdom project), credits the upstream project, and links to `APP_REPO_URL` and `UPSTREAM_REPO_URL`. UI copy (title bar, onboarding, Helper panel, chat modal) uses the product name Novel Engine Spur. Primary model changes switch the active provider; stale primary selections show a warning and visually fall back to the first available model until updated. Secondary model changes only persist `secondaryModel`. When the Claude CLI is installed and `fable` is not listed, Model Selection shows a "Check for Fable access" button (`FableAccessCheck`) with the last `lastFableProbe` result and a paid-credits warning; it calls `claudeCli.checkFableAccess()`, then reloads settings and models. Nothing probes automatically. Ollama copy points users to `ollama pull model-name` and `ollama list` for local discovery. |
 | `ProviderSection.tsx` | Provider management: cards with status dots, active badge, active-provider switch, test connectivity, optional advanced endpoint override for Ollama CLI, endpoint field for llama-server, add/remove/toggle, "Add Provider" form |
 
 ### Sidebar/
@@ -473,7 +495,7 @@ Gate: `App.tsx` checks `settings.initialized` — if false, renders `OnboardingW
 | File | Purpose |
 |------|---------|
 | `ChatView.tsx` | Full chat view with agent header, messages, input |
-| `ChatInput.tsx` | Message input with quick actions and thinking budget controls |
+| `ChatInput.tsx` | Message input with quick actions and thinking budget controls. Optional `prefill: { text, nonce }` prop fills and focuses the textarea on each new nonce (same path as a quick-action pick) |
 | `MessageBubble.tsx` | Single message with copy/save-to-file buttons |
 | `MessageList.tsx` | Scrollable message history with auto-scroll |
 | `StreamingMessage.tsx` | Live-updating message during CLI stream |
@@ -484,6 +506,18 @@ Gate: `App.tsx` checks `settings.initialized` — if false, renders `OnboardingW
 | `ConversationList.tsx` | Sidebar panel listing conversations for active book |
 | `ChatModal.tsx` | Modal chat overlay for hot-take and ad-hoc revision |
 | `QuickActions.tsx` | Pre-built prompt suggestions dropdown |
+
+### Workbench/
+
+| File | Purpose |
+|------|---------|
+| `WorkspaceView.tsx` | Workbench view: phase header plus chat ‖ companion split for the selected phase |
+| `PhaseHeader.tsx` | Phase identity, artifact chips, stage quick-action chips (Hot Take / Ad Hoc Revisions / Voice Setup), primary phase action |
+| `ChatPane.tsx` | Phase chat: conversation dropdown chip, ad-hoc banner, message list and compact `ChatInput`. Shows `PhaseStarterCard` on a fresh phase |
+| `PhaseStarterCard.tsx` | Call-to-action card on a fresh phase (no conversation, or one with no messages): phase label, agent + role, description, and starter buttons from `getPhaseStarterActions()`. A pick fills the chat input like Quick actions; with no conversation, it creates one first. Optional "Start a blank conversation". Hidden on read-only phases, ad-hoc conversations and while streaming |
+| `SplitPane.tsx` | Chat ‖ companion split with draggable divider, reset and collapse |
+| `CompanionPane.tsx` | Companion tab bar (`companion/` Sources, Chapter, Reports, Explorer tabs); `openCompanionDoc()` |
+| `usePhaseConversations.ts` | Phase-scoped conversation list, auto-activation of the latest, create/select |
 
 ### Files/
 
@@ -520,8 +554,8 @@ Gate: `App.tsx` checks `settings.initialized` — if false, renders `OnboardingW
 | `RevisionQueueModal.tsx` | Floating revision queue panel (expanded / minimized bar / other-book badge). Expanded panel is anchored right and resizable from its left edge via `useResizeHandle` (480 px min, viewport − 32 px max, default 600 px, persisted under `novel-engine:revision-queue-width`; double-click resets). |
 | `SessionCard.tsx` | Individual revision session display |
 | `TaskProgress.tsx` | Task completion progress bar |
-| `RevisionSessionPanel.tsx` | Expanded session detail panel |
-| `QueueControls.tsx` | Queue mode selector, run/pause buttons |
+| `RevisionSessionPanel.tsx` | Expanded session detail panel. Gate bar: `confirm` → Approve, Approve All, Mark Complete, Skip; `choice` → Mark Complete, Skip, and a typed answer (no quick approvals). |
+| `QueueControls.tsx` | Queue mode selector (auto modes answer yes/no stops; choices pause), run/pause buttons |
 | `index.ts` | Barrel export |
 
 ### MotifLedger/
@@ -555,6 +589,7 @@ Gate: `App.tsx` checks `settings.initialized` — if false, renders `OnboardingW
 | `ImportWizard.tsx` | Modal wizard for manuscript import. Renders per-step UI: loading spinner, preview (title/author inputs + chapter list), importing spinner, success (stats + "Open Book" / "Generate Source Documents"), generating (step checklist with progress), generated (summary), error (with retry). |
 | `ChapterPreviewList.tsx` | Editable chapter list with inline title rename, word count badges, content preview snippets, "Merge ↓" and "×" actions, summary bar. Reads directly from `importStore`. |
 | `ImportSeriesWizard.tsx` | Modal wizard for batch series import. Steps: loading, preview (series name/author/existing toggle + volume list), importing, success (per-volume breakdown), error. |
+| `DataFolderImportWizard.tsx` | Modal wizard for importing books from another Novel Engine data folder (#37). Steps: loading, preview (book checklist with words/chapters/chats/history size, inline rename for clashes, series and author-profile toggles), importing, success (imported/not imported/warnings; Done opens the first imported book), error (with retry). Mounted in `AppLayout` `GlobalBookModals`. |
 | `VolumePreviewList.tsx` | Editable volume list with inline title editing, reorder up/down arrows, skip toggles, chapter/word count badges, ambiguity warnings. |
 
 ### CliActivity/
@@ -586,6 +621,7 @@ Gate: `App.tsx` checks `settings.initialized` — if false, renders `OnboardingW
 | `useVerticalResize.ts` | Vertical drag-to-resize for panels |
 | `useRevisionQueueEvents.ts` | Subscribes to revision queue IPC events |
 | `useRotatingStatus.ts` | Rotates fun status messages on an interval |
+| `useProseZoom.ts` | Ctrl/Cmd + wheel, Ctrl/Cmd + `=`/`-`/`0` adjust `proseFontSize`. Updates `settingsStore` at once and persists debounced (400 ms). Mounted in `App.tsx`. |
 | `useTheme.ts` | Syncs Tailwind dark mode class with settings theme |
 | `useTooltip.ts` | Tooltip positioning hook — manages show/hide delay, `getBoundingClientRect` positioning, viewport clamping |
 
