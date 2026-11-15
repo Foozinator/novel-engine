@@ -31,6 +31,9 @@ import {
   PHASE_STARTER_ACTIONS,
   PIPELINE_PHASES,
   PITCH_ROOM_SLUG,
+  PROSE_FONTS,
+  resolveProseFontStack,
+  sanitizeFontFamilyName,
   TURN_BUDGET_THRESHOLDS,
   TURN_KEEP_COUNTS,
   VERITY_PHASE_FILES,
@@ -437,5 +440,35 @@ describe('Claude CLI version helpers', () => {
     ['1.99.99', '2.0.0', false],
   ])('isVersionAtLeast(%s, %s) → %s', (v, min, expected) => {
     expect(isVersionAtLeast(v, min)).toBe(expected);
+  });
+});
+
+describe('reading font helpers', () => {
+  it('resolves presets to their stacks and unknown ids to the default', () => {
+    expect(resolveProseFontStack('fraunces')).toBe(PROSE_FONTS[0].stack);
+    expect(resolveProseFontStack('mono')).toContain('JetBrains Mono');
+    expect(resolveProseFontStack(undefined)).toBe(PROSE_FONTS[0].stack);
+    expect(resolveProseFontStack('bogus' as never)).toBe(PROSE_FONTS[0].stack);
+  });
+
+  it('quotes a custom name in front of the default stack', () => {
+    expect(resolveProseFontStack('custom', 'EB Garamond')).toBe(`'EB Garamond', ${PROSE_FONTS[0].stack}`);
+  });
+
+  it('falls back to the default stack for an empty custom name', () => {
+    expect(resolveProseFontStack('custom', '  ')).toBe(PROSE_FONTS[0].stack);
+    expect(resolveProseFontStack('custom', "';{}")).toBe(PROSE_FONTS[0].stack);
+  });
+
+  it('strips CSS syntax from custom names and keeps letters in any script', () => {
+    expect(sanitizeFontFamilyName("Foo'; color: red }")).toBe('Foo color red');
+    expect(sanitizeFontFamilyName('  Noto   Serif  JP ')).toBe('Noto Serif JP');
+    expect(sanitizeFontFamilyName('Ünïcode Sérif')).toBe('Ünïcode Sérif');
+    expect(sanitizeFontFamilyName('x'.repeat(100))).toHaveLength(64);
+  });
+
+  it('defaults the reading font to Fraunces', () => {
+    expect(DEFAULT_SETTINGS.proseFont).toBe('fraunces');
+    expect(DEFAULT_SETTINGS.proseFontCustom).toBe('');
   });
 });

@@ -3,7 +3,7 @@
  * (value imports, not type-only). Permitted for pure data constants
  * with zero Node.js dependencies. See docs/architecture/ARCHITECTURE.md.
  */
-import type { AgentName, AgentMeta, AuditSeverity, CreativeAgentName, PipelinePhaseId, AppSettings, ProviderId, ProviderConfig, ModelInfo } from './types';
+import type { AgentName, AgentMeta, AuditSeverity, CreativeAgentName, PipelinePhaseId, AppSettings, ProseFontId, ProviderId, ProviderConfig, ModelInfo } from './types';
 
 // === Per-Agent Read Guidance ===
 
@@ -354,6 +354,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
   proseFontSize: 16.5,
   showChapterLineNumbers: false,
+  proseFont: 'fraunces',
+  proseFontCustom: '',
   initialized: false,
   authorName: '',
   providers: BUILT_IN_PROVIDER_CONFIGS,
@@ -377,6 +379,33 @@ export function clampProseFontSize(size: number): number {
   if (!Number.isFinite(size)) return PROSE_FONT_SIZE_DEFAULT;
   const clamped = Math.min(PROSE_FONT_SIZE_MAX, Math.max(PROSE_FONT_SIZE_MIN, size));
   return Math.round(clamped * 2) / 2;
+}
+
+/** Reading font presets. Fraunces, Inter and JetBrains Mono are bundled; Georgia falls back to the system serif. */
+export const PROSE_FONTS: ReadonlyArray<{ id: Exclude<ProseFontId, 'custom'>; label: string; stack: string }> = [
+  { id: 'fraunces', label: 'Fraunces (default)', stack: "'Fraunces Variable', Georgia, serif" },
+  { id: 'classic-serif', label: 'Classic serif (Georgia)', stack: "Georgia, 'Times New Roman', serif" },
+  { id: 'sans', label: 'Sans (Inter)', stack: "'Inter', system-ui, sans-serif" },
+  { id: 'mono', label: 'Monospace (JetBrains Mono)', stack: "'JetBrains Mono', ui-monospace, monospace" },
+];
+
+/** Keep only characters that can appear in a font family name; trims and caps length. */
+export function sanitizeFontFamilyName(name: string): string {
+  return name.replace(/[^\p{L}\p{N} _.-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 64);
+}
+
+/**
+ * CSS font-family stack for a reading-font setting. A custom name is quoted
+ * and falls back to the default stack, so an uninstalled or empty name still
+ * renders in Fraunces.
+ */
+export function resolveProseFontStack(font: ProseFontId | undefined, custom = ''): string {
+  const fallback = PROSE_FONTS[0].stack;
+  if (font === 'custom') {
+    const name = sanitizeFontFamilyName(custom);
+    return name ? `'${name}', ${fallback}` : fallback;
+  }
+  return PROSE_FONTS.find((f) => f.id === font)?.stack ?? fallback;
 }
 
 // === Claude CLI Updates ===

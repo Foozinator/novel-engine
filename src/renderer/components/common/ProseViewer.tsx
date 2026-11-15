@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { marked, type Token, type TokensList } from 'marked';
-import { PROSE_FONT_SIZE_DEFAULT } from '@domain/constants';
+import { PROSE_FONT_SIZE_DEFAULT, resolveProseFontStack } from '@domain/constants';
 import { useFileChangeStore } from '../../stores/fileChangeStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 
@@ -97,6 +97,9 @@ export function ProseViewer({
   lineNumbers = false,
 }: ProseViewerProps): React.ReactElement {
   const fontSize = useSettingsStore((s) => s.settings?.proseFontSize ?? PROSE_FONT_SIZE_DEFAULT);
+  const fontFamily = useSettingsStore((s) =>
+    resolveProseFontStack(s.settings?.proseFont, s.settings?.proseFontCustom),
+  );
 
   if (raw) {
     return (
@@ -114,7 +117,11 @@ export function ProseViewer({
     : wide
       ? 'max-w-[68ch]'
       : 'max-w-[62ch]';
-  const style = { fontSize: `${fontSize}px`, '--ne-prose-size': `${fontSize}px` } as React.CSSProperties;
+  const style = {
+    fontSize: `${fontSize}px`,
+    fontFamily,
+    '--ne-prose-size': `${fontSize}px`,
+  } as React.CSSProperties;
   return (
     <div
       className={`${PROSE_CLASS} ${measure}`}
