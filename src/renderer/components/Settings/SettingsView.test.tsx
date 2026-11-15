@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
 import type { ModelInfo, ProviderId } from '@domain/types';
 import { SettingsView } from './SettingsView';
+import pkg from '../../../../package.json';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useProviderStore } from '../../stores/providerStore';
 import { useTourStore } from '../../stores/tourStore';
@@ -264,6 +265,20 @@ describe('SettingsView', () => {
     expect(await screen.findByText(/NOVEL_ENGINE_DATA_DIR/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Change…' })).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'Use Default Folder' })).not.toBeInTheDocument();
+  });
+
+  it('About shows the product name, package version and links', async () => {
+    const { bridge } = renderSettings();
+
+    fireEvent.click(screen.getByRole('button', { name: /Appearance/ }));
+
+    expect(await screen.findByText(`v${pkg.version}`, { exact: false })).toHaveTextContent(
+      `Novel Engine Spur v${pkg.version}`,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'GitHub' }));
+    expect(bridge.shell.openExternal).toHaveBeenCalledWith('https://github.com/Foozinator/novel-engine');
+    fireEvent.click(screen.getByRole('button', { name: 'Original Novel Engine' }));
+    expect(bridge.shell.openExternal).toHaveBeenCalledWith('https://github.com/john-paul-ruf/novel-engine');
   });
 
   it('lists updated and edited agent prompts', async () => {

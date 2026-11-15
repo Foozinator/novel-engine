@@ -18,11 +18,12 @@ The fork is renamed **Novel Engine Spur**. Upstream and the fork shared the prod
 - `src/main/dataLocation.test.ts`, `src/main/dataFolderDialogs.test.ts` — Resolution priority, pointer I/O, folder classification, legacy detection and copy, startup dialog flows.
 
 ### Changed
-- `package.json`, `package-lock.json` — `name` `novel-engine-spur`, `productName` `Novel Engine Spur` (sets the default data folder). Added the `agent-hashes` script.
+- `package.json`, `package-lock.json` — `name` `novel-engine-spur`, `productName` `Novel Engine Spur` (sets the default data folder). `author` is now the fork maintainer (name only); deb/rpm Maintainer fields derive from it. Added the `agent-hashes` script.
+- `vite.renderer.config.ts`, `vitest.config.ts` — Define `__APP_VERSION__` from `package.json` `version` for the renderer.
 - `forge.config.ts` — Packager `name` `Novel Engine Spur`, `executableName` `novel-engine-spur`, `appBundleId` `io.github.foozinator.novel-engine-spur`. Squirrel `name` `NovelEngineSpur`. Deb/rpm `name` `novel-engine-spur`, `productName` `Novel Engine Spur`, deb `mimeType` `application/x-novel-engine-spur`.
 - `scripts/ci-build.js`, `.github/workflows/release.yml` — Artifacts are `Novel-Engine-Spur-{version}-{platform}-{arch}.{ext}`. The release is titled `Novel Engine Spur {tag}`.
 - `index.html`, `src/renderer/components/Layout/TitleBar.tsx`, `src/renderer/components/Onboarding/OnboardingWizard.tsx`, `src/renderer/components/Helper/HelperPanel.tsx`, `src/renderer/components/Helper/HelperMessageList.tsx`, `src/renderer/components/Chat/ChatModal.tsx`, `src/renderer/components/Settings/ProviderSection.tsx` — Product name in UI copy.
-- `src/renderer/components/Settings/SettingsView.tsx` — Profile tab gains `DataFolderSection` and `AgentPromptsSection`. About shows `APP_NAME`, credits upstream, and links to the fork (was the nonexistent `github.com/novel-engine/novel-engine`) and the original project. Product name in UI copy.
+- `src/renderer/components/Settings/SettingsView.tsx` — Profile tab gains `DataFolderSection` and `AgentPromptsSection`. About shows `APP_NAME` and the real version (`__APP_VERSION__`; was hard-coded `v0.1.0`), credits upstream, and links to the fork (was the nonexistent `github.com/novel-engine/novel-engine`) and the original project. Product name in UI copy.
 - `src/domain/constants.ts` — Added `APP_NAME`, `APP_REPO_URL` and `UPSTREAM_REPO_URL`.
 - `src/domain/types.ts` — Added `DataFolderSource`, `DataFolderKind`, `DataFolderInfo`, `PromptSyncResult` and `PromptSyncStatus`.
 - `src/application/PipelineService.ts`, `src/infrastructure/codex-cli/CodexCliClient.ts` — Product name in agent-facing text (manual phase advancement note, Codex system instruction).

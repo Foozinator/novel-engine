@@ -1075,13 +1075,16 @@ function AuthorProfileSection(): React.ReactElement {
   );
 }
 
+/** Injected from package.json by vite.renderer.config.ts (and vitest.config.ts). */
+declare const __APP_VERSION__: string;
+
 function AboutSection(): React.ReactElement {
   return (
     <section className="space-y-3">
       <SectionHeading>About</SectionHeading>
       <div className="space-y-2">
         <p className="text-sm text-zinc-700 dark:text-zinc-300">
-          <span className="font-medium">{APP_NAME}</span> v0.1.0
+          <span className="font-medium">{APP_NAME}</span> v{__APP_VERSION__}
         </p>
         <HelpText>A fork of Novel Engine by John Paul Ruf, licensed under AGPL-3.0.</HelpText>
         <HelpText>Powered by selectable AI backends: Claude CLI, Codex CLI, Ollama CLI, llama-server, and OpenAI-compatible providers.</HelpText>
