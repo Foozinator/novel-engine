@@ -636,6 +636,14 @@ Implemented by: `QueryService` (`src/application/QueryService.ts`)
 
 ## Constants
 
+### Product Identity
+
+| Constant | Value | Used By |
+|----------|-------|---------|
+| `APP_NAME` | `'Novel Engine Spur'` (must match `package.json` `productName`) | dataFolderDialogs, Settings → About |
+| `APP_REPO_URL` | `'https://github.com/Foozinator/novel-engine'` | Settings → About |
+| `UPSTREAM_REPO_URL` | `'https://github.com/john-paul-ruf/novel-engine'` | Settings → About credit |
+
 ### AGENT_REGISTRY
 
 `Record<AgentName, Omit<AgentMeta, 'name'>>` — metadata for all 9 agents.

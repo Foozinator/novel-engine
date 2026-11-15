@@ -10,6 +10,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { cp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import type { DataFolderKind, DataFolderSource } from '@domain/types';
 
@@ -156,6 +157,48 @@ export function resolveDataDir({ defaultDir, argv, env }: ResolveInput): Resolve
   return { dir: resolved, source, confirmed };
 }
 
+/**
+ * Folder name the app used before the fork was renamed to Novel Engine Spur.
+ * It sits next to Spur's own default folder under Electron's `appData`, and
+ * upstream Novel Engine installs still use it.
+ */
+export const LEGACY_DATA_FOLDER_NAME = 'Novel Engine';
+
+/**
+ * Entries Chromium/Electron writes into `userData` on its own: caches, the
+ * browser profile, and per-process locks. None of it is app data, so it
+ * doesn't count as content and is never copied. `Local Storage` is
+ * deliberately absent: it holds renderer preferences worth keeping.
+ */
+const BROWSER_PROFILE_ENTRIES = new Set([
+  'Cache',
+  'Code Cache',
+  'GPUCache',
+  'DawnCache',
+  'DawnGraphiteCache',
+  'DawnWebGPUCache',
+  'Crashpad',
+  'Dictionaries',
+  'Shared Dictionary',
+  'SharedStorage',
+  'blob_storage',
+  'Cookies',
+  'Cookies-journal',
+  'Trust Tokens',
+  'Trust Tokens-journal',
+  'Network Persistent State',
+  'TransportSecurity',
+  'Preferences',
+  'Session Storage',
+  'Service Worker',
+  'DevToolsActivePort',
+  'lockfile',
+]);
+
+function isBrowserProfileEntry(name: string): boolean {
+  return BROWSER_PROFILE_ENTRIES.has(name) || name.startsWith('Singleton');
+}
+
 /** Classify what a folder already holds, to word the confirm dialog. */
 export function classifyFolder(dir: string): DataFolderKind {
   let entries: string[];
@@ -165,17 +208,52 @@ export function classifyFolder(dir: string): DataFolderKind {
     return 'empty'; // missing folder — will be created
   }
   if (entries.includes('.initialized') || entries.includes('novel-engine.db')) return 'novel-engine';
-  // Pointer file and OS clutter don't count as content.
+  // Pointer file, browser-profile files and OS clutter don't count as content.
   const ignorable = new Set([POINTER_FILENAME, '.DS_Store', 'Thumbs.db', 'desktop.ini']);
-  return entries.some((e) => !ignorable.has(e)) ? 'other' : 'empty';
+  return entries.some((e) => !ignorable.has(e) && !isBrowserProfileEntry(e)) ? 'other' : 'empty';
 }
 
 /**
- * True when this launch should ask the one-time "data already exists here"
- * question: no override, no pointer yet, and the default folder already
- * holds Novel Engine data (possibly from another install sharing it).
+ * True when this launch should offer to bring over data from the pre-rename
+ * `Novel Engine` folder: no override, not asked before, Spur's own default
+ * folder has no app data yet, and the legacy folder does.
  */
-export function needsFirstLaunchChoice(defaultDir: string, resolved: ResolvedDataDir): boolean {
+export function needsLegacyImport(defaultDir: string, legacyDir: string, resolved: ResolvedDataDir): boolean {
   if (resolved.source !== 'default' || resolved.problem || resolved.confirmed) return false;
-  return classifyFolder(defaultDir) === 'novel-engine';
+  if (path.resolve(legacyDir) === path.resolve(defaultDir)) return false;
+  return classifyFolder(defaultDir) !== 'novel-engine' && classifyFolder(legacyDir) === 'novel-engine';
+}
+
+/**
+ * Copy app data from `fromDir` into `toDir`, skipping browser-profile files
+ * and the pointer file. Existing files in `toDir` are never overwritten.
+ * On failure, removes what it copied and rethrows. Returns the copied
+ * top-level entry names.
+ */
+export async function copyAppData(fromDir: string, toDir: string): Promise<string[]> {
+  mkdirSync(toDir, { recursive: true });
+  const existing = new Set(readdirSync(toDir));
+  const entries = readdirSync(fromDir).filter(
+    (name) => name !== POINTER_FILENAME && !isBrowserProfileEntry(name) && !existing.has(name),
+  );
+  const copied: string[] = [];
+  try {
+    for (const name of entries) {
+      await cp(path.join(fromDir, name), path.join(toDir, name), {
+        recursive: true,
+        force: false,
+        errorOnExist: true,
+        preserveTimestamps: true,
+      });
+      copied.push(name);
+    }
+  } catch (err) {
+    await Promise.all(
+      [...copied, ...entries.slice(copied.length, copied.length + 1)].map((name) =>
+        rm(path.join(toDir, name), { recursive: true, force: true }),
+      ),
+    );
+    throw err;
+  }
+  return copied;
 }

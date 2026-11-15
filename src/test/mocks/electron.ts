@@ -1,5 +1,5 @@
 /**
- * Typed mock of every `electron` export Novel Engine imports
+ * Typed mock of every `electron` export Novel Engine Spur imports
  * (main, ipc handlers, notifications, preload).
  *
  * Usage — at the top of a test file, before importing code under test:

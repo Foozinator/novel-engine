@@ -1,4 +1,4 @@
-# Architecture — Novel Engine
+# Architecture — Novel Engine Spur
 
 > Last updated: 2026-11-14 (#39 data folder selection)
 
@@ -334,9 +334,13 @@ The renderer layer normally uses `import type` only from domain. However, **pure
 1. `--data-dir=<absolute path>` command-line flag
 2. `NOVEL_ENGINE_DATA_DIR` environment variable
 3. Pointer file `data-location.json` in Electron's **default** userData folder (`{ "dataDir": string | null, "confirmed": true }`), written by Settings → Data Folder or the startup dialogs
-4. Electron's default userData folder (`%APPDATA%\Novel Engine`, `~/.config/Novel Engine`, `~/Library/Application Support/Novel Engine`)
+4. Electron's default userData folder, named after `productName` (`%APPDATA%\Novel Engine Spur`, `~/.config/Novel Engine Spur`, `~/Library/Application Support/Novel Engine Spur`)
 
-Chromium `sessionData` follows `userData`, so renderer localStorage is per data folder. An unusable folder (relative, not a folder, not writable, malformed pointer) triggers a startup dialog before bootstrap. On first launch with existing data in the shared default folder and no pointer, the app asks once whether to share it or pick another folder. That default folder may belong to an upstream install. Upstream ignores `data-location.json`.
+Chromium `sessionData` follows `userData`, so renderer localStorage is per data folder. An unusable folder (relative, not a folder, not writable, malformed pointer) triggers a startup dialog before bootstrap. On first launch with no pointer, no app data in Spur's default folder, and app data in the pre-rename `{appData}/Novel Engine` folder (`LEGACY_DATA_FOLDER_NAME`, which upstream installs still use), the app asks once: copy it into the default folder (`copyAppData()`, which skips Chromium profile files and the pointer and never overwrites), use it in place (pointer → legacy folder, relaunch), or start fresh. Upstream ignores `data-location.json`.
+
+### Product Identity
+
+The fork ships as **Novel Engine Spur** (`APP_NAME` in `src/domain/constants.ts`, `productName` in `package.json`). Packaging IDs all differ from upstream so both install side by side: executable `novel-engine-spur`, bundle ID `io.github.foozinator.novel-engine-spur`, Squirrel `NovelEngineSpur`, deb/rpm `novel-engine-spur`, artifacts `Novel-Engine-Spur-{version}-{platform}-{arch}.{ext}`. Code identifiers and on-disk names keep the original name so data folders stay compatible with upstream: `window.novelEngine`, `novel-engine.db`, `novel-asset://`, `novel-engine:*` localStorage keys, `NOVEL_ENGINE_DATA_DIR`.
 
 ### Book Directory Structure
 

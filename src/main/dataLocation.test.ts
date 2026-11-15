@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   DATA_DIR_ENV,
   classifyFolder,
-  needsFirstLaunchChoice,
+  copyAppData,
+  needsLegacyImport,
   readPointer,
   resolveDataDir,
   writePointer,
@@ -121,9 +122,11 @@ describe('writePointer / readPointer', () => {
 });
 
 describe('classifyFolder', () => {
-  it('reports a missing or empty folder as empty, ignoring the pointer and OS clutter', async () => {
+  it('reports a missing or empty folder as empty, ignoring the pointer, browser files and OS clutter', async () => {
     expect(classifyFolder(path.join(other, 'missing'))).toBe('empty');
     await writeFile(path.join(other, '.DS_Store'), '');
+    await mkdir(path.join(other, 'Code Cache'));
+    await writeFile(path.join(other, 'SingletonSocket'), '');
     await writeFile(path.join(other, 'data-location.json'), '{}');
     expect(classifyFolder(other)).toBe('empty');
   });
@@ -139,18 +142,73 @@ describe('classifyFolder', () => {
   });
 });
 
-describe('needsFirstLaunchChoice', () => {
-  it('asks once when the default folder already holds data and no pointer exists', async () => {
-    await writeFile(path.join(defaultDir, '.initialized'), 'x');
-    expect(needsFirstLaunchChoice(defaultDir, resolve())).toBe(true);
+describe('needsLegacyImport', () => {
+  // `other` plays the pre-rename "Novel Engine" folder here.
+  it('offers once when only the legacy folder holds data', async () => {
+    await writeFile(path.join(other, 'novel-engine.db'), '');
+    await mkdir(path.join(defaultDir, 'GPUCache')); // Electron's own files don't count
+    expect(needsLegacyImport(defaultDir, other, resolve())).toBe(true);
 
     writePointer(defaultDir, null);
-    expect(needsFirstLaunchChoice(defaultDir, resolve())).toBe(false);
+    expect(needsLegacyImport(defaultDir, other, resolve())).toBe(false);
   });
 
-  it('does not ask on a fresh install or when overridden', async () => {
-    expect(needsFirstLaunchChoice(defaultDir, resolve())).toBe(false);
+  it('does not offer when Spur already has data, the legacy folder has none, or an override is set', async () => {
+    expect(needsLegacyImport(defaultDir, other, resolve())).toBe(false); // no legacy data
+    await writeFile(path.join(other, '.initialized'), 'x');
+    expect(needsLegacyImport(defaultDir, other, resolve([`--data-dir=${path.join(other, 'x')}`]))).toBe(false);
     await writeFile(path.join(defaultDir, '.initialized'), 'x');
-    expect(needsFirstLaunchChoice(defaultDir, resolve([`--data-dir=${other}`]))).toBe(false);
+    expect(needsLegacyImport(defaultDir, other, resolve())).toBe(false);
   });
+
+  it('never treats the default folder as its own legacy folder', async () => {
+    await writeFile(path.join(defaultDir, '.initialized'), 'x');
+    expect(needsLegacyImport(defaultDir, defaultDir, resolve())).toBe(false);
+  });
+});
+
+describe('copyAppData', () => {
+  it('copies app data, skips browser-profile files and the pointer, and keeps existing files', async () => {
+    await mkdir(path.join(other, 'books', 'my-book'), { recursive: true });
+    await writeFile(path.join(other, 'books', 'my-book', 'about.json'), '{}');
+    await writeFile(path.join(other, 'novel-engine.db'), 'db');
+    await writeFile(path.join(other, 'novel-engine.db-wal'), 'wal');
+    await writeFile(path.join(other, 'settings.json'), '{"old":true}');
+    await mkdir(path.join(other, 'Local Storage'));
+    await mkdir(path.join(other, 'GPUCache'));
+    await writeFile(path.join(other, 'SingletonLock'), '');
+    await writeFile(path.join(other, 'data-location.json'), '{"dataDir":"/elsewhere"}');
+    await writeFile(path.join(defaultDir, 'settings.json'), '{"spur":true}');
+
+    const copied = await copyAppData(other, defaultDir);
+
+    expect(copied.sort()).toEqual(['Local Storage', 'books', 'novel-engine.db', 'novel-engine.db-wal']);
+    expect(await readFile(path.join(defaultDir, 'books', 'my-book', 'about.json'), 'utf-8')).toBe('{}');
+    expect(await readFile(path.join(defaultDir, 'settings.json'), 'utf-8')).toBe('{"spur":true}');
+    expect((await readdir(defaultDir)).sort()).toEqual([
+      'Local Storage',
+      'books',
+      'novel-engine.db',
+      'novel-engine.db-wal',
+      'settings.json',
+    ]);
+    // Source untouched
+    expect(await readFile(path.join(other, 'data-location.json'), 'utf-8')).toContain('/elsewhere');
+  });
+
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'removes partial copies when a copy fails',
+    async () => {
+      await writeFile(path.join(other, 'a-first.md'), 'a');
+      const unreadable = path.join(other, 'b-unreadable.md');
+      await writeFile(unreadable, 'b');
+      await chmod(unreadable, 0o000);
+      try {
+        await expect(copyAppData(other, defaultDir)).rejects.toThrow();
+        expect(await readdir(defaultDir)).toEqual([]);
+      } finally {
+        await chmod(unreadable, 0o600);
+      }
+    },
+  );
 });

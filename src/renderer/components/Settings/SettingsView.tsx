@@ -15,6 +15,9 @@ import type {
   UsageSummary,
 } from '@domain/types';
 import {
+  APP_NAME,
+  APP_REPO_URL,
+  UPSTREAM_REPO_URL,
   FABLE_MODEL_ID,
   PROSE_FONTS,
   PROSE_FONT_SIZE_DEFAULT,
@@ -164,7 +167,7 @@ function ClaudeCliUpdateControls(): React.ReactElement {
         </button>
       </div>
       <HelpText>
-        Runs `claude update`. Model aliases can move to a model an older CLI can&apos;t run, and Novel Engine&apos;s short CLI calls may not give the CLI&apos;s own auto-update a chance to run.
+        Runs `claude update`. Model aliases can move to a model an older CLI can&apos;t run, and Novel Engine Spur&apos;s short CLI calls may not give the CLI&apos;s own auto-update a chance to run.
       </HelpText>
     </div>
   );
@@ -375,7 +378,7 @@ function ModelSelectionSection(): React.ReactElement {
         </div>
         {!primaryModelExists && settings?.model && primaryFallback && (
           <HelpText>
-            Selected model is no longer available. Choose an available model below; Novel Engine will use {primaryFallback.label} until updated.
+            Selected model is no longer available. Choose an available model below; Novel Engine Spur will use {primaryFallback.label} until updated.
           </HelpText>
         )}
         <div className="space-y-4">
@@ -841,7 +844,7 @@ function DataFolderSection(): React.ReactElement {
     <section className="space-y-3">
       <SectionHeading>Data Folder</SectionHeading>
       <HelpText>
-        Where Novel Engine keeps your books, conversation history, agent prompts and settings. Changing it restarts
+        Where Novel Engine Spur keeps your books, conversation history, agent prompts and settings. Changing it restarts
         the app and does not move anything; copy the folder yourself first (with the app closed) to take your data
         along.
       </HelpText>
@@ -898,7 +901,7 @@ function AgentPromptsSection(): React.ReactElement {
     <section className="space-y-3">
       <SectionHeading>Agent Prompts</SectionHeading>
       <HelpText>
-        Novel Engine updates its agent prompts when you install a new version. Prompts you have edited are left as
+        Novel Engine Spur updates its agent prompts when you install a new version. Prompts you have edited are left as
         they are and don't get those updates.
       </HelpText>
       {status && (
@@ -1078,19 +1081,22 @@ function AboutSection(): React.ReactElement {
       <SectionHeading>About</SectionHeading>
       <div className="space-y-2">
         <p className="text-sm text-zinc-700 dark:text-zinc-300">
-          <span className="font-medium">Novel Engine</span> v0.1.0
+          <span className="font-medium">{APP_NAME}</span> v0.1.0
         </p>
+        <HelpText>A fork of Novel Engine by John Paul Ruf, licensed under AGPL-3.0.</HelpText>
         <HelpText>Powered by selectable AI backends: Claude CLI, Codex CLI, Ollama CLI, llama-server, and OpenAI-compatible providers.</HelpText>
         <div className="flex gap-4">
           <button
-            onClick={() =>
-              window.novelEngine.shell.openExternal(
-                'https://github.com/novel-engine/novel-engine',
-              )
-            }
+            onClick={() => window.novelEngine.shell.openExternal(APP_REPO_URL)}
             className="text-sm text-blue-600 dark:text-blue-400 underline decoration-blue-600/30 dark:decoration-blue-400/30 transition-colors hover:text-blue-600 dark:hover:text-blue-300"
           >
             GitHub
+          </button>
+          <button
+            onClick={() => window.novelEngine.shell.openExternal(UPSTREAM_REPO_URL)}
+            className="text-sm text-blue-600 dark:text-blue-400 underline decoration-blue-600/30 dark:decoration-blue-400/30 transition-colors hover:text-blue-600 dark:hover:text-blue-300"
+          >
+            Original Novel Engine
           </button>
           <button
             onClick={() =>

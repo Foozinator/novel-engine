@@ -313,7 +313,7 @@ function ProviderCard({ config }: { config: ProviderConfig }): React.ReactElemen
       </div>
       {config.type === 'ollama-cli' && (
         <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-          Pull local models with `ollama pull model-name`; Novel Engine discovers them from `ollama list`.
+          Pull local models with `ollama pull model-name`; Novel Engine Spur discovers them from `ollama list`.
         </p>
       )}
       {(config.type === 'ollama-cli' || config.type === 'llama-server') && (

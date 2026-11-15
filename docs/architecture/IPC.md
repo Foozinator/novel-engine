@@ -609,7 +609,7 @@ First-run initialization:
 Files: `src/main/dataLocation.ts`, `src/main/dataFolderDialogs.ts`
 
 - `resolveDataDir({ defaultDir, argv, env })` runs at module top level in `index.ts`, before `whenReady`. Priority: `--data-dir=` › `NOVEL_ENGINE_DATA_DIR` › pointer `data-location.json` in the default folder › default. Returns `{ dir, source, confirmed, problem?, requested? }`. On a problem, `dir` is the default.
-- `runStartupDataFolderChecks()` runs first in `initializeApp()`. An unusable folder gets [Choose another folder… / Use default folder this session / Quit] (no choice under a flag/env override). The first launch on existing default-folder data with no pointer gets [Use this folder / Choose a separate folder…]. Returns `true` when relaunching or quitting.
+- `runStartupDataFolderChecks(defaultDir, legacyDir, resolved)` runs first in `initializeApp()`. An unusable folder gets [Choose another folder… / Use default folder this session / Quit] (no choice under a flag/env override). First launch with app data only in the pre-rename `{appData}/Novel Engine` folder (`needsLegacyImport()`) gets [Copy it here / Use the old folder in place / Start fresh]. Copy runs `copyAppData()` (skips Chromium profile entries, `Singleton*` and the pointer; never overwrites; removes partial copies on failure, then offers Try again / Start fresh / Quit). Every answer writes the pointer, so the question is asked once. Returns `true` when relaunching or quitting.
 - `chooseDataFolder()` classifies the picked folder (`empty` / `novel-engine` / `other`) for the confirm text, then writes the pointer atomically. Nothing is copied or moved.
 
 ### Custom Protocol

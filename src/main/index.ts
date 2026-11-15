@@ -51,9 +51,12 @@ if (squirrelStartup) {
 // Data folder (#39): every app path derives from `userData`, so redirecting it
 // here — before `whenReady` — moves the DB, books, agents and settings at once.
 // Chromium's sessionData follows, so renderer localStorage is per folder too.
-import { resolveDataDir } from './dataLocation';
+import { LEGACY_DATA_FOLDER_NAME, resolveDataDir } from './dataLocation';
 import { runStartupDataFolderChecks } from './dataFolderDialogs';
+// Default is `{appData}/Novel Engine Spur` (from package.json productName).
+// The pre-rename `{appData}/Novel Engine` is offered for import on first launch.
 const defaultDataDir = app.getPath('userData');
+const legacyDataDir = path.join(app.getPath('appData'), LEGACY_DATA_FOLDER_NAME);
 const dataResolution = resolveDataDir({ defaultDir: defaultDataDir, argv: process.argv, env: process.env });
 if (dataResolution.problem) {
   console.warn('[data-folder]', dataResolution.problem);
@@ -381,7 +384,7 @@ async function initializeApp(): Promise<void> {
   await fixShellPath();
 
   // 0. Data folder checks (unusable folder, or first launch on shared data).
-  if (await runStartupDataFolderChecks(defaultDataDir, dataResolution)) return;
+  if (await runStartupDataFolderChecks(defaultDataDir, legacyDataDir, dataResolution)) return;
 
   const userDataPath = app.getPath('userData');
 

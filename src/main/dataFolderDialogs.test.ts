@@ -1,4 +1,4 @@
-import { writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app, dialog } from 'electron';
@@ -10,6 +10,8 @@ vi.mock('electron', () => import('../test/mocks/electron'));
 
 let defaultDir: string;
 let target: string;
+/** A legacy folder that does not exist, for tests not about the legacy import. */
+let noLegacy: string;
 
 /** Queue message-box answers by button label, in call order. */
 function answer(...labels: string[]): void {
@@ -37,6 +39,7 @@ beforeEach(async () => {
   vi.clearAllMocks();
   defaultDir = await makeTempDir();
   target = await makeTempDir();
+  noLegacy = path.join(target, 'no-legacy');
 });
 
 afterEach(async () => {
@@ -46,35 +49,69 @@ afterEach(async () => {
 
 describe('runStartupDataFolderChecks', () => {
   it('does nothing on a fresh install', async () => {
-    await expect(runStartupDataFolderChecks(defaultDir, resolve())).resolves.toBe(false);
+    await expect(runStartupDataFolderChecks(defaultDir, noLegacy, resolve())).resolves.toBe(false);
     expect(dialog.showMessageBox).not.toHaveBeenCalled();
   });
 
-  describe('first launch on existing default data', () => {
+  describe('first launch with data in the pre-rename folder', () => {
+    let legacyDir: string;
+
     beforeEach(async () => {
-      await writeFile(path.join(defaultDir, 'novel-engine.db'), '');
+      legacyDir = await makeTempDir();
+      await mkdir(path.join(legacyDir, 'books', 'my-book'), { recursive: true });
+      await writeFile(path.join(legacyDir, 'books', 'my-book', 'about.json'), '{}');
+      await writeFile(path.join(legacyDir, 'novel-engine.db'), 'db');
     });
 
-    it('"Use this folder" records the answer and continues', async () => {
-      answer('Use this folder');
-      await expect(runStartupDataFolderChecks(defaultDir, resolve())).resolves.toBe(false);
+    it('copies the data into the default folder and continues without restarting', async () => {
+      answer('Copy it here (recommended)');
+      await expect(runStartupDataFolderChecks(defaultDir, legacyDir, resolve())).resolves.toBe(false);
+      expect(await readFile(path.join(defaultDir, 'novel-engine.db'), 'utf-8')).toBe('db');
+      expect(await readFile(path.join(defaultDir, 'books', 'my-book', 'about.json'), 'utf-8')).toBe('{}');
       expect(readPointer(defaultDir)).toEqual({ dataDir: null, confirmed: true });
       expect(app.relaunch).not.toHaveBeenCalled();
+      // Asked once: the next launch goes straight through
+      expect(await runStartupDataFolderChecks(defaultDir, legacyDir, resolve())).toBe(false);
+      expect(dialog.showMessageBox).toHaveBeenCalledTimes(1);
     });
 
-    it('choosing a separate folder writes the pointer and relaunches', async () => {
-      answer('Choose a separate folder…', 'Use this folder and restart');
-      pick(target);
-      await expect(runStartupDataFolderChecks(defaultDir, resolve())).resolves.toBe(true);
-      expect(readPointer(defaultDir)).toEqual({ dataDir: target, confirmed: true });
+    it('uses the old folder in place by pointing at it and relaunching', async () => {
+      answer('Use the old folder in place');
+      await expect(runStartupDataFolderChecks(defaultDir, legacyDir, resolve())).resolves.toBe(true);
+      expect(readPointer(defaultDir)).toEqual({ dataDir: legacyDir, confirmed: true });
       expect(app.relaunch).toHaveBeenCalled();
+      expect(await readdir(defaultDir)).toEqual(['data-location.json']);
     });
 
-    it('asks again when the folder picker is cancelled', async () => {
-      answer('Choose a separate folder…', 'Use this folder');
-      pick(null);
-      await expect(runStartupDataFolderChecks(defaultDir, resolve())).resolves.toBe(false);
-      expect(dialog.showMessageBox).toHaveBeenCalledTimes(2);
+    it('starts fresh without copying', async () => {
+      answer('Start fresh');
+      await expect(runStartupDataFolderChecks(defaultDir, legacyDir, resolve())).resolves.toBe(false);
+      expect(await readdir(defaultDir)).toEqual(['data-location.json']);
+      expect(readPointer(defaultDir)).toEqual({ dataDir: null, confirmed: true });
+    });
+
+    it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+      'reports a failed copy, cleans up, and can start fresh instead',
+      async () => {
+        const unreadable = path.join(legacyDir, 'novel-engine.db');
+        await chmod(unreadable, 0o000);
+        try {
+          answer('Copy it here (recommended)', 'Start fresh');
+          await expect(runStartupDataFolderChecks(defaultDir, legacyDir, resolve())).resolves.toBe(false);
+          const error = vi.mocked(dialog.showMessageBox).mock.calls[1][0] as { type: string };
+          expect(error.type).toBe('error');
+          expect(await readdir(defaultDir)).toEqual(['data-location.json']);
+        } finally {
+          await chmod(unreadable, 0o600);
+        }
+      },
+    );
+
+    it('is not offered when an override is active', async () => {
+      await expect(
+        runStartupDataFolderChecks(defaultDir, legacyDir, resolve([`--data-dir=${target}`])),
+      ).resolves.toBe(false);
+      expect(dialog.showMessageBox).not.toHaveBeenCalled();
     });
   });
 
@@ -82,13 +119,13 @@ describe('runStartupDataFolderChecks', () => {
     it('can fall back to the default for this session without touching the pointer', async () => {
       answer('Use default folder this session');
       const resolved = resolve(['--data-dir=relative']);
-      await expect(runStartupDataFolderChecks(defaultDir, resolved)).resolves.toBe(false);
+      await expect(runStartupDataFolderChecks(defaultDir, noLegacy, resolved)).resolves.toBe(false);
       expect(readPointer(defaultDir)).toBeNull();
     });
 
     it('offers no folder choice when a flag or env override is the cause', async () => {
       answer('Quit');
-      await expect(runStartupDataFolderChecks(defaultDir, resolve(['--data-dir=relative']))).resolves.toBe(true);
+      await expect(runStartupDataFolderChecks(defaultDir, noLegacy, resolve(['--data-dir=relative']))).resolves.toBe(true);
       const options = vi.mocked(dialog.showMessageBox).mock.calls[0][0] as { buttons: string[] };
       expect(options.buttons).toEqual(['Use default folder this session', 'Quit']);
       expect(app.exit).toHaveBeenCalledWith(0);
@@ -98,7 +135,7 @@ describe('runStartupDataFolderChecks', () => {
       await writeFile(path.join(defaultDir, 'data-location.json'), '{broken');
       answer('Choose another folder…', 'Use this folder and restart');
       pick(target);
-      await expect(runStartupDataFolderChecks(defaultDir, resolve())).resolves.toBe(true);
+      await expect(runStartupDataFolderChecks(defaultDir, noLegacy, resolve())).resolves.toBe(true);
       expect(readPointer(defaultDir)).toEqual({ dataDir: target, confirmed: true });
     });
   });
