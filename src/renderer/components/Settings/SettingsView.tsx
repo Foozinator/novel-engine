@@ -4,7 +4,16 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useCliUpdateStore } from '../../stores/cliUpdateStore';
 import { useBookStore } from '../../stores/bookStore';
 import { useModalChatStore } from '../../stores/modalChatStore';
-import type { FableProbeResult, ModelInfo, ProseFontId, TourId, UsageSummary } from '@domain/types';
+import type {
+  DataFolderInfo,
+  DataFolderSource,
+  FableProbeResult,
+  ModelInfo,
+  PromptSyncStatus,
+  ProseFontId,
+  TourId,
+  UsageSummary,
+} from '@domain/types';
 import {
   FABLE_MODEL_ID,
   PROSE_FONTS,
@@ -794,6 +803,132 @@ function CatalogExportSection(): React.ReactElement {
   );
 }
 
+const SECONDARY_BUTTON =
+  'rounded-lg border border-zinc-300 dark:border-zinc-700 px-4 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-zinc-900 dark:text-zinc-100 disabled:opacity-50 disabled:hover:bg-transparent';
+
+const DATA_SOURCE_LABEL: Record<DataFolderSource, string> = {
+  default: 'Default folder',
+  pointer: 'Chosen in Settings',
+  flag: 'Set by the --data-dir option',
+  env: 'Set by the NOVEL_ENGINE_DATA_DIR variable',
+};
+
+function DataFolderSection(): React.ReactElement {
+  const [info, setInfo] = useState<DataFolderInfo | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    window.novelEngine.dataFolder.get().then(setInfo).catch((error) => {
+      console.error('Failed to load data folder info:', error);
+    });
+  }, []);
+
+  // change/reset show native confirm dialogs and restart the app on success.
+  const run = useCallback(async (action: () => Promise<boolean>) => {
+    setBusy(true);
+    try {
+      await action();
+    } catch (error) {
+      console.error('Data folder change failed:', error);
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const overridden = info?.source === 'flag' || info?.source === 'env';
+
+  return (
+    <section className="space-y-3">
+      <SectionHeading>Data Folder</SectionHeading>
+      <HelpText>
+        Where Novel Engine keeps your books, conversation history, agent prompts and settings. Changing it restarts
+        the app and does not move anything; copy the folder yourself first (with the app closed) to take your data
+        along.
+      </HelpText>
+      {info && (
+        <>
+          <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-sm">
+            <div className="break-all font-mono text-zinc-900 dark:text-zinc-100" data-testid="data-folder-path">
+              {info.current}
+            </div>
+            <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{DATA_SOURCE_LABEL[info.source]}</div>
+          </div>
+          {overridden && (
+            <p className="text-xs text-amber-700 dark:text-amber-300">
+              A startup override is active, so the folder can't be changed here.
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <button className={SECONDARY_BUTTON} onClick={() => window.novelEngine.shell.openPath(info.current)}>
+              Open Folder
+            </button>
+            <button
+              className={SECONDARY_BUTTON}
+              disabled={busy || overridden}
+              onClick={() => run(window.novelEngine.dataFolder.change)}
+            >
+              Change…
+            </button>
+            {info.source === 'pointer' && (
+              <button
+                className={SECONDARY_BUTTON}
+                disabled={busy}
+                onClick={() => run(window.novelEngine.dataFolder.reset)}
+              >
+                Use Default Folder
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function AgentPromptsSection(): React.ReactElement {
+  const [status, setStatus] = useState<PromptSyncStatus | null>(null);
+
+  useEffect(() => {
+    window.novelEngine.agents.promptSync().then(setStatus).catch((error) => {
+      console.error('Failed to load prompt sync status:', error);
+    });
+  }, []);
+
+  return (
+    <section className="space-y-3">
+      <SectionHeading>Agent Prompts</SectionHeading>
+      <HelpText>
+        Novel Engine updates its agent prompts when you install a new version. Prompts you have edited are left as
+        they are and don't get those updates.
+      </HelpText>
+      {status && (
+        <>
+          {status.updated.length > 0 && (
+            <p className="text-sm text-green-600 dark:text-green-400" data-testid="prompts-updated">
+              Updated this launch: {status.updated.join(', ')}
+            </p>
+          )}
+          {status.edited.length > 0 ? (
+            <div className="text-sm text-zinc-700 dark:text-zinc-300" data-testid="prompts-edited">
+              <p>Edited by you (not updated):</p>
+              <ul className="mt-1 list-inside list-disc font-mono text-xs">
+                {status.edited.map((name) => (
+                  <li key={name}>{name}</li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">All prompts match the bundled versions.</p>
+          )}
+          <button className={SECONDARY_BUTTON} onClick={() => window.novelEngine.shell.openPath(status.agentsDir)}>
+            Open Prompts Folder
+          </button>
+        </>
+      )}
+    </section>
+  );
+}
+
 function AuthorProfileSection(): React.ReactElement {
   const { settings, update } = useSettingsStore();
   const [authorName, setAuthorName] = useState('');
@@ -1094,6 +1229,10 @@ export function SettingsView(): React.ReactElement {
               <UsageSection />
               <SectionDivider />
               <CatalogExportSection />
+              <SectionDivider />
+              <DataFolderSection />
+              <SectionDivider />
+              <AgentPromptsSection />
             </>
           )}
 

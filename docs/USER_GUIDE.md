@@ -421,6 +421,20 @@ Configure AI providers in the **Providers** section. Claude CLI is the built-in 
 
 Toggle desktop notifications for when agent calls complete (useful for long-running tasks like full manuscript reads).
 
+### Data Folder
+
+On the **Profile** tab, **Data Folder** shows where Novel Engine keeps your books, conversation history, agent prompts and settings. Use **Change…** to pick another folder, or **Use Default Folder** to go back. Both restart the app.
+
+Changing the folder does not copy or move anything. To take your data along, close Novel Engine, copy the whole folder to the new location, then start Novel Engine and choose the copy. If the new folder already holds Novel Engine data, the app uses it. If it's empty, the app starts fresh.
+
+If another Novel Engine install already uses the default folder, the app asks on first launch whether to share that data or use a separate folder. Separate folders keep two installs from changing each other's books and database.
+
+Advanced: start the app with `--data-dir=/absolute/path`, or set the `NOVEL_ENGINE_DATA_DIR` environment variable, to override the folder for that run. While an override is active, the folder can't be changed in Settings.
+
+### Agent Prompts
+
+Also on the **Profile** tab. **Agent Prompts** lists the prompts that were updated when you installed a new version, and the prompts you have edited. Edited prompts never get bundled updates.
+
 ---
 
 ## 13. Motif Ledger
@@ -518,10 +532,12 @@ Include:
 
 ### Where Books Are Stored
 
-Books live in your OS user data directory:
+Books live in the `books/` folder of your data folder. By default that is:
 - **macOS:** `~/Library/Application Support/Novel Engine/books/`
 - **Windows:** `%APPDATA%/Novel Engine/books/`
 - **Linux:** `~/.config/Novel Engine/books/`
+
+If you chose another data folder in **Settings → Profile → Data Folder**, books are in that folder instead.
 
 Each book is a self-contained directory with `about.json`, `source/`, `chapters/`, and `dist/`.
 
@@ -529,7 +545,7 @@ Each book is a self-contained directory with `about.json`, `source/`, `chapters/
 
 Agent system prompts are stored in the `custom-agents/` directory (inside the user data path). You can edit these `.md` files to customize how each agent behaves. Changes take effect on the next conversation.
 
-**Warning:** Customized prompts are preserved across app updates (the app never overwrites existing agent files). But if an update changes the default prompts significantly, you may want to compare and merge changes.
+When you install a new version, prompts you haven't edited are updated to the new bundled version automatically. Prompts you have edited are kept as they are and listed under **Settings → Profile → Agent Prompts**. To get a bundled update for an edited prompt, compare and merge by hand, or delete your copy and restart. The app then restores the current bundled version.
 
 ### The Author Profile
 

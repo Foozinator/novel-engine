@@ -4,6 +4,45 @@ All notable changes to Novel Engine are documented here.
 
 ---
 
+## [2026-11-14] — Data folder selection and bundled prompt sync (#39)
+
+### Summary
+
+The fork and upstream share the product name, so both use `%APPDATA%\Novel Engine`, and a fork install would migrate upstream's live database. The user can now pick the data folder. A pointer file in the default folder records the choice, and `--data-dir=` or `NOVEL_ENGINE_DATA_DIR` override it for one run. The app redirects Electron's `userData` before `whenReady`, so the DB, books, agents, settings and series all move together with no service changes. On first launch with existing data in the shared default folder, the app asks once whether to share it or use a separate folder. Separately, `ensureAgents` no longer copies with `COPYFILE_EXCL` only. It now updates prompts the user hasn't edited when the bundled version changes (the #30 `VERITY-LEDGER.md` fix never reached existing installs) and reports edited ones in Settings.
+
+### Added
+- `src/main/dataLocation.ts` — `resolveDataDir()` (flag › env › pointer › default, with usability checks), `readPointer()`/`writePointer()` (atomic) for `data-location.json`, `classifyFolder()`, `needsFirstLaunchChoice()`, `checkUsable()`.
+- `src/main/dataFolderDialogs.ts` — `runStartupDataFolderChecks()` (unusable folder, first launch on shared data), `chooseDataFolder()`, `resetDataFolder()`, `relaunch()`.
+- `scripts/agent-hashes.js` and npm script `agent-hashes` — Writes `agents/prompt-history.json` with SHA-256 hashes (CRLF→LF) of every bundled prompt version from git history plus the working tree.
+- `agents/prompt-history.json` — Generated history of past prompt versions. Bundled with `extraResource: ['./agents']`.
+- `src/main/dataLocation.test.ts`, `src/main/dataFolderDialogs.test.ts` — Resolution priority, pointer I/O, folder classification, startup dialog flows.
+
+### Changed
+- `src/main/bootstrap.ts` — `ensureAgents()` returns `PromptSyncResult`. It keeps `custom-agents/.bundled-manifest.json` (filename → installed hash), replaces unedited prompts when the bundled version changes, and leaves edited ones alone. Pre-manifest installs are matched against `prompt-history.json`. Added `hashPrompt()`, `PROMPT_MANIFEST` and `PROMPT_HISTORY`.
+- `src/main/index.ts` — Resolves the data folder at module top level and calls `app.setPath('userData', …)`. Runs the startup data-folder checks before bootstrap. Passes `dataFolder` and `promptSync` to the IPC handlers.
+- `src/main/ipc/handlers.ts` — New channels `agents:promptSync`, `dataFolder:get`, `dataFolder:change` and `dataFolder:reset`. `paths` gains `dataFolder` and `promptSync`.
+- `src/preload/index.ts` — `agents.promptSync()` and a new `dataFolder` namespace (`get`, `change`, `reset`).
+- `src/domain/types.ts` — Added `DataFolderSource`, `DataFolderKind`, `DataFolderInfo`, `PromptSyncResult` and `PromptSyncStatus`.
+- `src/renderer/components/Settings/SettingsView.tsx` — Profile tab gains `DataFolderSection` and `AgentPromptsSection`.
+- `src/test/mocks/electron.ts` — Mocks `app.relaunch`, `app.exit` and `dialog.showMessageBox`.
+- `src/test/novelEngineMock.ts`, `src/main/bootstrap.test.ts`, `src/main/ipc/handlers.test.ts`, `src/preload/index.test.ts`, `src/renderer/components/Settings/SettingsView.test.tsx` — New bridge methods, prompt-sync table cases, a history-completeness check, and channel and UI tests.
+- `package.json` — `agent-hashes` script.
+- `docs/USER_GUIDE.md` — Data Folder and Agent Prompts settings, data location, prompt update behavior.
+- `docs/architecture/ARCHITECTURE.md`, `docs/architecture/IPC.md`, `docs/architecture/DOMAIN.md`, `docs/architecture/RENDERER.md` — Data folder convention, new files, channels, types and UI.
+
+### Architecture Impact
+- New IPC channels: `agents:promptSync`, `dataFolder:get`, `dataFolder:change`, `dataFolder:reset`
+- New preload namespace: `dataFolder`
+- `registerIpcHandlers` `paths` gains `dataFolder: DataFolderInfo` and `promptSync: PromptSyncResult`
+- `userData` may differ from Electron's default. Chromium `sessionData` (renderer localStorage) follows it.
+
+### Migration Notes
+- On the first launch after upgrading, an existing install with data in the default folder sees a one-time "data already exists" prompt. Choosing "Use this folder" writes `data-location.json` with `dataDir: null` and nothing else changes.
+- On the first launch after upgrading, prompts in `custom-agents/` that match any past bundled version are replaced with the current one. Files that match no known version are treated as edited, left in place, and listed in Settings. `custom-agents/.bundled-manifest.json` is created.
+- A folder shared with an upstream install also gets the updated prompts. Upstream ignores `data-location.json`.
+- No DB schema change.
+- After editing anything under `agents/`, run `npm run agent-hashes`. A test fails otherwise.
+
 ## [2026-11-14] — Untrack accidentally committed `notes` and `devtools` symlinks
 
 ### Summary

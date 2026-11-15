@@ -229,4 +229,61 @@ describe('SettingsView', () => {
     await waitFor(() => expect(resetTour).toHaveBeenCalledWith('welcome'));
     expect(useViewStore.getState().currentView).toBe('workspace');
   });
+
+  it('Profile tab shows the data folder and changes it through the bridge', async () => {
+    const { bridge } = renderSettings({
+      bridge: {
+        dataFolder: {
+          get: vi.fn(async () => ({ current: '/data/ne', defaultDir: '/default', source: 'pointer' as const })),
+        },
+      },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Profile/ }));
+
+    expect(await screen.findByTestId('data-folder-path')).toHaveTextContent('/data/ne');
+    expect(screen.getByText('Chosen in Settings')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Change…' }));
+    await waitFor(() => expect(bridge.dataFolder.change).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: 'Use Default Folder' }));
+    await waitFor(() => expect(bridge.dataFolder.reset).toHaveBeenCalled());
+  });
+
+  it('disables data folder changes while a startup override is active', async () => {
+    renderSettings({
+      bridge: {
+        dataFolder: {
+          get: vi.fn(async () => ({ current: '/env/ne', defaultDir: '/default', source: 'env' as const })),
+        },
+      },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Profile/ }));
+
+    expect(await screen.findByText(/NOVEL_ENGINE_DATA_DIR/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Change…' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Use Default Folder' })).not.toBeInTheDocument();
+  });
+
+  it('lists updated and edited agent prompts', async () => {
+    renderSettings({
+      bridge: {
+        agents: {
+          promptSync: vi.fn(async () => ({
+            updated: ['VERITY-LEDGER.md'],
+            edited: ['SPARK.md', 'QUILL.md'],
+            agentsDir: '/data/custom-agents',
+          })),
+        },
+      },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Profile/ }));
+
+    expect(await screen.findByTestId('prompts-updated')).toHaveTextContent('VERITY-LEDGER.md');
+    const edited = screen.getByTestId('prompts-edited');
+    expect(edited).toHaveTextContent('SPARK.md');
+    expect(edited).toHaveTextContent('QUILL.md');
+  });
 });

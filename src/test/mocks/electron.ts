@@ -27,6 +27,8 @@ export const app = {
   isPackaged: false,
   on: vi.fn(),
   quit: vi.fn(),
+  relaunch: vi.fn(),
+  exit: vi.fn(),
   whenReady: vi.fn((): Promise<void> => Promise.resolve()),
 };
 
@@ -81,6 +83,7 @@ export const contextBridge = {
 export const dialog = {
   showOpenDialog: vi.fn(async () => ({ canceled: true, filePaths: [] as string[] })),
   showSaveDialog: vi.fn(async () => ({ canceled: true, filePath: undefined as string | undefined })),
+  showMessageBox: vi.fn(async () => ({ response: 0, checkboxChecked: false })),
 };
 
 export const shell = {

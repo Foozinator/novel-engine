@@ -1,6 +1,6 @@
 # Domain — Types, Interfaces, Constants
 
-> Last updated: 2026-07-23 (program-030)
+> Last updated: 2026-11-14 (#39 data folder selection)
 
 Everything in `src/domain/`. Pure TypeScript declarations — zero imports from other layers.
 
@@ -147,6 +147,16 @@ Everything in `src/domain/`. Pure TypeScript declarations — zero imports from 
 | Type | Shape | Used By |
 |------|-------|---------|
 | `FileEntry` | `{ name, path, isDirectory, children? }` | FileTree, FileBrowser |
+
+### Data Folder & Prompt Sync
+
+| Type | Shape | Used By |
+|------|-------|---------|
+| `DataFolderSource` | `'flag' \| 'env' \| 'pointer' \| 'default'` | dataLocation, Settings → Data Folder |
+| `DataFolderKind` | `'empty' \| 'novel-engine' \| 'other'` | `classifyFolder()`, confirm dialogs |
+| `DataFolderInfo` | `{ current, defaultDir, source }` | `dataFolder:get`, DataFolderSection |
+| `PromptSyncResult` | `{ updated: string[], edited: string[] }` | `ensureAgents()` return, IPC `paths.promptSync` |
+| `PromptSyncStatus` | `PromptSyncResult & { agentsDir }` | `agents:promptSync`, AgentPromptsSection |
 
 ### Version Control
 

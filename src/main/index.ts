@@ -48,6 +48,19 @@ if (squirrelStartup) {
   app.quit();
 }
 
+// Data folder (#39): every app path derives from `userData`, so redirecting it
+// here — before `whenReady` — moves the DB, books, agents and settings at once.
+// Chromium's sessionData follows, so renderer localStorage is per folder too.
+import { resolveDataDir } from './dataLocation';
+import { runStartupDataFolderChecks } from './dataFolderDialogs';
+const defaultDataDir = app.getPath('userData');
+const dataResolution = resolveDataDir({ defaultDir: defaultDataDir, argv: process.argv, env: process.env });
+if (dataResolution.problem) {
+  console.warn('[data-folder]', dataResolution.problem);
+} else if (dataResolution.dir !== defaultDataDir) {
+  app.setPath('userData', dataResolution.dir);
+}
+
 // Infrastructure
 import { SettingsService } from '@infra/settings';
 import { DatabaseService } from '@infra/database';
@@ -367,6 +380,9 @@ async function initializeApp(): Promise<void> {
   // and other user-installed binaries (nvm node, homebrew tools, etc.)
   await fixShellPath();
 
+  // 0. Data folder checks (unusable folder, or first launch on shared data).
+  if (await runStartupDataFolderChecks(defaultDataDir, dataResolution)) return;
+
   const userDataPath = app.getPath('userData');
 
   // In dev mode with Electron Forge + Vite, `__dirname` resolves to the Vite
@@ -395,10 +411,11 @@ async function initializeApp(): Promise<void> {
     await bootstrap(userDataPath, agentsSourceDir);
   }
 
-  // 1b. Always ensure agent files are present — recovers installations where
-  //     bootstrap ran before the source directory was correctly populated.
-  //     Idempotent: COPYFILE_EXCL never overwrites user customisations.
-  await ensureAgents(path.join(userDataPath, 'custom-agents'), agentsSourceDir);
+  // 1b. Sync bundled agent prompts every launch: copies missing ones and
+  //     updates the ones the user hasn't edited (#39). Edited prompts are kept
+  //     and reported to Settings → Agent Prompts.
+  const promptSync = await ensureAgents(path.join(userDataPath, 'custom-agents'), agentsSourceDir);
+  if (promptSync.updated.length > 0) console.log('[bootstrap] Updated agent prompts:', promptSync.updated.join(', '));
 
   // 1c. Copy user guide for the Helper agent (always overwrite to keep current)
   const guideSourcePath = app.isPackaged
@@ -684,7 +701,17 @@ async function initializeApp(): Promise<void> {
   // 8. Register IPC handlers (with hook to switch watcher on book change)
   registerIpcHandlers(
     { settings, agents, db, fs, chat, audit, pipeline, build, usage, revisionQueue, motifLedger, notifications, version, providerRegistry: providers, manuscriptImport, sourceGeneration, series, seriesImport, helper, findReplace, dashboard, statistics, query: queryService, claudeCliUpdate, fableAccess },
-    { userDataPath, booksDir },
+    {
+      userDataPath,
+      booksDir,
+      dataFolder: {
+        current: userDataPath,
+        defaultDir: defaultDataDir,
+        // A rejected override runs on the default folder this session.
+        source: dataResolution.problem ? 'default' : dataResolution.source,
+      },
+      promptSync,
+    },
     {
       onActiveBookChanged: (slug: string) => {
         bookWatcher?.watch(slug);
