@@ -279,7 +279,32 @@ Dependencies: `IDatabaseService`
 |--------|-------------|
 | `getSummary(bookSlug?)` | Aggregated token usage (optionally scoped to book) |
 | `getByConversation(conversationId)` | Usage records for a single conversation |
-| `recordUsage(record)` | Delegates to `IDatabaseService.recordUsage` |
+| `recordUsage(record)` | Delegates to `IDatabaseService.recordUsage`. Takes `NewUsageRecord`; cache counts default to 0, `costUsd` to null |
+
+Callers (`StreamManager`, `AuditService`) build the usage fields with `pickStreamUsage(event)` from `src/application/streamUsage.ts`, so cache tokens and reported cost reach the database.
+
+### StatisticsService
+
+File: `src/application/StatisticsService.ts`
+
+Dependencies: `IDatabaseService`, `IFileSystemService`
+
+| Method | What It Does |
+|--------|-------------|
+| `getStatistics(bookSlug?)` | Usage over time, per-agent and per-phase breakdowns with `estimatedCost`, word counts, `totalTokens` (`input`, `output`, `thinking`, `cacheRead`, `cacheWrite`) and `totalCostEstimate` |
+| `recordWordCountSnapshot(bookSlug)` | Records body-word total and chapter count |
+
+Cost per (agent, phase, model) group = `reportedCostUsd` (provider-reported, e.g. Claude CLI) + an estimate for rows with no reported cost: uncached input at the model's input price, cache reads at `CACHE_READ_PRICE_MULTIPLIER` ×, cache writes at `CACHE_WRITE_PRICE_MULTIPLIER` ×, output + thinking at the output price. Rows recorded before migration v4 have no cache counts, so their estimates stay low.
+
+### streamUsage helpers
+
+File: `src/application/streamUsage.ts`
+
+| Export | What It Does |
+|--------|-------------|
+| `EMPTY_STREAM_USAGE` | Zero usage with a known zero cost |
+| `addStreamUsage(a, b)` | Adds token counts. Keeps `costUsd` only when both sides report one |
+| `pickStreamUsage(usage)` | Copies only the `StreamUsage` fields (cache counts default to 0) |
 
 ### RevisionQueueService
 
@@ -589,7 +614,7 @@ Key behaviors:
 - Fresh `sessionId` per attempt (via `nanoid()`) for DB orphan-recovery tracking
 - Same provider session across attempts when the provider reports one (Claude CLI `--resume`), so a resume doesn't re-read files; text replay is the fallback for providers without sessions
 - `callStart` forwarded only from the first attempt (suppressed on resumes)
-- Token usage (`inputTokens`, `outputTokens`, `thinkingTokens`) and `filesTouched` accumulated across all attempts into the final merged `done` event
+- Token usage (`StreamUsage`: input, output, thinking, cache read/write, cost) and `filesTouched` accumulated across all attempts into the final merged `done` event via `addStreamUsage`. A max-turns `error` contributes its `usage`. The merged `costUsd` is kept only when every attempt reported one; otherwise the call is estimated from `MODEL_PRICING`
 - Intermediate `done`/`error` events are suppressed (never forwarded to the caller)
 - The resolved model (from `modelResolved` or an intermediate `done.model`) is carried onto every merged `done` as `model`
 - `MAX_RESUME_ATTEMPTS` and `NO_PROGRESS_LIMIT` are exported constants — tests reference them by name

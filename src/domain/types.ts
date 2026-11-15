@@ -274,12 +274,31 @@ export type StreamEventSource = 'chat' | 'auto-draft' | 'hot-take' | 'adhoc-revi
  * to continue the same session with `--resume`, keeping earlier tool results,
  * and does not forward it. Providers without resumable sessions never emit it.
  *
+ * `done` carries the call's StreamUsage. A max-turns `error` may carry
+ * `usage` for the exhausted attempt (Claude CLI reports it on the error
+ * result), so the auto-resume wrapper can count it.
+ *
  * `modelResolved` reports the concrete model a provider is running when the
  * requested ID was an alias (Claude CLI: `opus` → `claude-opus-5-5`, read from
  * the CLI's system init event). `done.model` carries the same value so usage
  * is recorded against the model that actually ran. Both are optional — a
  * provider that cannot tell leaves them out and callers keep the requested ID.
  */
+/**
+ * Token usage of one provider call. `inputTokens` is uncached input only.
+ * Providers with prompt caching (Claude CLI) also report cache reads/writes,
+ * and `costUsd` when the provider prices the call itself. Providers that
+ * cannot tell leave the optional fields out.
+ */
+export type StreamUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  thinkingTokens: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  costUsd?: number;
+};
+
 export type StreamEvent =
   | { type: 'callStart'; agentName: AgentName; model: string; bookSlug: string }
   | { type: 'status'; message: string }
@@ -291,12 +310,12 @@ export type StreamEvent =
   | { type: 'filesChanged'; paths: string[] }
   | { type: 'modelResolved'; model: string }
   | { type: 'cliSession'; sessionId: string }
-  | { type: 'done'; inputTokens: number; outputTokens: number; thinkingTokens: number; filesTouched: FileTouchMap; isMaxTurns?: boolean; model?: string }
+  | ({ type: 'done'; filesTouched: FileTouchMap; isMaxTurns?: boolean; model?: string } & StreamUsage)
   | { type: 'progressStage'; stage: ProgressStage }
   | { type: 'thinkingSummary'; summary: ThinkingSummary }
   | { type: 'toolDuration'; tool: TimestampedToolUse }
   | { type: 'warning'; message: string }
-  | { type: 'error'; message: string; isMaxTurns?: boolean }
+  | { type: 'error'; message: string; isMaxTurns?: boolean; usage?: StreamUsage }
   | { type: 'multiCallProgress'; step: number; totalSteps: number; label: string }
   | { type: 'maxTurnsResume'; attempt: number; newMaxTurns: number };
 
@@ -461,27 +480,47 @@ export type AppSettings = {
 
 export type UsageRecord = {
   conversationId: string;
-  inputTokens: number;
+  inputTokens: number;            // uncached input only
   outputTokens: number;
   thinkingTokens: number;
+  cacheReadTokens: number;        // prompt-cache reads (0 when not reported)
+  cacheWriteTokens: number;       // prompt-cache writes (0 when not reported)
+  costUsd: number | null;         // provider-reported cost; null = not reported
   model: string;
   timestamp: string;
 };
 
-/** One row of token usage grouped by agent, pipeline phase and model. */
+/** What a caller supplies to record usage. Cache counts default to 0, cost to null. */
+export type NewUsageRecord = Omit<UsageRecord, 'timestamp' | 'cacheReadTokens' | 'cacheWriteTokens' | 'costUsd'> & {
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  costUsd?: number | null;
+};
+
+/**
+ * One row of token usage grouped by agent, pipeline phase and model.
+ * `reportedCostUsd` sums the provider-reported costs. The `unreported*`
+ * token counts cover only rows with no reported cost; StatisticsService
+ * prices those from MODEL_PRICING.
+ */
 export type UsageCostBasisRow = {
   agentName: string;
   phase: string;                  // pipeline phase, or 'adhoc'
   model: string;
-  inputTokens: number;
-  outputTokens: number;
-  thinkingTokens: number;
+  reportedCostUsd: number;
+  unreportedInputTokens: number;
+  unreportedOutputTokens: number;
+  unreportedThinkingTokens: number;
+  unreportedCacheReadTokens: number;
+  unreportedCacheWriteTokens: number;
 };
 
 export type UsageSummary = {
   totalInputTokens: number;
   totalOutputTokens: number;
   totalThinkingTokens: number;
+  totalCacheReadTokens: number;
+  totalCacheWriteTokens: number;
   conversationCount: number;
 };
 
@@ -1187,9 +1226,11 @@ export type BookStatistics = {
   totalCostEstimate: number;
   wordsPerChapter: { slug: string; wordCount: number }[];
   totalTokens: {
-    input: number;
+    input: number;                // uncached input
     output: number;
     thinking: number;
+    cacheRead: number;
+    cacheWrite: number;
   };
   conversationCount: number;
 };

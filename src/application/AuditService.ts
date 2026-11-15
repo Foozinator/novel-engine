@@ -18,6 +18,7 @@ import {
   MULTI_CALL_TARGET_WORDS_PER_BATCH,
 } from '@domain/constants';
 import { resolveThinkingBudget } from './thinkingBudget';
+import { pickStreamUsage } from './streamUsage';
 
 /**
  * AuditService — Owns the chapter audit/fix subsystem.
@@ -160,9 +161,7 @@ export class AuditService implements IAuditService {
           if (event.type === 'done') {
             this.usage.recordUsage({
               conversationId: targetConversationId ?? auditConversationId,
-              inputTokens: event.inputTokens,
-              outputTokens: event.outputTokens,
-              thinkingTokens: event.thinkingTokens,
+              ...pickStreamUsage(event),
               model: event.model ?? auditModel,
             });
           }
@@ -285,9 +284,7 @@ export class AuditService implements IAuditService {
 
           this.usage.recordUsage({
             conversationId,
-            inputTokens: event.inputTokens,
-            outputTokens: event.outputTokens,
-            thinkingTokens: event.thinkingTokens,
+            ...pickStreamUsage(event),
             model: event.model ?? fixModel,
           });
         }
@@ -412,9 +409,7 @@ export class AuditService implements IAuditService {
         if (event.type === 'done') {
           this.usage.recordUsage({
             conversationId: motifConvId,
-            inputTokens: event.inputTokens,
-            outputTokens: event.outputTokens,
-            thinkingTokens: event.thinkingTokens,
+            ...pickStreamUsage(event),
             model: event.model ?? motifModel,
           });
         }
@@ -540,9 +535,7 @@ ${batches.length > 1 ? `Do NOT update source/motif-ledger.json yet — this is b
         if (event.type === 'done') {
           this.usage.recordUsage({
             conversationId: batchConversationId,
-            inputTokens: event.inputTokens,
-            outputTokens: event.outputTokens,
-            thinkingTokens: event.thinkingTokens,
+            ...pickStreamUsage(event),
             model: event.model ?? model,
           });
           console.log(`[AuditService] Intercepted intermediate done (motif batch ${stepNum}/${batches.length})`);
@@ -654,9 +647,7 @@ After updating the ledger, respond with a brief summary: how many phrases found,
           if (event.type === 'done') {
             this.usage.recordUsage({
               conversationId: synthConversationId,
-              inputTokens: event.inputTokens,
-              outputTokens: event.outputTokens,
-              thinkingTokens: event.thinkingTokens,
+              ...pickStreamUsage(event),
               model: event.model ?? model,
             });
           }

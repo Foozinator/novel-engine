@@ -1,26 +1,20 @@
 import type { IDatabaseService, IUsageService } from '@domain/interfaces';
-import type { UsageRecord, UsageSummary } from '@domain/types';
+import type { NewUsageRecord, UsageRecord, UsageSummary } from '@domain/types';
 
 /**
  * UsageService — Centralizes token tracking.
  *
- * Wraps IDatabaseService usage methods. Since billing is handled by the
- * Claude Code CLI subscription, no cost estimation is performed — we
- * simply record raw token counts for informational purposes.
+ * Wraps IDatabaseService usage methods. Records token counts (including
+ * prompt-cache reads/writes) and the provider-reported cost when there is
+ * one. Cost estimation for unpriced usage lives in StatisticsService.
  */
 export class UsageService implements IUsageService {
   constructor(private db: IDatabaseService) {}
 
   /**
-   * Record a usage event (token counts only — no cost calculation).
+   * Record a usage event. Cache counts default to 0, cost to null (not reported).
    */
-  recordUsage(params: {
-    conversationId: string;
-    inputTokens: number;
-    outputTokens: number;
-    thinkingTokens: number;
-    model: string;
-  }): void {
+  recordUsage(params: NewUsageRecord): void {
     this.db.recordUsage(params);
   }
 

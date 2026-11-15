@@ -12,7 +12,9 @@ import type {
   ProviderStatus,
   ResolvedModelSelection,
   StreamEvent,
+  StreamUsage,
 } from '@domain/types';
+import { EMPTY_STREAM_USAGE, addStreamUsage, pickStreamUsage } from './streamUsage';
 
 /** Extra turns added to the budget on each resume attempt. */
 const AUTO_RESUME_EXTRA_TURNS = 10;
@@ -84,9 +86,7 @@ export class AutoTurnResumer implements IProviderRegistry {
     let resumeCliSessionId = params.resumeCliSessionId;
     let attempt = 0;
 
-    let totalInputTokens = 0;
-    let totalOutputTokens = 0;
-    let totalThinkingTokens = 0;
+    let totalUsage: StreamUsage = EMPTY_STREAM_USAGE;
     let allFilesTouched: FileTouchMap = {};
     // Concrete model reported by the provider (alias → full ID), carried onto
     // every synthesized `done` so usage is recorded against the model that ran.
@@ -114,9 +114,7 @@ export class AutoTurnResumer implements IProviderRegistry {
         if (!doneEmitted) {
           params.onEvent({
             type: 'done',
-            inputTokens: totalInputTokens,
-            outputTokens: totalOutputTokens,
-            thinkingTokens: totalThinkingTokens,
+            ...totalUsage,
             filesTouched: allFilesTouched,
             isMaxTurns: true,
             ...(resolvedModel ? { model: resolvedModel } : {}),
@@ -134,9 +132,10 @@ export class AutoTurnResumer implements IProviderRegistry {
       let partialThinking = '';
       let terminalEvent: StreamEvent | null = null;
       let isTerminalDone = false;
-      let attemptInputTokens = 0;
-      let attemptOutputTokens = 0;
-      let attemptThinkingTokens = 0;
+      // Usage of this attempt. When the provider reports none (e.g. a
+      // max-turns error without usage) it stays zero with no cost, so the
+      // call's cost is left to the price-table estimate.
+      let attemptUsage: StreamUsage = { inputTokens: 0, outputTokens: 0, thinkingTokens: 0 };
       let attemptFilesTouched: FileTouchMap = {};
       let attemptCliSessionId: string | undefined;
 
@@ -156,9 +155,7 @@ export class AutoTurnResumer implements IProviderRegistry {
           terminalEvent = event;
           isTerminalDone = true;
           if (event.isMaxTurns) maxTurnsExhausted = true;
-          attemptInputTokens = event.inputTokens;
-          attemptOutputTokens = event.outputTokens;
-          attemptThinkingTokens = event.thinkingTokens;
+          attemptUsage = pickStreamUsage(event);
           attemptFilesTouched = event.filesTouched;
           if (event.model) resolvedModel = event.model;
           return;
@@ -166,7 +163,10 @@ export class AutoTurnResumer implements IProviderRegistry {
 
         if (event.type === 'error') {
           terminalEvent = event;
-          if (event.isMaxTurns) maxTurnsExhausted = true;
+          if (event.isMaxTurns) {
+            maxTurnsExhausted = true;
+            if (event.usage) attemptUsage = pickStreamUsage(event.usage);
+          }
           return;
         }
 
@@ -199,16 +199,12 @@ export class AutoTurnResumer implements IProviderRegistry {
       if (!maxTurnsExhausted) {
         if (terminalEvent) {
           if (isTerminalDone) {
-            totalInputTokens += attemptInputTokens;
-            totalOutputTokens += attemptOutputTokens;
-            totalThinkingTokens += attemptThinkingTokens;
+            totalUsage = addStreamUsage(totalUsage, attemptUsage);
             allFilesTouched = { ...allFilesTouched, ...attemptFilesTouched };
 
             params.onEvent({
               type: 'done',
-              inputTokens: totalInputTokens,
-              outputTokens: totalOutputTokens,
-              thinkingTokens: totalThinkingTokens,
+              ...totalUsage,
               filesTouched: allFilesTouched,
               ...(resolvedModel ? { model: resolvedModel } : {}),
             });
@@ -220,9 +216,7 @@ export class AutoTurnResumer implements IProviderRegistry {
         return;
       }
 
-      totalInputTokens += attemptInputTokens;
-      totalOutputTokens += attemptOutputTokens;
-      totalThinkingTokens += attemptThinkingTokens;
+      totalUsage = addStreamUsage(totalUsage, attemptUsage);
       allFilesTouched = { ...allFilesTouched, ...attemptFilesTouched };
 
       // ── No-progress detection ──────────────────────────────────
@@ -252,9 +246,7 @@ export class AutoTurnResumer implements IProviderRegistry {
         if (!doneEmitted) {
           params.onEvent({
             type: 'done',
-            inputTokens: totalInputTokens,
-            outputTokens: totalOutputTokens,
-            thinkingTokens: totalThinkingTokens,
+            ...totalUsage,
             filesTouched: allFilesTouched,
             isMaxTurns: true,
             ...(resolvedModel ? { model: resolvedModel } : {}),

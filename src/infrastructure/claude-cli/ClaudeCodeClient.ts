@@ -7,7 +7,7 @@ import { writeFile, unlink } from 'node:fs/promises';
 import { nanoid } from 'nanoid';
 
 import type { IClaudeClient, IModelProvider, IDatabaseService } from '@domain/interfaces';
-import type { MessageRole, StreamEvent, ProviderCapability, ProviderId } from '@domain/types';
+import type { MessageRole, StreamEvent, StreamUsage, ProviderCapability, ProviderId } from '@domain/types';
 import { CHARS_PER_TOKEN, CLAUDE_CLI_ALLOWED_BASH_COMMANDS, CLAUDE_CLI_ALLOWED_TOOLS, CLAUDE_CLI_PROVIDER_ID } from '@domain/constants';
 import { StreamSessionTracker } from './StreamSessionTracker';
 
@@ -138,6 +138,7 @@ export class ClaudeCodeClient implements IClaudeClient, IModelProvider {
 
     // Create tracker for this stream session
     const tracker = new StreamSessionTracker(sessionId);
+    if (params.resumeCliSessionId) tracker.markResumedRun();
 
     // Track whether a 'done' event was emitted by processStreamEvent.
     // If the CLI exits with code 0 but no 'result' event was received
@@ -512,7 +513,14 @@ export class ClaudeCodeClient implements IClaudeClient, IModelProvider {
           `[ClaudeCodeClient] Error result event: subtype=${subtype ?? '(none)'}, ` +
           `is_error=${event.is_error === true}`,
         );
-        onEvent({ type: 'error', message, isMaxTurns: subtype === 'error_max_turns' });
+        const isMaxTurns = subtype === 'error_max_turns';
+        onEvent({
+          type: 'error',
+          message,
+          isMaxTurns,
+          // The exhausted attempt still used tokens; the auto-resume wrapper counts them.
+          ...(isMaxTurns ? { usage: extractResultUsage(event, tracker) } : {}),
+        });
         return;
       }
 
@@ -524,11 +532,6 @@ export class ClaudeCodeClient implements IClaudeClient, IModelProvider {
         onEvent({ type: 'blockEnd', blockType: 'text' });
       }
 
-      // Extract token usage from the result's usage summary
-      const usage = event.usage as Record<string, number> | undefined;
-      const inputTokens = usage?.input_tokens ?? 0;
-      const outputTokens = usage?.output_tokens ?? 0;
-      const thinkingTokens = Math.ceil(tracker.getThinkingBuffer().length / CHARS_PER_TOKEN);
 
       // Infer final stage
       const stageChange = tracker.inferStage('result');
@@ -539,9 +542,7 @@ export class ClaudeCodeClient implements IClaudeClient, IModelProvider {
       const resolvedModel = tracker.getResolvedModel();
       onEvent({
         type: 'done',
-        inputTokens,
-        outputTokens,
-        thinkingTokens,
+        ...extractResultUsage(event, tracker),
         filesTouched: tracker.getFileTouches(),
         ...(resolvedModel ? { model: resolvedModel } : {}),
       });
@@ -851,4 +852,61 @@ export class ClaudeCodeClient implements IClaudeClient, IModelProvider {
       return;
     }
   }
+}
+
+/**
+ * Token usage from a CLI result event (success or error). `input_tokens` is
+ * uncached input only; cache reads/writes are reported separately and make
+ * up most of the input on a Claude Code run. Thinking tokens are estimated
+ * from the streamed thinking text.
+ */
+function extractResultUsage(
+  resultEvent: Record<string, unknown>,
+  tracker: StreamSessionTracker,
+): StreamUsage {
+  const usage = resultEvent.usage as Record<string, unknown> | undefined;
+  const costUsd = extractRunCostUsd(resultEvent, tracker.isResumedRun());
+  return {
+    inputTokens: numberOrZero(usage?.input_tokens),
+    outputTokens: numberOrZero(usage?.output_tokens),
+    thinkingTokens: Math.ceil(tracker.getThinkingBuffer().length / CHARS_PER_TOKEN),
+    cacheReadTokens: numberOrZero(usage?.cache_read_input_tokens),
+    cacheWriteTokens: numberOrZero(usage?.cache_creation_input_tokens),
+    ...(costUsd !== undefined ? { costUsd } : {}),
+  };
+}
+
+function numberOrZero(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+/**
+ * Cost of this CLI run, as priced by the CLI itself.
+ *
+ * `total_cost_usd` and `modelUsage` are cumulative for the CLI session, so on
+ * a `--resume` run they include the earlier runs' cost. The per-run figure is
+ * the sum of `model_usage_since_last_result[*].costUSD`. When a CLI omits that
+ * field, `total_cost_usd` is used for fresh runs only; a resumed run then
+ * reports no cost and is estimated from MODEL_PRICING instead.
+ */
+export function extractRunCostUsd(
+  resultEvent: Record<string, unknown>,
+  isResumedRun: boolean,
+): number | undefined {
+  const sinceLast = resultEvent.model_usage_since_last_result;
+  if (sinceLast && typeof sinceLast === 'object') {
+    let total = 0;
+    let found = false;
+    for (const entry of Object.values(sinceLast as Record<string, unknown>)) {
+      const cost = (entry as Record<string, unknown> | null)?.costUSD;
+      if (typeof cost === 'number' && Number.isFinite(cost)) {
+        total += cost;
+        found = true;
+      }
+    }
+    if (found) return total;
+  }
+  if (isResumedRun) return undefined;
+  const total = resultEvent.total_cost_usd;
+  return typeof total === 'number' && Number.isFinite(total) ? total : undefined;
 }

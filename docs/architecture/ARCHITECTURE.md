@@ -104,6 +104,7 @@ src/
 │   ├── HelperService.ts                     # In-app help assistant (user guide as context)
 │   ├── FindReplaceService.ts               # Bulk find & replace across chapter drafts; safe revert via snapshots
 │   ├── AutoTurnResumer.ts                  # Decorator: auto-resumes provider calls on max-turns exhaustion
+│   ├── streamUsage.ts                      # StreamUsage helpers: add across attempts, pick fields for recording
 │   ├── ClaudeCliUpdateService.ts           # Weekly Claude CLI update reminder + runs the update
 │   ├── FableAccessService.ts               # On-demand Fable access check; adds Fable to Claude models
 │   ├── QueryService.ts                    # Query tracker I/O, target CRUD, AI query letter generation via Quill

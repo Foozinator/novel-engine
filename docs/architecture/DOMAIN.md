@@ -79,7 +79,7 @@ Everything in `src/domain/`. Pure TypeScript declarations — zero imports from 
 | `PersistedStreamEvent` | `{ id, sessionId, conversationId, sequenceNumber, eventType, payload, timestamp }` | Stream event replay |
 | `StreamSessionRecord` | `{ id, conversationId, agentName, model, bookSlug, startedAt, endedAt, finalStage, filesTouched, interrupted }` | Orphan recovery |
 | `StreamEventSource` | `'chat' \| 'auto-draft' \| 'hot-take' \| 'adhoc-revision' \| 'revision' \| 'audit' \| 'fix' \| 'motif-audit' \| 'query'` | IPC source discriminator |
-| `StreamEvent` | Discriminated union (18 variants: `callStart`, `status`, `modelResolved` (`model` — the concrete model an alias resolved to), `cliSession` (`sessionId` — the Claude CLI session ID from the init event; consumed by `AutoTurnResumer` for `--resume`, not forwarded), `blockStart`, `thinkingDelta`, `textDelta`, `blockEnd`, `toolUse`, `filesChanged`, `done` (+`isMaxTurns?`, +`model?` resolved model), `progressStage`, `thinkingSummary`, `toolDuration`, `warning`, `error` (+`isMaxTurns?`), `multiCallProgress`, `maxTurnsResume`) | IPC streaming |
+| `StreamEvent` | Discriminated union (18 variants: `callStart`, `status`, `modelResolved` (`model` — the concrete model an alias resolved to), `cliSession` (`sessionId` — the Claude CLI session ID from the init event; consumed by `AutoTurnResumer` for `--resume`, not forwarded), `blockStart`, `thinkingDelta`, `textDelta`, `blockEnd`, `toolUse`, `filesChanged`, `done` (`StreamUsage` + `filesTouched`, +`isMaxTurns?`, +`model?` resolved model), `progressStage`, `thinkingSummary`, `toolDuration`, `warning`, `error` (+`isMaxTurns?`, +`usage?: StreamUsage` on a max-turns error), `multiCallProgress`, `maxTurnsResume`) | IPC streaming |
 | `ActiveStreamInfo` | `{ conversationId, agentName, model, bookSlug, startedAt, sessionId, callId, progressStage, filesTouched, thinkingBuffer, textBuffer }` | Renderer refresh recovery |
 
 ### Model Providers
@@ -107,11 +107,13 @@ Everything in `src/domain/`. Pure TypeScript declarations — zero imports from 
 
 | Type | Shape | Used By |
 |------|-------|---------|
-| `UsageRecord` | `{ conversationId, inputTokens, outputTokens, thinkingTokens, model, timestamp }` | UsageService |
-| `UsageSummary` | `{ totalInputTokens, totalOutputTokens, totalThinkingTokens, conversationCount }` | SettingsView |
+| `StreamUsage` | `{ inputTokens, outputTokens, thinkingTokens, cacheReadTokens?, cacheWriteTokens?, costUsd? }` | `done` / max-turns `error` events, `streamUsage.ts` helpers. `inputTokens` is uncached input; `costUsd` is the provider-reported cost when there is one |
+| `UsageRecord` | `{ conversationId, inputTokens, outputTokens, thinkingTokens, cacheReadTokens, cacheWriteTokens, costUsd: number \| null, model, timestamp }` | UsageService |
+| `NewUsageRecord` | `UsageRecord` minus `timestamp`, with cache counts and `costUsd` optional (default 0 / null) | `recordUsage` on IUsageService and IDatabaseService |
+| `UsageSummary` | `{ totalInputTokens, totalOutputTokens, totalThinkingTokens, totalCacheReadTokens, totalCacheWriteTokens, conversationCount }` | SettingsView, StatisticsService |
 | `ClaudeCliUpdateResult` | `{ status: 'updated' \| 'up-to-date' \| 'failed' \| 'busy' \| 'not-installed', output, versionBefore, versionAfter, manualCommand }` | Claude CLI update flow |
 | `ClaudeCliUpdateReminder` | `{ due, version }` | Weekly update offer |
-| `UsageCostBasisRow` | `{ agentName, phase, model, inputTokens, outputTokens, thinkingTokens }` | StatisticsService (per-model pricing) |
+| `UsageCostBasisRow` | `{ agentName, phase, model, reportedCostUsd, unreportedInputTokens, unreportedOutputTokens, unreportedThinkingTokens, unreportedCacheReadTokens, unreportedCacheWriteTokens }` | StatisticsService. Reported costs are summed; token counts cover only rows with no reported cost |
 
 ### Revision Queue
 
@@ -337,7 +339,7 @@ Implemented by: `DatabaseService` (`src/infrastructure/database/`)
 | `recordUsage` | `(record) => void` | — |
 | `getUsageSummary` | `(bookSlug?) => UsageSummary` | Aggregated usage |
 | `getUsageByConversation` | `(conversationId) => UsageRecord[]` | Usage records |
-| `getUsageCostBasis` | `(bookSlug?) => UsageCostBasisRow[]` | Token totals grouped by agent, phase (null → `adhoc`) and model |
+| `getUsageCostBasis` | `(bookSlug?) => UsageCostBasisRow[]` | Reported cost plus unpriced token totals, grouped by agent, phase (null → `adhoc`) and model |
 | `updateBookSlug` | `(oldSlug, newSlug) => void` | Migrates conversation references |
 | `exportBookHistory` | `(bookSlug, destFile) => BookHistoryCounts` | Writes one book's history to a new snapshot file |
 | `importBookHistory` | `(srcFile, targetSlug) => BookHistoryImportReceipt` | One-transaction merge; refuses newer schema or id clashes |
@@ -751,6 +753,8 @@ Implemented by: `QueryService` (`src/application/QueryService.ts`)
 | `CLAUDE_CLI_SECONDARY_MODEL` | `'sonnet'` | First Claude model that differs from the primary |
 | `MODEL_PRICING` | `Record<string, ModelPricing>` | USD per 1M tokens. Alias entries first (`opus` $4/$20, `sonnet` $2/$10, `haiku` $0.10/$0.50, `fable` $10/$50, as of 2026-10), then the full IDs they resolved to (`claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1`), then legacy dated IDs. The first entry is the fallback price. |
 | `getModelPricing(modelId)` | `(string) => ModelPricing` | Exact entry → family alias for an unlisted `claude-<family>-N[-M]` ID → first entry. Used by `StatisticsService`. |
+| `CACHE_READ_PRICE_MULTIPLIER` | `number` (0.1) | Cache-read price as a multiple of input price. Only for usage with no reported cost. |
+| `CACHE_WRITE_PRICE_MULTIPLIER` | `number` (1.25) | Cache-write price as a multiple of input price (5-minute rate; 1-hour writes cost 2×, so a lower bound). Only for usage with no reported cost. |
 | `PROSE_FONT_SIZE_DEFAULT` / `_MIN` / `_MAX` / `_STEP` | `number` | Reading font size for `ProseViewer`: 16.5 px default, 12–28 px range, 1 px step |
 | `clampProseFontSize(size)` | `(number) => number` | Clamps to the range, rounds to 0.5 px; non-finite → default |
 | `PROSE_FONTS` | `ReadonlyArray<{ id, label, stack }>` | Reading font presets: Fraunces (default), Classic serif (Georgia), Sans (Inter), Monospace (JetBrains Mono) |

@@ -93,7 +93,7 @@ describe('stream lifecycle', () => {
     expect(messages.at(-1)).toMatchObject({ role: 'assistant', content: 'The reply.', thinking: 'reasoning' });
 
     expect(usageRecords).toEqual([
-      { conversationId, inputTokens: 10, outputTokens: 5, thinkingTokens: 2, model: 'test-model' },
+      { conversationId, inputTokens: 10, outputTokens: 5, thinkingTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0, model: 'test-model' },
     ]);
 
     expect(db.getActiveStreamSessions()).toEqual([]); // session ended
@@ -105,6 +105,17 @@ describe('stream lifecycle', () => {
     const stream = start();
     stream.onEvent({ ...(doneEvent({}) as StreamEvent & { type: 'done' }), model: 'claude-opus-5-5' });
     expect(usageRecords.at(-1)).toMatchObject({ model: 'claude-opus-5-5' });
+  });
+
+  it('records cache tokens and the reported cost when done carries them', () => {
+    const stream = start();
+    stream.onEvent({
+      ...(doneEvent({}) as StreamEvent & { type: 'done' }),
+      cacheReadTokens: 30_000,
+      cacheWriteTokens: 1_200,
+      costUsd: 0.04,
+    });
+    expect(usageRecords.at(-1)).toMatchObject({ cacheReadTokens: 30_000, cacheWriteTokens: 1_200, costUsd: 0.04 });
   });
 
   it('error ends the session without saving a message and invokes onError with the partial buffer', async () => {

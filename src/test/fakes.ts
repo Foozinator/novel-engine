@@ -339,7 +339,7 @@ export function makeUsageRecorder(): { usage: IUsageService; records: Parameters
     recordUsage: (params: Parameters<IUsageService['recordUsage']>[0]) => {
       records.push(params);
     },
-    getSummary: () => ({ totalInputTokens: 0, totalOutputTokens: 0, totalThinkingTokens: 0, conversationCount: 0 }),
+    getSummary: () => ({ totalInputTokens: 0, totalOutputTokens: 0, totalThinkingTokens: 0, totalCacheReadTokens: 0, totalCacheWriteTokens: 0, conversationCount: 0 }),
     getByConversation: () => [],
   } as IUsageService;
   return { usage, records };
