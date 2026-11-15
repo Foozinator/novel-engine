@@ -4,14 +4,17 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useCliUpdateStore } from '../../stores/cliUpdateStore';
 import { useBookStore } from '../../stores/bookStore';
 import { useModalChatStore } from '../../stores/modalChatStore';
-import type { FableProbeResult, ModelInfo, TourId, UsageSummary } from '@domain/types';
+import type { FableProbeResult, ModelInfo, ProseFontId, TourId, UsageSummary } from '@domain/types';
 import {
   FABLE_MODEL_ID,
+  PROSE_FONTS,
   PROSE_FONT_SIZE_DEFAULT,
   PROSE_FONT_SIZE_MAX,
   PROSE_FONT_SIZE_MIN,
   PROSE_FONT_SIZE_STEP,
   clampProseFontSize,
+  resolveProseFontStack,
+  sanitizeFontFamilyName,
 } from '@domain/constants';
 import { ProviderSection } from './ProviderSection';
 import { useProviderStore } from '../../stores/providerStore';
@@ -553,15 +556,72 @@ function ReadingSection(): React.ReactElement {
   const { settings, update } = useSettingsStore();
   const fontSize = settings?.proseFontSize ?? PROSE_FONT_SIZE_DEFAULT;
   const showLineNumbers = settings?.showChapterLineNumbers ?? false;
+  const proseFont = settings?.proseFont ?? 'fraunces';
+  const savedCustom = settings?.proseFontCustom ?? '';
+  const [customDraft, setCustomDraft] = useState(savedCustom);
+  useEffect(() => setCustomDraft(savedCustom), [savedCustom]);
   const setSize = (size: number): void => {
     update({ proseFontSize: clampProseFontSize(size) });
   };
+  const commitCustom = (): void => {
+    const name = sanitizeFontFamilyName(customDraft);
+    setCustomDraft(name);
+    if (name !== savedCustom) update({ proseFontCustom: name });
+  };
+  const previewFamily = resolveProseFontStack(
+    proseFont,
+    proseFont === 'custom' ? customDraft : savedCustom,
+  );
+  const inputClass =
+    'rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-800 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200';
   const buttonClass =
     'rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-sm text-zinc-700 transition-colors hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700';
 
   return (
     <section className="space-y-3">
       <SectionHeading>Reading</SectionHeading>
+      <div className="flex flex-wrap items-center gap-3">
+        <label htmlFor="prose-font" className="w-32 text-sm text-zinc-700 dark:text-zinc-300">
+          Reading font
+        </label>
+        <select
+          id="prose-font"
+          value={proseFont}
+          onChange={(e) => update({ proseFont: e.target.value as ProseFontId })}
+          className={inputClass}
+        >
+          {PROSE_FONTS.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.label}
+            </option>
+          ))}
+          <option value="custom">Custom (installed font)…</option>
+        </select>
+        {proseFont === 'custom' && (
+          <input
+            type="text"
+            aria-label="Custom font name"
+            placeholder="e.g. Garamond"
+            value={customDraft}
+            onChange={(e) => setCustomDraft(e.target.value)}
+            onBlur={commitCustom}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitCustom();
+            }}
+            className={`${inputClass} w-48`}
+          />
+        )}
+      </div>
+      <p
+        className="rounded-md border border-zinc-200 px-3 py-2 leading-relaxed text-zinc-800 dark:border-zinc-700 dark:text-zinc-200"
+        style={{ fontFamily: previewFamily, fontSize: `${fontSize}px` }}
+        data-testid="prose-font-preview"
+      >
+        The rain had not stopped for three days, and the gutters ran like small rivers toward the harbor.
+      </p>
+      <HelpText>
+        A custom font must be installed on this computer. An unknown name falls back to Fraunces.
+      </HelpText>
       <div className="flex items-center gap-3">
         <span className="w-32 text-sm text-zinc-700 dark:text-zinc-300">Prose font size</span>
         <button

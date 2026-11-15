@@ -40,6 +40,18 @@ describe('ProseViewer', () => {
     expect((container.firstElementChild as HTMLElement).style.fontSize).toBe('22px');
   });
 
+  it('uses Fraunces by default and the chosen reading font when set', () => {
+    const first = render(<ProseViewer content="text" />);
+    expect((first.container.firstElementChild as HTMLElement).style.fontFamily).toContain('Fraunces Variable');
+    first.unmount();
+
+    useSettingsStore.setState({
+      settings: { ...DEFAULT_SETTINGS, proseFont: 'custom', proseFontCustom: 'EB Garamond' },
+    });
+    const { container } = render(<ProseViewer content="text" />);
+    expect((container.firstElementChild as HTMLElement).style.fontFamily).toMatch(/^"?'?EB Garamond/);
+  });
+
   it('adds no line numbers unless asked', () => {
     const { container } = render(<ProseViewer content={'One\n\nTwo'} />);
     expect(container.querySelector('[data-line]')).toBeNull();

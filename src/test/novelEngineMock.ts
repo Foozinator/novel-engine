@@ -76,6 +76,8 @@ export function makeAppSettings(overrides: Partial<AppSettings> = {}): AppSettin
     theme: 'system',
     proseFontSize: 16.5,
     showChapterLineNumbers: false,
+    proseFont: 'fraunces',
+    proseFontCustom: '',
     initialized: true,
     authorName: 'Test Author',
     providers: [],

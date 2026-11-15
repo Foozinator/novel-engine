@@ -4,6 +4,29 @@ All notable changes to Novel Engine are documented here.
 
 ---
 
+## [2026-11-14] — Reading font selection (#35)
+
+### Summary
+
+Completes #35. The earlier entry today added prose font size and chapter line numbers, and theme selection already existed. Typeset prose views (Chapter, Sources, Reports and Explorer tabs, and the Manuscript reader) now use a reading font chosen in Settings → Appearance → Reading. The presets are Fraunces (default), Classic serif (Georgia, falling back to the system serif), Sans (Inter) and Monospace (JetBrains Mono). Fraunces, Inter and JetBrains Mono are already bundled, so no new packages. "Custom" takes the name of any installed font. The name is sanitised, and Fraunces stays in the stack as the fallback. A preview line shows the choice. Interface fonts are unchanged.
+
+### Changed
+- `src/domain/types.ts` — Added `ProseFontId`. `AppSettings` gains `proseFont: ProseFontId` and `proseFontCustom: string`.
+- `src/domain/constants.ts` — `DEFAULT_SETTINGS` gets `proseFont: 'fraunces'` and `proseFontCustom: ''`. Added `PROSE_FONTS`, `sanitizeFontFamilyName()` and `resolveProseFontStack()`.
+- `src/renderer/components/common/ProseViewer.tsx` — Inline `fontFamily` from `resolveProseFontStack(settings.proseFont, settings.proseFontCustom)`. Raw (monospace) mode is unchanged.
+- `src/renderer/components/Settings/SettingsView.tsx` — `ReadingSection`: "Reading font" select, a custom-name input (saved on blur or Enter, not per keystroke) and a preview line.
+- `src/domain/constants.test.ts`, `src/renderer/components/common/ProseViewer.test.tsx`, `src/renderer/components/Settings/SettingsView.test.tsx` — Font helper, rendering and settings UI tests.
+- `src/test/novelEngineMock.ts` — `makeAppSettings` includes the two new fields.
+- `docs/architecture/DOMAIN.md`, `docs/architecture/RENDERER.md` — New type, fields, constants and UI.
+
+### Architecture Impact
+- None — no wiring changes. The new fields ride `settings:update`.
+
+### Migration Notes
+- None. Missing fields are filled from `DEFAULT_SETTINGS` on load.
+
+---
+
 ## [2026-11-14] — Reading font size (Ctrl+wheel) and chapter line numbers (#35)
 
 ### Summary
