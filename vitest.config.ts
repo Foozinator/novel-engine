@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
+import pkg from './package.json';
 
 const aliases = {
   '@domain': path.resolve(__dirname, 'src/domain'),
@@ -22,6 +23,8 @@ export default defineConfig({
       {
         plugins: [react()],
         resolve: { alias: aliases },
+        // Mirrors vite.renderer.config.ts
+        define: { __APP_VERSION__: JSON.stringify(pkg.version) },
         test: {
           name: 'jsdom',
           environment: 'jsdom',

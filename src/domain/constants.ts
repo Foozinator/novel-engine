@@ -5,6 +5,22 @@
  */
 import type { AgentName, AgentMeta, AuditSeverity, CreativeAgentName, PipelinePhaseId, AppSettings, ProseFontId, ProviderId, ProviderConfig, ModelInfo } from './types';
 
+// === Product Identity ===
+
+/**
+ * Display name of this fork. Must match `productName` in package.json, which
+ * also names the default data folder (`{appData}/Novel Engine Spur`).
+ * Code identifiers (`window.novelEngine`, `novel-engine.db`, `novel-asset://`)
+ * keep the original name so data folders stay compatible with upstream.
+ */
+export const APP_NAME = 'Novel Engine Spur';
+
+/** Fork repository, for bug reports and the About section. */
+export const APP_REPO_URL = 'https://github.com/Foozinator/novel-engine';
+
+/** The upstream project this fork is based on (frozen since November 2026). */
+export const UPSTREAM_REPO_URL = 'https://github.com/john-paul-ruf/novel-engine';
+
 // === Per-Agent Read Guidance ===
 
 /**

@@ -1,6 +1,6 @@
 # Domain — Types, Interfaces, Constants
 
-> Last updated: 2026-11-14 (#37)
+> Last updated: 2026-11-15 (#37, after #39)
 
 Everything in `src/domain/`. Pure TypeScript declarations — zero imports from other layers.
 
@@ -147,6 +147,16 @@ Everything in `src/domain/`. Pure TypeScript declarations — zero imports from 
 | Type | Shape | Used By |
 |------|-------|---------|
 | `FileEntry` | `{ name, path, isDirectory, children? }` | FileTree, FileBrowser |
+
+### Data Folder & Prompt Sync
+
+| Type | Shape | Used By |
+|------|-------|---------|
+| `DataFolderSource` | `'flag' \| 'env' \| 'pointer' \| 'default'` | dataLocation, Settings → Data Folder |
+| `DataFolderKind` | `'empty' \| 'novel-engine' \| 'other'` | `classifyFolder()`, confirm dialogs |
+| `DataFolderInfo` | `{ current, defaultDir, source }` | `dataFolder:get`, DataFolderSection |
+| `PromptSyncResult` | `{ updated: string[], edited: string[] }` | `ensureAgents()` return, IPC `paths.promptSync` |
+| `PromptSyncStatus` | `PromptSyncResult & { agentsDir }` | `agents:promptSync`, AgentPromptsSection |
 
 ### Version Control
 
@@ -659,6 +669,14 @@ Implemented by: `QueryService` (`src/application/QueryService.ts`)
 ---
 
 ## Constants
+
+### Product Identity
+
+| Constant | Value | Used By |
+|----------|-------|---------|
+| `APP_NAME` | `'Novel Engine Spur'` (must match `package.json` `productName`) | dataFolderDialogs, Settings → About |
+| `APP_REPO_URL` | `'https://github.com/Foozinator/novel-engine'` | Settings → About |
+| `UPSTREAM_REPO_URL` | `'https://github.com/john-paul-ruf/novel-engine'` | Settings → About credit |
 
 ### AGENT_REGISTRY
 

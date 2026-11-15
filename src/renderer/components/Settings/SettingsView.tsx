@@ -4,8 +4,20 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useCliUpdateStore } from '../../stores/cliUpdateStore';
 import { useBookStore } from '../../stores/bookStore';
 import { useModalChatStore } from '../../stores/modalChatStore';
-import type { FableProbeResult, ModelInfo, ProseFontId, TourId, UsageSummary } from '@domain/types';
+import type {
+  DataFolderInfo,
+  DataFolderSource,
+  FableProbeResult,
+  ModelInfo,
+  PromptSyncStatus,
+  ProseFontId,
+  TourId,
+  UsageSummary,
+} from '@domain/types';
 import {
+  APP_NAME,
+  APP_REPO_URL,
+  UPSTREAM_REPO_URL,
   FABLE_MODEL_ID,
   PROSE_FONTS,
   PROSE_FONT_SIZE_DEFAULT,
@@ -155,7 +167,7 @@ function ClaudeCliUpdateControls(): React.ReactElement {
         </button>
       </div>
       <HelpText>
-        Runs `claude update`. Model aliases can move to a model an older CLI can&apos;t run, and Novel Engine&apos;s short CLI calls may not give the CLI&apos;s own auto-update a chance to run.
+        Runs `claude update`. Model aliases can move to a model an older CLI can&apos;t run, and Novel Engine Spur&apos;s short CLI calls may not give the CLI&apos;s own auto-update a chance to run.
       </HelpText>
     </div>
   );
@@ -366,7 +378,7 @@ function ModelSelectionSection(): React.ReactElement {
         </div>
         {!primaryModelExists && settings?.model && primaryFallback && (
           <HelpText>
-            Selected model is no longer available. Choose an available model below; Novel Engine will use {primaryFallback.label} until updated.
+            Selected model is no longer available. Choose an available model below; Novel Engine Spur will use {primaryFallback.label} until updated.
           </HelpText>
         )}
         <div className="space-y-4">
@@ -794,6 +806,132 @@ function CatalogExportSection(): React.ReactElement {
   );
 }
 
+const SECONDARY_BUTTON =
+  'rounded-lg border border-zinc-300 dark:border-zinc-700 px-4 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-zinc-900 dark:text-zinc-100 disabled:opacity-50 disabled:hover:bg-transparent';
+
+const DATA_SOURCE_LABEL: Record<DataFolderSource, string> = {
+  default: 'Default folder',
+  pointer: 'Chosen in Settings',
+  flag: 'Set by the --data-dir option',
+  env: 'Set by the NOVEL_ENGINE_DATA_DIR variable',
+};
+
+function DataFolderSection(): React.ReactElement {
+  const [info, setInfo] = useState<DataFolderInfo | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    window.novelEngine.dataFolder.get().then(setInfo).catch((error) => {
+      console.error('Failed to load data folder info:', error);
+    });
+  }, []);
+
+  // change/reset show native confirm dialogs and restart the app on success.
+  const run = useCallback(async (action: () => Promise<boolean>) => {
+    setBusy(true);
+    try {
+      await action();
+    } catch (error) {
+      console.error('Data folder change failed:', error);
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const overridden = info?.source === 'flag' || info?.source === 'env';
+
+  return (
+    <section className="space-y-3">
+      <SectionHeading>Data Folder</SectionHeading>
+      <HelpText>
+        Where Novel Engine Spur keeps your books, conversation history, agent prompts and settings. Changing it restarts
+        the app and does not move anything; copy the folder yourself first (with the app closed) to take your data
+        along.
+      </HelpText>
+      {info && (
+        <>
+          <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-sm">
+            <div className="break-all font-mono text-zinc-900 dark:text-zinc-100" data-testid="data-folder-path">
+              {info.current}
+            </div>
+            <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{DATA_SOURCE_LABEL[info.source]}</div>
+          </div>
+          {overridden && (
+            <p className="text-xs text-amber-700 dark:text-amber-300">
+              A startup override is active, so the folder can't be changed here.
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <button className={SECONDARY_BUTTON} onClick={() => window.novelEngine.shell.openPath(info.current)}>
+              Open Folder
+            </button>
+            <button
+              className={SECONDARY_BUTTON}
+              disabled={busy || overridden}
+              onClick={() => run(window.novelEngine.dataFolder.change)}
+            >
+              Change…
+            </button>
+            {info.source === 'pointer' && (
+              <button
+                className={SECONDARY_BUTTON}
+                disabled={busy}
+                onClick={() => run(window.novelEngine.dataFolder.reset)}
+              >
+                Use Default Folder
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function AgentPromptsSection(): React.ReactElement {
+  const [status, setStatus] = useState<PromptSyncStatus | null>(null);
+
+  useEffect(() => {
+    window.novelEngine.agents.promptSync().then(setStatus).catch((error) => {
+      console.error('Failed to load prompt sync status:', error);
+    });
+  }, []);
+
+  return (
+    <section className="space-y-3">
+      <SectionHeading>Agent Prompts</SectionHeading>
+      <HelpText>
+        Novel Engine Spur updates its agent prompts when you install a new version. Prompts you have edited are left as
+        they are and don't get those updates.
+      </HelpText>
+      {status && (
+        <>
+          {status.updated.length > 0 && (
+            <p className="text-sm text-green-600 dark:text-green-400" data-testid="prompts-updated">
+              Updated this launch: {status.updated.join(', ')}
+            </p>
+          )}
+          {status.edited.length > 0 ? (
+            <div className="text-sm text-zinc-700 dark:text-zinc-300" data-testid="prompts-edited">
+              <p>Edited by you (not updated):</p>
+              <ul className="mt-1 list-inside list-disc font-mono text-xs">
+                {status.edited.map((name) => (
+                  <li key={name}>{name}</li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">All prompts match the bundled versions.</p>
+          )}
+          <button className={SECONDARY_BUTTON} onClick={() => window.novelEngine.shell.openPath(status.agentsDir)}>
+            Open Prompts Folder
+          </button>
+        </>
+      )}
+    </section>
+  );
+}
+
 function AuthorProfileSection(): React.ReactElement {
   const { settings, update } = useSettingsStore();
   const [authorName, setAuthorName] = useState('');
@@ -937,25 +1075,31 @@ function AuthorProfileSection(): React.ReactElement {
   );
 }
 
+/** Injected from package.json by vite.renderer.config.ts (and vitest.config.ts). */
+declare const __APP_VERSION__: string;
+
 function AboutSection(): React.ReactElement {
   return (
     <section className="space-y-3">
       <SectionHeading>About</SectionHeading>
       <div className="space-y-2">
         <p className="text-sm text-zinc-700 dark:text-zinc-300">
-          <span className="font-medium">Novel Engine</span> v0.1.0
+          <span className="font-medium">{APP_NAME}</span> v{__APP_VERSION__}
         </p>
+        <HelpText>A fork of Novel Engine by John Paul Ruf, licensed under AGPL-3.0.</HelpText>
         <HelpText>Powered by selectable AI backends: Claude CLI, Codex CLI, Ollama CLI, llama-server, and OpenAI-compatible providers.</HelpText>
         <div className="flex gap-4">
           <button
-            onClick={() =>
-              window.novelEngine.shell.openExternal(
-                'https://github.com/novel-engine/novel-engine',
-              )
-            }
+            onClick={() => window.novelEngine.shell.openExternal(APP_REPO_URL)}
             className="text-sm text-blue-600 dark:text-blue-400 underline decoration-blue-600/30 dark:decoration-blue-400/30 transition-colors hover:text-blue-600 dark:hover:text-blue-300"
           >
             GitHub
+          </button>
+          <button
+            onClick={() => window.novelEngine.shell.openExternal(UPSTREAM_REPO_URL)}
+            className="text-sm text-blue-600 dark:text-blue-400 underline decoration-blue-600/30 dark:decoration-blue-400/30 transition-colors hover:text-blue-600 dark:hover:text-blue-300"
+          >
+            Original Novel Engine
           </button>
           <button
             onClick={() =>
@@ -1094,6 +1238,10 @@ export function SettingsView(): React.ReactElement {
               <UsageSection />
               <SectionDivider />
               <CatalogExportSection />
+              <SectionDivider />
+              <DataFolderSection />
+              <SectionDivider />
+              <AgentPromptsSection />
             </>
           )}
 

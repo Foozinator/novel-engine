@@ -35,7 +35,7 @@ describe('bridge surface', () => {
         'chat', 'pipeline', 'build', 'catalog', 'pitches', 'pitchRoom', 'verity',
         'hotTake', 'adhocRevision', 'usage', 'revision', 'motifLedger', 'context',
         'shell', 'window', 'models', 'providers', 'series', 'findReplace',
-        'dashboard', 'statistics', 'helper', 'query',
+        'dashboard', 'statistics', 'helper', 'query', 'dataFolder',
       ].sort()
     );
   });

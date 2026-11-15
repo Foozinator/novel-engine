@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Generates platform-specific icon files for Novel Engine from a source PNG.
+ * Generates platform-specific icon files for Novel Engine Spur from a source PNG.
  *
  * Usage: node scripts/generate-icons.js [source.png]
  *

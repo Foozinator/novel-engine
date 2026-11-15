@@ -150,7 +150,7 @@ export function TitleBar(): React.ReactElement {
         <div className="w-[78px] shrink-0" />
       ) : (
         <div className="shrink-0 px-3">
-          <span className="text-xs font-medium text-zinc-500">Novel Engine</span>
+          <span className="text-xs font-medium text-zinc-500">Novel Engine Spur</span>
         </div>
       )}
 

@@ -1,6 +1,6 @@
-# Architecture — Novel Engine
+# Architecture — Novel Engine Spur
 
-> Last updated: 2026-11-14 (#37)
+> Last updated: 2026-11-15 (#37, after #39)
 
 Electron + React 18 + TypeScript 5 + Tailwind v4 + Zustand + better-sqlite3 + Claude Code CLI + Codex CLI + Ollama CLI + Pandoc
 
@@ -116,7 +116,9 @@ src/
 │
 ├── main/                                    # LAYER 4: Electron main process
 │   ├── index.ts                             # COMPOSITION ROOT — instantiates everything
-│   ├── bootstrap.ts                         # First-run directory/file creation
+│   ├── bootstrap.ts                         # First-run directory/file creation; ensureAgents() bundled-prompt sync
+│   ├── dataLocation.ts                      # Resolves the data folder (flag › env › pointer › default); pointer I/O
+│   ├── dataFolderDialogs.ts                 # Native dialogs: startup data-folder checks, change/reset from Settings
 │   ├── notifications.ts                     # OS notification manager
 │   └── ipc/
 │       └── handlers.ts                      # Thin adapter: IPC channel → service call
@@ -336,6 +338,21 @@ The renderer layer normally uses `import type` only from domain. However, **pure
 - All renderer↔main communication through the preload bridge
 - Custom `novel-asset://` protocol for serving local files (cover images) to renderer
 
+### Data Folder
+
+`{userData}` below is the **data folder**. All app data derives from it. `src/main/index.ts` resolves it before `app.whenReady()` with `resolveDataDir()` (`src/main/dataLocation.ts`) and calls `app.setPath('userData', …)` when it differs from Electron's default. Priority:
+
+1. `--data-dir=<absolute path>` command-line flag
+2. `NOVEL_ENGINE_DATA_DIR` environment variable
+3. Pointer file `data-location.json` in Electron's **default** userData folder (`{ "dataDir": string | null, "confirmed": true }`), written by Settings → Data Folder or the startup dialogs
+4. Electron's default userData folder, named after `productName` (`%APPDATA%\Novel Engine Spur`, `~/.config/Novel Engine Spur`, `~/Library/Application Support/Novel Engine Spur`)
+
+Chromium `sessionData` follows `userData`, so renderer localStorage is per data folder. An unusable folder (relative, not a folder, not writable, malformed pointer) triggers a startup dialog before bootstrap. On first launch with no pointer, no app data in Spur's default folder, and app data in the pre-rename `{appData}/Novel Engine` folder (`LEGACY_DATA_FOLDER_NAME`, which upstream installs still use), the app asks once: copy it into the default folder (`copyAppData()`, which skips Chromium profile files and the pointer and never overwrites), use it in place (pointer → legacy folder, relaunch), or start fresh. Upstream ignores `data-location.json`.
+
+### Product Identity
+
+The fork ships as **Novel Engine Spur** (`APP_NAME` in `src/domain/constants.ts`, `productName` in `package.json`). Packaging IDs all differ from upstream so both install side by side: executable `novel-engine-spur`, bundle ID `io.github.foozinator.novel-engine-spur`, Squirrel `NovelEngineSpur`, deb/rpm `novel-engine-spur`, artifacts `Novel-Engine-Spur-{version}-{platform}-{arch}.{ext}`. Code identifiers and on-disk names keep the original name so data folders stay compatible with upstream: `window.novelEngine`, `novel-engine.db`, `novel-asset://`, `novel-engine:*` localStorage keys, `NOVEL_ENGINE_DATA_DIR`.
+
 ### Book Directory Structure
 
 ```
@@ -364,6 +381,8 @@ The renderer layer normally uses `import type` only from domain. However, **pure
 │       │       └── notes.md
 │       └── dist/                   # Build outputs
 ├── custom-agents/                  # Agent .md prompt files
+│   └── .bundled-manifest.json      # Bundled hash each prompt was installed from (prompt sync)
+├── data-location.json             # Pointer to the data folder (default folder only)
 ├── author-profile.md              # Global author profile
 ├── active-book.json               # { "book": "slug-name" }
 ├── settings.json                  # AppSettings

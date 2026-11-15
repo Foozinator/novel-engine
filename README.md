@@ -1,40 +1,42 @@
-# Novel Engine
+# Novel Engine Spur
 
-# Pitch to Publish - Youtube Demo
+> **Novel Engine Spur is a community fork of [Novel Engine](https://github.com/john-paul-ruf/novel-engine) by John Paul Ruf.** Upstream development stopped in November 2026; Spur continues it. Spur installs alongside the original and keeps its own data folder, and on first launch it can copy your existing Novel Engine books over.
+
+# Pitch to Publish - YouTube Demo (original Novel Engine)
 [![Pitch to Publish - Demo](https://img.youtube.com/vi/OBsg2iKu_Io/maxresdefault.jpg)](https://www.youtube.com/watch?v=OBsg2iKu_Io)
 
 **A Desktop Publishing Studio for Novels**
 
-**Ten books on Amazon. Built with seven AI editors in one app.**
+**Seven AI editors in one app.**
 
-Novel Engine is a desktop app that pairs you with a full editorial team — a story coach, ghostwriter, first reader, developmental editor, task master, copy editor, and publisher — all running locally on your machine.
+Novel Engine Spur is a desktop app that pairs you with a full editorial team — a story coach, ghostwriter, first reader, developmental editor, task master, copy editor, and publisher — all running locally on your machine.
 
 *Your manuscript stays on your laptop. Your copyright stays yours.*
 
 <p>
-  <a href="https://github.com/john-paul-ruf/novel-engine/releases/latest"><b>⬇ Download for macOS</b></a> ·
-  <a href="https://github.com/john-paul-ruf/novel-engine/releases/latest"><b>⬇ Download for Windows</b></a> ·
-  <a href="https://github.com/john-paul-ruf/novel-engine/releases/latest"><b>⬇ Download for Linux</b></a>
+  <a href="https://github.com/Foozinator/novel-engine/releases"><b>⬇ Releases</b></a>
 </p>
 
-### Books built with Novel Engine
+*No Spur release has been published yet. Until one is, [run it from source](#getting-started-from-source).*
+
+### Books built with the original Novel Engine
 
 [The Last Compiler](https://www.amazon.com/dp/B0GTPJWFQ7) · [The Lien](https://www.amazon.com/dp/B0GT13J22M) · [Cleartext](https://www.amazon.com/dp/B0GTN8DRM8) · [Project Sephirot](https://www.amazon.com/dp/B0GJ6S4N9G) · [The Recursive Archivist](https://www.amazon.com/dp/B0GTP2KB7Q) · [Day One](https://www.amazon.com/dp/B0GTQKZQSY) · [Reset](https://www.amazon.com/dp/B0GT6Z8T7Y) · [The Empty Orbit](https://www.amazon.com/dp/B0GT2JP9D5) · [The Keeper's Frequency](https://www.amazon.com/dp/B0GTF4H6F8) · [Junk Souls](https://www.amazon.com/dp/B0GTMGN843)
 
-I asked Claude and ChatGPT to audit ten books made in the MVP and this product with extended thinking on - [here are the results](https://john-paul-ruf.github.io/novel-engine/evaluation.html)
+Novel Engine's author asked Claude and ChatGPT to audit ten books made in the MVP and this product with extended thinking on - [here are the results](https://john-paul-ruf.github.io/novel-engine/evaluation.html)
 
 ![Your manuscript, front and center](screenshots/Screenshot%202026-07-08%20at%203.21.28%E2%80%AFAM.png)
 *The Manuscript view — your chapters on the left, your prose on the page. Read it like a book, or open the editor and write in it yourself.*
 
 - **Pitch to Published** — A 15-step pipeline takes your idea from a rough pitch to an export-ready manuscript (DOCX/EPUB) you can upload to KDP or send to an editor — then research agents and publishers, generate personalized query letters, and track submissions.
 - **Your Voice, Protected** — An interview with Verity, the ghostwriter, captures your prose style in a Voice Profile. Every draft sounds like you — and you can edit any chapter by hand, with your changes tracked and respected.
-- **Privacy-First** — Runs on the AI you choose: your Claude account, or free local models via Ollama. There is no Novel Engine cloud. Your drafts never leave your machine except to the AI service *you* connect.
+- **Privacy-First** — Runs on the AI you choose: your Claude account, or free local models via Ollama. There is no Novel Engine Spur cloud. Your drafts never leave your machine except to the AI service *you* connect.
 
 ---
 
 ## Your Words Are Yours
 
-> **📄 Your content is yours.** Novel Engine is AGPL-licensed **open-source software**, but the license applies to the *application code only*. Manuscripts, pitches, outlines, story bibles, and exported books you create with it are **your exclusive property** and are **not** covered by the AGPL. Nothing about using Novel Engine open-sources, licenses, or encumbers your writing in any way. Publish on Amazon, sell the film rights, keep it in a drawer — it's yours.
+> **📄 Your content is yours.** Novel Engine Spur is AGPL-licensed **open-source software**, but the license applies to the *application code only*. Manuscripts, pitches, outlines, story bibles, and exported books you create with it are **your exclusive property** and are **not** covered by the AGPL. Nothing about using Novel Engine Spur open-sources, licenses, or encumbers your writing in any way. Publish on Amazon, sell the film rights, keep it in a drawer — it's yours.
 
 ---
 
@@ -42,29 +44,29 @@ I asked Claude and ChatGPT to audit ten books made in the MVP and this product w
 
 ### 1. Download and install
 
-Grab the installer for your platform from the [Releases page](https://github.com/john-paul-ruf/novel-engine/releases/latest).
+Grab the installer for your platform from the [Releases page](https://github.com/Foozinator/novel-engine/releases).
 
 **macOS (.dmg)** — ⚠️ *The macOS app is currently **not signed or notarized by Apple*** (no Apple Developer account yet). The first time you open it, macOS will warn you and refuse to open it the normal way. This is expected. To open it:
 
-1. Drag **Novel Engine** to Applications
+1. Drag **Novel Engine Spur** to Applications
 2. **Right-click** (or Control-click) the app → **Open** → **Open**
-3. If macOS still blocks it: open **System Settings → Privacy & Security**, scroll down, and click **"Open Anyway"** next to the Novel Engine message
+3. If macOS still blocks it: open **System Settings → Privacy & Security**, scroll down, and click **"Open Anyway"** next to the Novel Engine Spur message
 
 You only have to do this once.
 
 **Windows (installer .exe)** — Windows SmartScreen may show *"Windows protected your PC."* Click **More info → Run anyway**. (Same reason: the installer isn't code-signed yet.)
 
-**Linux (.deb)** — install with your package manager, e.g. `sudo dpkg -i Novel-Engine-*.deb`
+**Linux (.deb)** — install with your package manager, e.g. `sudo dpkg -i Novel-Engine-Spur-*.deb`
 
 ### 2. Connect an AI
 
-Novel Engine doesn't ship with an AI inside — it drives one you connect. You need **one** of these:
+Novel Engine Spur doesn't ship with an AI inside — it drives one you connect. You need **one** of these:
 
 | Option | Cost | Setup |
 |--------|------|-------|
 | **Claude** *(recommended — best prose)* | Claude subscription | Install [Node.js](https://nodejs.org) (big green button), then open Terminal and run:<br>`npm install -g @anthropic-ai/claude-code` and `claude login` |
 | **Ollama** *(free, 100% local & private)* | Free | Install [Ollama](https://ollama.com/download) (normal app installer), then in Terminal: `ollama pull` a model of your choice |
-| **Codex CLI** | OpenAI account | If it's installed, Novel Engine finds it automatically |
+| **Codex CLI** | OpenAI account | If it's installed, Novel Engine Spur finds it automatically |
 
 That Terminal step is the most technical thing you'll ever have to do — the app handles everything else. (More backends — llama-server and any OpenAI-compatible endpoint — are covered in the [technical guide](./TECHNICAL.md).)
 
@@ -72,6 +74,7 @@ That Terminal step is the most technical thing you'll ever have to do — the ap
 
 The **Onboarding Wizard** takes it from there:
 
+0. **Existing books** — if you used the original Novel Engine, Spur offers to copy its books and history (or share its folder, or start fresh)
 1. **Welcome** — what you're looking at
 2. **Provider Setup** — the app checks for Claude / Codex / Ollama and tells you what it found
 3. **Model Selection** — pick the AI model to write with (you can change it anytime in Settings)
@@ -87,7 +90,7 @@ A guided tour starts automatically, and a floating **Help** assistant (bottom of
 If you'd rather run it from code — this is the whole thing:
 
 ```bash
-git clone https://github.com/john-paul-ruf/novel-engine.git
+git clone https://github.com/Foozinator/novel-engine.git
 cd novel-engine
 npm install
 npm run download-pandoc   # optional — enables DOCX/EPUB export
@@ -160,23 +163,23 @@ Your book moves through **15 phases**, each with a clear deliverable. Nothing ad
 ## Common Questions
 
 **Do I need to pay for AI?**
-If you use Claude (recommended for prose quality), you need a Claude subscription — Novel Engine drives the same Claude Code CLI your subscription already covers. If you use Ollama, it's completely free and runs on your own hardware.
+If you use Claude (recommended for prose quality), you need a Claude subscription — Novel Engine Spur drives the same Claude Code CLI your subscription already covers. If you use Ollama, it's completely free and runs on your own hardware.
 
 **Where is my book stored?**
 As plain Markdown files in a folder on your computer (shown in Settings). No proprietary format, no lock-in — you can open your chapters in any text editor, forever.
 
 **Is my writing private?**
-Novel Engine has no cloud, no accounts, and no telemetry. Your text is sent only to the AI backend you connected — and if that's Ollama, it never leaves your machine at all.
+Novel Engine Spur has no cloud, no accounts, and no telemetry. Your text is sent only to the AI backend you connected — and if that's Ollama, it never leaves your machine at all.
 
 **Will using this affect my copyright?**
 No. See [Your Words Are Yours](#your-words-are-yours) above — the open-source license covers the app's code, not your writing.
 
 **Something broke / I'm confused.**
-Click the **Help** bubble in the app, open an [issue](https://github.com/john-paul-ruf/novel-engine/issues), or email [john.paul.ruf@gmail.com](mailto:john.paul.ruf@gmail.com?subject=Novel%20Engine).
+Click the **Help** bubble in the app, or open an [issue](https://github.com/Foozinator/novel-engine/issues).
 
 > ### 🧪 Testers Needed!
 >
-> The installers are early builds and **have not been tested on all platforms** — I develop on macOS, so the Windows and Linux installers especially need eyes on them. If you try one, **please report what happens** — perfect, crash, or anything in between: [issues](https://github.com/john-paul-ruf/novel-engine/issues) or [john.paul.ruf@gmail.com](mailto:john.paul.ruf@gmail.com?subject=Novel%20Engine%20Installer%20Testing).
+> The installers are early builds and **have not been tested on all platforms**. If you try one, **please report what happens** (perfect, crash, or anything in between) in the [issues](https://github.com/Foozinator/novel-engine/issues).
 
 ---
 
@@ -188,19 +191,21 @@ All the engineering detail lives out of the way:
 - **[docs/architecture/](./docs/architecture/ARCHITECTURE.md)** — layer-by-layer architecture documentation
 - **[CHANGELOG.md](./CHANGELOG.md)** and **[RELEASE_NOTES.md](./RELEASE_NOTES.md)** — what's changed
 
-Novel Engine is built with Electron, React, and TypeScript in a clean five-layer architecture, and it's open source under [AGPL-3.0](LICENSE) — contributions and bug reports welcome.
+Novel Engine Spur is built with Electron, React, and TypeScript in a clean five-layer architecture, and it's open source under [AGPL-3.0](LICENSE) — contributions and bug reports welcome.
 
 ---
 
 ## License
 
-The application code is licensed under [AGPL-3.0-only](LICENSE).
+The application code is licensed under [AGPL-3.0-only](LICENSE). Spur is a modified version of [Novel Engine](https://github.com/john-paul-ruf/novel-engine) by John Paul Ruf.
 
 > **Reminder:** the license covers the app's source code. **Everything you write with the app is yours alone** — manuscripts, outlines, exports, all of it. See [Your Words Are Yours](#your-words-are-yours).
 
 ---
 
 # Dedication
+*(from Novel Engine's original author)*
+
 *To everyone who has an idea for a good book but doesn't know how to craft it, this is for you...*
 
 *For everyone else who may be impacted by this work, or whose sensibilities I have offended.*

@@ -1,6 +1,55 @@
 # Changelog
 
-All notable changes to Novel Engine are documented here.
+All notable changes to Novel Engine Spur are documented here.
+
+---
+
+## [2026-11-14] — Rename to Novel Engine Spur, data folder selection, bundled prompt sync (#39)
+
+### Summary
+
+The fork is renamed **Novel Engine Spur**. Upstream and the fork shared the product name, so they shared `%APPDATA%\Novel Engine`, and a fork install would have migrated upstream's live database and probably replaced the upstream program (same Squirrel ID). Spur now has its own display name, default data folder (`{appData}/Novel Engine Spur`), executable, macOS bundle ID, Squirrel ID, deb/rpm package and installer file names, so both apps install side by side. Code identifiers and on-disk names (`window.novelEngine`, `novel-engine.db`, `novel-asset://`, `novel-engine:*` localStorage keys) keep the original name so data folders stay compatible. On first launch, if the pre-rename `Novel Engine` folder holds data, Spur offers once to copy it in, use it in place, or start fresh. The data folder can also be chosen in Settings: a pointer file in the default folder records the choice, and `--data-dir=` or `NOVEL_ENGINE_DATA_DIR` override it for one run. The app redirects Electron's `userData` before `whenReady`, so the DB, books, agents, settings and series move together with no service changes. Separately, `ensureAgents` no longer copies with `COPYFILE_EXCL` only. It now updates prompts the user hasn't edited when the bundled version changes (the #30 `VERITY-LEDGER.md` fix never reached existing installs) and reports edited ones in Settings.
+
+### Added
+- `src/main/dataLocation.ts` — `resolveDataDir()` (flag › env › pointer › default, with usability checks), `readPointer()`/`writePointer()` (atomic) for `data-location.json`, `classifyFolder()` (ignores Chromium profile entries), `checkUsable()`, `LEGACY_DATA_FOLDER_NAME`, `needsLegacyImport()`, `copyAppData()` (skips Chromium profile entries, `Singleton*` and the pointer; never overwrites; removes partial copies on failure).
+- `src/main/dataFolderDialogs.ts` — `runStartupDataFolderChecks()` (unusable folder; first-launch legacy import: copy / use in place / start fresh), `chooseDataFolder()`, `resetDataFolder()`, `relaunch()`.
+- `scripts/agent-hashes.js` and npm script `agent-hashes` — Writes `agents/prompt-history.json` with SHA-256 hashes (CRLF→LF) of every bundled prompt version from git history plus the working tree.
+- `agents/prompt-history.json` — Generated history of past prompt versions. Bundled with `extraResource: ['./agents']`.
+- `src/main/dataLocation.test.ts`, `src/main/dataFolderDialogs.test.ts` — Resolution priority, pointer I/O, folder classification, legacy detection and copy, startup dialog flows.
+
+### Changed
+- `package.json`, `package-lock.json` — `name` `novel-engine-spur`, `productName` `Novel Engine Spur` (sets the default data folder). `author` is now the fork maintainer (name only); deb/rpm Maintainer fields derive from it. Added the `agent-hashes` script.
+- `vite.renderer.config.ts`, `vitest.config.ts` — Define `__APP_VERSION__` from `package.json` `version` for the renderer.
+- `forge.config.ts` — Packager `name` `Novel Engine Spur`, `executableName` `novel-engine-spur`, `appBundleId` `io.github.foozinator.novel-engine-spur`. Squirrel `name` `NovelEngineSpur`. Deb/rpm `name` `novel-engine-spur`, `productName` `Novel Engine Spur`, deb `mimeType` `application/x-novel-engine-spur`.
+- `scripts/ci-build.js`, `.github/workflows/release.yml` — Artifacts are `Novel-Engine-Spur-{version}-{platform}-{arch}.{ext}`. The release is titled `Novel Engine Spur {tag}`.
+- `index.html`, `src/renderer/components/Layout/TitleBar.tsx`, `src/renderer/components/Onboarding/OnboardingWizard.tsx`, `src/renderer/components/Helper/HelperPanel.tsx`, `src/renderer/components/Helper/HelperMessageList.tsx`, `src/renderer/components/Chat/ChatModal.tsx`, `src/renderer/components/Settings/ProviderSection.tsx` — Product name in UI copy.
+- `src/renderer/components/Settings/SettingsView.tsx` — Profile tab gains `DataFolderSection` and `AgentPromptsSection`. About shows `APP_NAME` and the real version (`__APP_VERSION__`; was hard-coded `v0.1.0`), credits upstream, and links to the fork (was the nonexistent `github.com/novel-engine/novel-engine`) and the original project. Product name in UI copy.
+- `src/domain/constants.ts` — Added `APP_NAME`, `APP_REPO_URL` and `UPSTREAM_REPO_URL`.
+- `src/domain/types.ts` — Added `DataFolderSource`, `DataFolderKind`, `DataFolderInfo`, `PromptSyncResult` and `PromptSyncStatus`.
+- `src/application/PipelineService.ts`, `src/infrastructure/codex-cli/CodexCliClient.ts` — Product name in agent-facing text (manual phase advancement note, Codex system instruction).
+- `agents/HELPER.md` — Product name. Bug reports go to the fork's issues instead of the frozen upstream repo.
+- `src/main/bootstrap.ts` — `ensureAgents()` returns `PromptSyncResult`. It keeps `custom-agents/.bundled-manifest.json` (filename → installed hash), replaces unedited prompts when the bundled version changes, and leaves edited ones alone. Pre-manifest installs are matched against `prompt-history.json`. Added `hashPrompt()`, `PROMPT_MANIFEST` and `PROMPT_HISTORY`.
+- `src/main/index.ts` — Resolves the data folder at module top level and calls `app.setPath('userData', …)`. Computes the legacy folder (`{appData}/Novel Engine`). Runs the startup data-folder checks before bootstrap. Passes `dataFolder` and `promptSync` to the IPC handlers.
+- `src/main/ipc/handlers.ts` — New channels `agents:promptSync`, `dataFolder:get`, `dataFolder:change` and `dataFolder:reset`. `paths` gains `dataFolder` and `promptSync`.
+- `src/preload/index.ts` — `agents.promptSync()` and a new `dataFolder` namespace (`get`, `change`, `reset`).
+- `src/test/mocks/electron.ts` — Mocks `app.relaunch`, `app.exit` and `dialog.showMessageBox`.
+- `src/test/novelEngineMock.ts`, `src/main/bootstrap.test.ts`, `src/main/ipc/handlers.test.ts`, `src/preload/index.test.ts`, `src/renderer/components/Settings/SettingsView.test.tsx`, `src/renderer/App.test.tsx`, `src/renderer/components/Onboarding/OnboardingWizard.test.tsx`, `src/renderer/components/Helper/HelperPanel.test.tsx`, `src/renderer/components/Helper/HelperMessageList.test.tsx`, `src/infrastructure/pandoc/pandoc.test.ts` — New bridge methods, prompt-sync table cases, a history-completeness check, channel and UI tests, and renamed strings.
+- `README.md`, `TECHNICAL.md`, `docs/USER_GUIDE.md` — Spur branding with upstream credit; fork release, clone and issue links (the upstream author's email removed from contact text); data folder, legacy import and prompt updates documented.
+- `CLAUDE.md`, `AGENTS.MD`, `FORGE-CONFIG.md`, `CHANGELOG.md` header — Product name; `CLAUDE.md` records the naming rules.
+- `docs/architecture/ARCHITECTURE.md`, `docs/architecture/IPC.md`, `docs/architecture/DOMAIN.md`, `docs/architecture/RENDERER.md` — Product identity, data folder convention, new files, channels, types, constants and UI.
+
+### Architecture Impact
+- New IPC channels: `agents:promptSync`, `dataFolder:get`, `dataFolder:change`, `dataFolder:reset`
+- New preload namespace: `dataFolder`
+- `registerIpcHandlers` `paths` gains `dataFolder: DataFolderInfo` and `promptSync: PromptSyncResult`
+- `userData` defaults to `{appData}/Novel Engine Spur` and may be redirected. Chromium `sessionData` (renderer localStorage) follows it.
+
+### Migration Notes
+- **New default data folder.** Spur no longer reads `{appData}/Novel Engine` automatically. On first launch with data only there, a one-time dialog offers Copy (recommended; the original folder is untouched), Use in place (pointer to the old folder; shares DB and prompts with any upstream install) or Start fresh. Every answer writes `data-location.json` in Spur's folder.
+- **New install identity.** On Windows, Spur installs as `NovelEngineSpur` and no longer replaces an upstream `NovelEngine` install. Shortcuts, Start menu entries and the Linux package are new; an earlier fork build installed under the old IDs must be uninstalled separately.
+- On the first launch after upgrading, prompts in `custom-agents/` that match any past bundled version are replaced with the current one. Files that match no known version are treated as edited, left in place, and listed in Settings. `custom-agents/.bundled-manifest.json` is created.
+- No DB schema change.
+- After editing anything under `agents/`, run `npm run agent-hashes`. A test fails otherwise.
 
 ---
 

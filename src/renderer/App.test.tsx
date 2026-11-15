@@ -164,7 +164,7 @@ describe('App smoke', () => {
       settings: { load: vi.fn(async () => makeAppSettings({ initialized: false })) },
     });
 
-    expect(await screen.findByText('Novel Engine')).toBeInTheDocument();
+    expect(await screen.findByText('Novel Engine Spur')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Get Started' })).toBeInTheDocument();
     expect(screen.queryByText('Your bookshelf')).not.toBeInTheDocument();
   });

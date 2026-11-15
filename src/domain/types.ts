@@ -1178,3 +1178,30 @@ export type BookStatistics = {
   };
   conversationCount: number;
 };
+
+// === Data folder (#39) ===
+
+/** Where the active data folder came from, in priority order. */
+export type DataFolderSource = 'flag' | 'env' | 'pointer' | 'default';
+
+/** What a candidate data folder already contains. */
+export type DataFolderKind = 'empty' | 'novel-engine' | 'other';
+
+export type DataFolderInfo = {
+  /** Absolute path of the folder in use this session. */
+  current: string;
+  /** Electron's default userData path, where the pointer file lives. */
+  defaultDir: string;
+  source: DataFolderSource;
+};
+
+/** Result of syncing bundled agent prompts into custom-agents/ at startup. */
+export type PromptSyncResult = {
+  /** Prompts replaced with the bundled version this launch. */
+  updated: string[];
+  /** Prompts the user edited; bundled changes are not applied to them. */
+  edited: string[];
+};
+
+/** `agents:promptSync` payload: the sync result plus where the prompts live. */
+export type PromptSyncStatus = PromptSyncResult & { agentsDir: string };

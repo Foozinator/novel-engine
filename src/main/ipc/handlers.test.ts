@@ -3,7 +3,10 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
+import { app } from 'electron';
+import type { DataFolderInfo } from '@domain/types';
 import { registerIpcHandlers } from './handlers';
+import { readPointer } from '../dataLocation';
 import { makeFakeAgents, makeFakeSettings, type FakeSettings } from '../../test/fakes';
 import { cleanupTempDirs, makeTempDir } from '../../test/tempDir';
 
@@ -36,6 +39,7 @@ function auto(impl: Record<string, AnyFn> = {}): ServiceFake {
 type Handler = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown;
 
 let userDataPath: string;
+let dataFolderInfo: DataFolderInfo;
 let settings: FakeSettings;
 let svc: Record<string, ServiceFake>;
 let hooks: { onActiveBookChanged: ReturnType<typeof vi.fn<(slug: string) => void>> };
@@ -52,6 +56,7 @@ const invoke = (channel: string, ...args: unknown[]): unknown => {
 beforeEach(async () => {
   vi.clearAllMocks();
   userDataPath = await makeTempDir();
+  dataFolderInfo = { current: userDataPath, defaultDir: userDataPath, source: 'default' };
   win = new BrowserWindow();
   vi.mocked(BrowserWindow.fromWebContents).mockReturnValue(null);
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
@@ -72,7 +77,12 @@ beforeEach(async () => {
 
   registerIpcHandlers(
     svc as unknown as Parameters<typeof registerIpcHandlers>[0],
-    { userDataPath, booksDir: '/fake/books-dir' },
+    {
+      userDataPath,
+      booksDir: '/fake/books-dir',
+      dataFolder: dataFolderInfo,
+      promptSync: { updated: ['SPARK.md'], edited: ['QUILL.md'] },
+    },
     hooks,
   );
 
@@ -384,5 +394,54 @@ describe('revision queue event forwarding', () => {
 
     onQueueEvent({ type: 'queue:done' });
     expect(svc.notifications.notifyRevisionQueueDone).toHaveBeenCalled();
+  });
+});
+
+describe('data folder and prompt sync (#39)', () => {
+  it('agents:promptSync returns the launch result and the agents folder', () => {
+    expect(invoke('agents:promptSync')).toEqual({
+      updated: ['SPARK.md'],
+      edited: ['QUILL.md'],
+      agentsDir: path.join(userDataPath, 'custom-agents'),
+    });
+  });
+
+  it('dataFolder:get returns the resolved folder info', () => {
+    expect(invoke('dataFolder:get')).toEqual(dataFolderInfo);
+  });
+
+  it('dataFolder:change writes the pointer and relaunches after confirm', async () => {
+    const target = await makeTempDir();
+    vi.mocked(dialog.showOpenDialog).mockResolvedValue({ canceled: false, filePaths: [target] });
+    vi.mocked(dialog.showMessageBox).mockResolvedValue({ response: 0, checkboxChecked: false });
+
+    await expect(invoke('dataFolder:change')).resolves.toBe(true);
+    expect(readPointer(userDataPath)).toEqual({ dataDir: target, confirmed: true });
+    expect(app.relaunch).toHaveBeenCalled();
+    expect(app.exit).toHaveBeenCalledWith(0);
+  });
+
+  it('dataFolder:change does nothing when the picker is cancelled', async () => {
+    await expect(invoke('dataFolder:change')).resolves.toBe(false);
+    expect(readPointer(userDataPath)).toBeNull();
+    expect(app.relaunch).not.toHaveBeenCalled();
+  });
+
+  it('dataFolder:change and reset refuse while a flag or env override is active', async () => {
+    dataFolderInfo.source = 'env';
+    await expect(invoke('dataFolder:change')).resolves.toBe(false);
+    await expect(invoke('dataFolder:reset')).resolves.toBe(false);
+    expect(dialog.showOpenDialog).not.toHaveBeenCalled();
+    expect(app.relaunch).not.toHaveBeenCalled();
+  });
+
+  it('dataFolder:reset points back at the default after confirm', async () => {
+    dataFolderInfo.source = 'pointer';
+    dataFolderInfo.current = '/elsewhere';
+    vi.mocked(dialog.showMessageBox).mockResolvedValue({ response: 0, checkboxChecked: false });
+
+    await expect(invoke('dataFolder:reset')).resolves.toBe(true);
+    expect(readPointer(userDataPath)).toEqual({ dataDir: null, confirmed: true });
+    expect(app.relaunch).toHaveBeenCalled();
   });
 });

@@ -35,7 +35,7 @@ function WelcomeStep({ onNext }: { onNext: () => void }): React.ReactElement {
   return (
     <div className="flex flex-col items-center text-center">
       <div className="mb-6 text-5xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
-        Novel Engine
+        Novel Engine Spur
       </div>
       <p className="mb-8 max-w-md text-lg text-zinc-500 dark:text-zinc-400">
         Turn your ideas into polished manuscripts with AI agents that collaborate like a
@@ -65,7 +65,7 @@ function ClaudeSetupStep({ onNext }: { onNext: () => void }): React.ReactElement
     <div className="flex flex-col items-center">
       <h2 className="mb-2 text-2xl font-bold text-zinc-900 dark:text-zinc-100">Connect an AI backend</h2>
       <p className="mb-6 max-w-md text-center text-sm text-zinc-500 dark:text-zinc-400">
-        Novel Engine can use Claude CLI, Codex CLI, Ollama, or llama-server. Install and authenticate at least one local CLI provider now, or skip and configure providers later in Settings.
+        Novel Engine Spur can use Claude CLI, Codex CLI, Ollama, or llama-server. Install and authenticate at least one local CLI provider now, or skip and configure providers later in Settings.
       </p>
 
       <div className="mb-6 w-full space-y-3 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-200/50 dark:bg-zinc-800/50 p-4">
@@ -391,7 +391,7 @@ function ReadyStep({
         onClick={() => onLaunch(bookTitle)}
         className="rounded-lg bg-blue-600 px-8 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-500"
       >
-        Launch Novel Engine
+        Launch Novel Engine Spur
       </button>
     </div>
   );

@@ -1160,7 +1160,7 @@ export class CodexCliClient implements IModelProvider {
       'CONVERSATION:',
       conversation,
       '',
-      'Respond as the assigned Novel Engine agent. Use available filesystem tools when needed.',
+      'Respond as the assigned Novel Engine Spur agent. Use available filesystem tools when needed.',
     ].join('\n');
   }
 }

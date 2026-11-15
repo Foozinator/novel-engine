@@ -16,6 +16,8 @@ import type {
   DataFolderImportResult,
   DataFolderPreview,
   ConversationPurpose,
+  DataFolderInfo,
+  PromptSyncStatus,
   FileDiff,
   FileEntry,
   FileVersion,
@@ -93,6 +95,14 @@ const api = {
   agents: {
     list: (): Promise<AgentMeta[]> => ipcRenderer.invoke('agents:list'),
     get: (name: AgentName): Promise<AgentMeta> => ipcRenderer.invoke('agents:get', name),
+    promptSync: (): Promise<PromptSyncStatus> => ipcRenderer.invoke('agents:promptSync'),
+  },
+
+  // Data folder (#39) — change/reset restart the app on success
+  dataFolder: {
+    get: (): Promise<DataFolderInfo> => ipcRenderer.invoke('dataFolder:get'),
+    change: (): Promise<boolean> => ipcRenderer.invoke('dataFolder:change'),
+    reset: (): Promise<boolean> => ipcRenderer.invoke('dataFolder:reset'),
   },
 
   // Books

@@ -237,7 +237,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.resolve-version.outputs.tag }}
-          name: Novel Engine ${{ needs.resolve-version.outputs.tag }}
+          name: Novel Engine Spur ${{ needs.resolve-version.outputs.tag }}
           draft: true
           generate_release_notes: true
           files: release-files/*
@@ -246,12 +246,12 @@ jobs:
 
             | Platform | File | Architecture |
             |----------|------|--------------|
-            | **macOS** (Apple Silicon) | `Novel-Engine-*-darwin-arm64.dmg` | ARM64 |
-            | **Windows** | `Novel-Engine-*-win32-x64.exe` | x86_64 |
-            | **Linux** (Debian/Ubuntu) | `Novel-Engine-*-linux-x64.deb` | x86_64 |
-            | **Linux** (Fedora/RHEL) | `Novel-Engine-*-linux-x64.rpm` | x86_64 |
-            | **Linux ARM** (Debian/Ubuntu) | `Novel-Engine-*-linux-arm64.deb` | ARM64 |
-            | **Linux ARM** (Fedora/RHEL) | `Novel-Engine-*-linux-arm64.rpm` | ARM64 |
+            | **macOS** (Apple Silicon) | `Novel-Engine-Spur-*-darwin-arm64.dmg` | ARM64 |
+            | **Windows** | `Novel-Engine-Spur-*-win32-x64.exe` | x86_64 |
+            | **Linux** (Debian/Ubuntu) | `Novel-Engine-Spur-*-linux-x64.deb` | x86_64 |
+            | **Linux** (Fedora/RHEL) | `Novel-Engine-Spur-*-linux-x64.rpm` | x86_64 |
+            | **Linux ARM** (Debian/Ubuntu) | `Novel-Engine-Spur-*-linux-arm64.deb` | ARM64 |
+            | **Linux ARM** (Fedora/RHEL) | `Novel-Engine-Spur-*-linux-arm64.rpm` | ARM64 |
 
             ### Prerequisites
             - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
