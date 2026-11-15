@@ -32,8 +32,16 @@ import { MultiCallOrchestrator } from './MultiCallOrchestrator';
 import { StreamManager } from './StreamManager';
 import { resolveThinkingBudget } from './thinkingBudget';
 
+/** Warning shown when the post-stream fallback writes the reply into phase output files. */
+function autoSaveNotice(paths: string[]): string {
+  return (
+    `Auto-saved the agent's reply to ${paths.join(' and ')} because it didn't write ` +
+    'the file itself. Check it before advancing.'
+  );
+}
+
 /**
- * ChatService — Central orchestrator for the send→stream→save message flow.
+ * ChatService —Central orchestrator for the send→stream→save message flow.
  *
  * Coordinates the full lifecycle of a single agent interaction:
  * 1. Validate CLI availability
@@ -358,16 +366,32 @@ export class ChatService implements IChatService {
       const phaseOutputFiles = pipelinePhase ? PHASE_OUTPUT_FILES[pipelinePhase] : undefined;
       const phaseContentMarker = pipelinePhase ? PHASE_OUTPUT_CONTENT_MARKERS[pipelinePhase] : undefined;
 
+      // The auto-save fallback is for providers whose models may not write
+      // files (Ollama, llama-server, OpenAI-compatible). Claude CLI has a
+      // reliable agent loop: a text-only reply from it is conversation
+      // (questions, Phase 0 decisions), never a document to save.
+      const fallbackOutputFiles =
+        isPipelineConversation && !isClaudeCli ? phaseOutputFiles : undefined;
+
       // Warn upfront for non-Claude-CLI pipeline conversations: the model
-      // has file tools available but may or may not use them. If it doesn't
-      // write the expected output file, the post-stream extraction fallback
-      // will auto-save the response text.
-      if (isPipelineConversation && !isClaudeCli && phaseOutputFiles) {
+      // has file tools available but may or may not use them. If it uses no
+      // tools and the output files don't exist yet, the post-stream
+      // extraction fallback will auto-save the response text.
+      if (fallbackOutputFiles) {
         onEvent({
           type: 'warning',
-          message: `File locations provided. If the model doesn't write to ${phaseOutputFiles.join(' and ')}, the response will be auto-saved there when complete.`,
+          message: `File locations provided. If the model doesn't use its tools to write ${fallbackOutputFiles.join(' and ')}, the response will be auto-saved there when complete.`,
         });
       }
+
+      // Any tool call means the model has a working tool loop, so its reply
+      // text is conversation, not a document. This also covers file changes
+      // made through Bash, which filesTouched (Write/Edit only) misses.
+      let sawToolCall = false;
+      const trackingOnEvent = (event: StreamEvent): void => {
+        if (event.type === 'toolUse') sawToolCall = true;
+        onEvent(event);
+      };
 
       // Step 8c–9: Start managed stream and call the agent
       const stream = this.streamManager.startStream({
@@ -377,9 +401,9 @@ export class ChatService implements IChatService {
         bookSlug,
         sessionId,
         callId: params.callId ?? '',
-        onEvent,
+        onEvent: trackingOnEvent,
       }, {
-        onDone: async (doneEvent) => {
+        onDone: async () => {
           // Validate and correct chapter file placement (Verity sometimes misplaces files)
           try {
             const correctedChapters = await this.chapterValidator.validateAndCorrect(bookSlug);
@@ -394,29 +418,21 @@ export class ChatService implements IChatService {
             console.error('Chapter validation error:', err);
           }
 
-          // Post-stream file extraction: when the agent finishes a pipeline
-          // conversation WITHOUT writing any files, extract the response text
-          // and write it to the expected output file(s).
+          // Post-stream file extraction: when a non-Claude-CLI pipeline turn
+          // finishes WITHOUT any tool calls, extract the response text and
+          // write it to the expected output file(s), if none exist yet.
           //
-          // This handles three cases:
+          // This handles two cases:
           // 1. Provider has no tool-use at all (e.g. OpenAI-compatible HTTP)
           // 2. Provider offers tools but the model ignores them (e.g. Ollama
           //    model that doesn't support function calling — generates text
           //    describing what it would do instead of actually calling tools)
-          // 3. Claude CLI agent that failed to write the expected file
-          //
-          // Use filesTouched from the done event (populated during the stream
-          // via tracker.touchFile) rather than stream.getChangedFiles(), which
-          // relies on filesChanged events that may arrive AFTER the done event
-          // for Claude CLI (filesChanged is emitted from the process close
-          // handler, which fires after the result event that triggers done).
-          const noFilesWritten = Object.keys(doneEvent.filesTouched).length === 0;
-          if (isPipelineConversation && phaseOutputFiles && noFilesWritten) {
+          if (fallbackOutputFiles && !sawToolCall) {
             console.log(
               `[ChatService] Post-stream extraction: phase=${pipelinePhase}, ` +
-              `files=${phaseOutputFiles.join(', ')}, bufferLen=${stream.getResponseBuffer().length}`,
+              `files=${fallbackOutputFiles.join(', ')}, bufferLen=${stream.getResponseBuffer().length}`,
             );
-            await this.extractResponseToFiles(bookSlug, stream.getResponseBuffer(), phaseOutputFiles, onEvent, phaseContentMarker);
+            await this.extractResponseToFiles(bookSlug, stream.getResponseBuffer(), fallbackOutputFiles, onEvent, phaseContentMarker);
           }
         },
 
@@ -426,12 +442,12 @@ export class ChatService implements IChatService {
         // (e.g. context window overflow mid-stream, connection drop after
         // the model finished generating but before the done event).
         onError: async (errorResponseBuffer: string) => {
-          if (isPipelineConversation && phaseOutputFiles && errorResponseBuffer.trim()) {
+          if (fallbackOutputFiles && !sawToolCall && errorResponseBuffer.trim()) {
             console.log(
               `[ChatService] Post-stream extraction (error fallback): phase=${pipelinePhase}, ` +
-              `files=${phaseOutputFiles.join(', ')}, bufferLen=${errorResponseBuffer.length}`,
+              `files=${fallbackOutputFiles.join(', ')}, bufferLen=${errorResponseBuffer.length}`,
             );
-            await this.extractResponseToFiles(bookSlug, errorResponseBuffer, phaseOutputFiles, onEvent, phaseContentMarker);
+            await this.extractResponseToFiles(bookSlug, errorResponseBuffer, fallbackOutputFiles, onEvent, phaseContentMarker);
           }
         },
       });
@@ -571,23 +587,6 @@ export class ChatService implements IChatService {
   }
 
   /**
-   * Extract the agent's response text and write it to the expected pipeline output file(s).
-   *
-   * Called after a non-tool-use provider (e.g. Ollama without function calling) finishes
-   * a pipeline conversation. The provider streamed the response as chat text but could not
-   * write files. This method takes the accumulated response buffer and writes it to the
-   * file(s) that the pipeline phase expects.
-   *
-   * For single-file phases (Ghostlight → reader-report.md, Lumen → dev-report.md),
-   * the entire response is written as-is.
-   *
-   * For multi-file phases (Forge → project-tasks.md + revision-prompts.md), the response
-   * is split at a well-known delimiter. The system prompt already instructs agents to write
-   * content for each file in sequence. We look for the second file's path as a markdown
-   * heading to split. If no delimiter is found, the full response goes to the primary file.
-   */
-
-  /**
    * Build inline manuscript content for non-tool-use providers.
    *
    * When the model can't use Read/LS tools, it needs the manuscript content
@@ -661,6 +660,29 @@ export class ChatService implements IChatService {
     return lines.join('\n');
   }
 
+  /**
+   * Extract the agent's response text and write it to the expected pipeline output file(s).
+   *
+   * Called after a non-Claude-CLI pipeline turn that made no tool calls (e.g. Ollama
+   * without function calling). The provider streamed the response as chat text but did
+   * not write files. This method takes the accumulated response buffer and writes it to
+   * the file(s) that the pipeline phase expects.
+   *
+   * Runs for the initial generation only: if ANY of the phase's output files already has
+   * content, nothing is written. A partly populated set means the agent is mid-workflow
+   * (e.g. Forge holding revision-prompts.md until the author answers Phase 0 decisions),
+   * and its reply is conversation, not the missing file.
+   *
+   * For single-file phases (Ghostlight → reader-report.md, Lumen → dev-report.md),
+   * the entire response is written as-is.
+   *
+   * For multi-file phases (Forge → project-tasks.md + revision-prompts.md), the response
+   * is split at a well-known delimiter. The system prompt already instructs agents to write
+   * content for each file in sequence. We look for the second file's path as a markdown
+   * heading to split. If no delimiter is found, the full response goes to the primary file.
+   *
+   * A successful auto-save emits a `warning` (not a `status`) so the author notices it.
+   */
   private async extractResponseToFiles(
     bookSlug: string,
     responseBuffer: string,
@@ -688,33 +710,31 @@ export class ChatService implements IChatService {
       return;
     }
 
-    // Never overwrite an output file that already has content. The fallback
-    // exists for the initial generation only — on follow-up turns the agent
-    // often replies conversationally without touching files, and auto-saving
-    // that reply would clobber the previously generated document.
-    const missingFiles: string[] = [];
+    // The fallback exists for the initial generation only. If any output
+    // file already has content, skip: on follow-up turns the agent often
+    // replies conversationally without touching files, and auto-saving that
+    // reply would clobber a document or fill a file the agent is holding back.
+    const populatedFiles: string[] = [];
     for (const filePath of outputFiles) {
       const hasContent =
         (await this.fs.fileExists(bookSlug, filePath)) &&
         (await this.fs.readFile(bookSlug, filePath)).trim().length > 0;
-      if (!hasContent) missingFiles.push(filePath);
+      if (hasContent) populatedFiles.push(filePath);
     }
-    if (missingFiles.length === 0) {
+    if (populatedFiles.length > 0) {
       console.log(
-        `[ChatService] Post-stream extraction skipped — ${outputFiles.join(', ')} already populated`,
+        `[ChatService] Post-stream extraction skipped — ${populatedFiles.join(', ')} already populated`,
       );
       return;
     }
+    const missingFiles = outputFiles;
 
     try {
       if (missingFiles.length === 1) {
         // Single-file phase — write the full response
         await this.fs.writeFile(bookSlug, missingFiles[0], responseBuffer);
         onEvent({ type: 'filesChanged', paths: [missingFiles[0]] });
-        onEvent({
-          type: 'status',
-          message: `Auto-saved response to ${missingFiles[0]}`,
-        });
+        onEvent({ type: 'warning', message: autoSaveNotice([missingFiles[0]]) });
       } else {
         // Multi-file phase — attempt to split at the second file's path
         const [primaryFile, ...secondaryFiles] = missingFiles;
@@ -730,10 +750,7 @@ export class ChatService implements IChatService {
 
         const writtenPaths = [primaryFile, ...segments.secondary.map(([p]) => p)];
         onEvent({ type: 'filesChanged', paths: writtenPaths });
-        onEvent({
-          type: 'status',
-          message: `Auto-saved response to ${writtenPaths.join(' and ')}`,
-        });
+        onEvent({ type: 'warning', message: autoSaveNotice(writtenPaths) });
       }
     } catch (err) {
       console.error('[ChatService] Post-stream file extraction failed:', err);

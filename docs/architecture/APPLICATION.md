@@ -41,10 +41,17 @@ Clean router (403 lines). Delegates special-purpose flows to sub-services. Only 
 5. Resolve stale model/provider settings through `IProviderRegistry.resolveModelSelection()`
 6. Spawn CLI stream via `IProviderRegistry.sendMessage` using the effective model
 7. Forward stream events to `onEvent` callback
-8. On `done`: save assistant message, record usage under the effective model, run chapter validation, and use `done.filesTouched` to decide whether pipeline post-stream extraction is needed
-9. On `error`: emit error event
+8. On `done`: save assistant message, record usage under the effective model, run chapter validation, and decide whether pipeline post-stream extraction is needed (see below)
+9. On `error`: emit error event (and try the same extraction on the partial buffer)
 
-**Pipeline file fallback:** For pipeline conversations, `ChatService.sendMessage()` checks `done.filesTouched` from the provider stream. If no files were touched and the current phase expects output files, it writes the accumulated response buffer to the missing phase output file(s). Codex, Claude, and other tool-use providers populate `done.filesTouched` from native tool/file events or provider-level fallback detection (for Codex, a bounded workspace snapshot diff), so this fallback only runs when the agent truly failed to write files.
+**Pipeline file fallback:** `ChatService.extractResponseToFiles()` writes the reply text into the phase's `PHASE_OUTPUT_FILES`. It runs on `done` or on a non-empty `error` buffer only when all of these hold:
+- The conversation is a pipeline conversation and the phase has output files.
+- The provider is not Claude CLI. Its agent loop is reliable, so a text-only reply is conversation (questions, Phase 0 decisions), not a document.
+- The turn emitted no `toolUse` event of any kind. `sendMessage()` wraps `onEvent` to track this. It replaces the old `done.filesTouched` check, which counted only Write/Edit and missed Bash-made changes.
+- None of the phase's output files has content yet. A partly populated set (e.g. Forge with `project-tasks.md` written and `revision-prompts.md` held back) is skipped entirely.
+- The phase's `PHASE_OUTPUT_CONTENT_MARKERS` regex matches, if it has one (`query-agents`).
+
+A write emits `filesChanged` plus a `warning` event ("Auto-saved the agent's reply to … Check it before advancing.") instead of a `status` line.
 
 **Special modes** (prompt templates loaded at runtime via `AgentService.loadRaw()`):
 - `voice-setup`: Appends `VOICE-SETUP.md` to Verity's prompt
