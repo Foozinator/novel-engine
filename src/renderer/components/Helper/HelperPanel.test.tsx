@@ -38,7 +38,7 @@ describe('HelperPanel', () => {
     const sendMessage = vi.fn(async () => undefined);
     renderPanel({ sendMessage });
 
-    const input = screen.getByPlaceholderText('Ask anything about Novel Engine...');
+    const input = screen.getByPlaceholderText('Ask anything about Novel Engine Spur...');
     fireEvent.change(input, { target: { value: 'What is Forge?' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 

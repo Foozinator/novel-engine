@@ -435,6 +435,9 @@ export type FableProbeResult = {
 
 // === Settings ===
 
+/** Reading font presets for ProseViewer. 'custom' uses an installed font typed by the user. */
+export type ProseFontId = 'fraunces' | 'classic-serif' | 'sans' | 'mono' | 'custom';
+
 export type AppSettings = {
   hasClaudeCli: boolean;   // true if `claude` CLI is detected and authenticated
   hasOllamaCli: boolean;   // true if `ollama` CLI is detected
@@ -449,6 +452,14 @@ export type AppSettings = {
   autoCollapseThinking: boolean;
   enableNotifications: boolean; // OS notifications when agent calls complete
   theme: 'light' | 'dark' | 'system';
+  /** Reading font size (px) for typeset prose views. Ctrl+wheel / Ctrl+= / Ctrl+- / Ctrl+0 adjust it. */
+  proseFontSize: number;
+  /** Show draft.md source line numbers beside chapter prose (Chapter tab, Manuscript chapter view). */
+  showChapterLineNumbers: boolean;
+  /** Reading font for typeset prose views: a preset, or 'custom' to use `proseFontCustom`. */
+  proseFont: ProseFontId;
+  /** Installed font family name used when `proseFont` is 'custom'. */
+  proseFontCustom: string;
   initialized: boolean;    // false until onboarding is complete
   authorName: string;      // display name for book covers
   // Multi-provider configuration
@@ -517,7 +528,22 @@ export type UsageSummary = {
 
 export type RevisionSessionStatus = 'pending' | 'running' | 'awaiting-approval' | 'approved' | 'rejected' | 'skipped';
 
-export type ApprovalAction = 'approve' | 'approve-all' | 'reject' | 'skip' | 'retry';
+/**
+ * Author's response to a revision-queue gate.
+ * - `approve` / `approve-all` — only valid on a `confirm` gate (ignored on `choice`)
+ * - `reply` — send the author's typed text as the next message
+ * - `complete` — mark the session done without another agent call
+ * - `skip` — tell Verity to skip the current task
+ * - `retry` — reset the session for a fresh run
+ */
+export type ApprovalAction = 'approve' | 'approve-all' | 'reply' | 'complete' | 'skip' | 'retry';
+
+/**
+ * What kind of stop Verity made in a revision-queue session.
+ * - `confirm` — a yes/no or open stop that a quick reply can answer
+ * - `choice` — a question with options; only the author's typed answer can resolve it
+ */
+export type GateKind = 'confirm' | 'choice';
 
 export type QueueMode = 'manual' | 'auto-approve' | 'auto-skip' | 'selective';
 
@@ -568,7 +594,7 @@ export type RevisionQueueEvent =
   | { type: 'session:chunk'; sessionId: string; text: string }
   | { type: 'session:thinking'; sessionId: string; text: string }
   | { type: 'session:done'; sessionId: string; taskNumbers: number[] }
-  | { type: 'session:gate'; sessionId: string; gateText: string }
+  | { type: 'session:gate'; sessionId: string; gateText: string; gateKind: GateKind }
   | { type: 'session:streamEvent'; sessionId: string; event: StreamEvent; conversationId?: string }
   | { type: 'plan:progress'; planId: string; completedTasks: number; totalTasks: number }
   | { type: 'plan:loading-step'; step: string }
@@ -940,6 +966,77 @@ export type SeriesImportResult = {
   totalWordCount: number;
 };
 
+// === Data Folder Import (#37) ===
+
+/** One book found in another Novel Engine data folder. */
+export type DataFolderBookSummary = {
+  /** Folder name in the source `books/` directory. */
+  slug: string;
+  title: string;
+  author: string;
+  wordCount: number;
+  chapterCount: number;
+  conversationCount: number;
+  /** Bytes of version history plus message text held in the source DB. */
+  historyBytes: number;
+  /** A folder with this name already exists in the target `books/`. */
+  folderExists: boolean;
+  /** Some of this book's conversations already exist in the target DB. */
+  alreadyImported: boolean;
+};
+
+export type DataFolderPreview = {
+  /** The data folder the user picked (absolute). */
+  sourcePath: string;
+  /** schema_version of the source DB before it was migrated (on a temp copy). */
+  sourceSchemaVersion: number;
+  books: DataFolderBookSummary[];
+  hasAuthorProfile: boolean;
+  /** Series directories in the source `series/` folder. */
+  seriesSlugs: string[];
+};
+
+export type DataFolderBookAction = 'import' | 'rename' | 'skip';
+
+export type DataFolderImportConfig = {
+  sourcePath: string;
+  books: Array<{
+    slug: string;
+    action: DataFolderBookAction;
+    /** New title when action is 'rename'. The folder name is derived from it. */
+    newTitle?: string;
+  }>;
+  copyAuthorProfile: boolean;
+  copySeries: boolean;
+};
+
+export type DataFolderImportResult = {
+  imported: Array<{ from: string; to: string; title: string; conversations: number; versions: number }>;
+  skipped: Array<{ slug: string; reason: string }>;
+  warnings: string[];
+};
+
+/** Row counts merged by IDatabaseService.importBookHistory. */
+export type BookHistoryCounts = {
+  conversations: number;
+  messages: number;
+  tokenUsage: number;
+  fileVersions: number;
+  wordCountSnapshots: number;
+};
+
+/**
+ * What importBookHistory inserted, so a failed install can undo it.
+ * Integer-id rows are identified by the first id assigned during the merge.
+ */
+export type BookHistoryImportReceipt = {
+  targetSlug: string;
+  conversationIds: string[];
+  firstFileVersionId: number;
+  firstWordCountSnapshotId: number;
+  counts: BookHistoryCounts;
+};
+
 // === Source Document Generation ===
 
 export type SourceGenerationStep = {
@@ -1137,3 +1234,30 @@ export type BookStatistics = {
   };
   conversationCount: number;
 };
+
+// === Data folder (#39) ===
+
+/** Where the active data folder came from, in priority order. */
+export type DataFolderSource = 'flag' | 'env' | 'pointer' | 'default';
+
+/** What a candidate data folder already contains. */
+export type DataFolderKind = 'empty' | 'novel-engine' | 'other';
+
+export type DataFolderInfo = {
+  /** Absolute path of the folder in use this session. */
+  current: string;
+  /** Electron's default userData path, where the pointer file lives. */
+  defaultDir: string;
+  source: DataFolderSource;
+};
+
+/** Result of syncing bundled agent prompts into custom-agents/ at startup. */
+export type PromptSyncResult = {
+  /** Prompts replaced with the bundled version this launch. */
+  updated: string[];
+  /** Prompts the user edited; bundled changes are not applied to them. */
+  edited: string[];
+};
+
+/** `agents:promptSync` payload: the sync result plus where the prompts live. */
+export type PromptSyncStatus = PromptSyncResult & { agentsDir: string };

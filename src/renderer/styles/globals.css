@@ -95,3 +95,24 @@
   -webkit-text-fill-color: transparent;
   animation: shimmer 2.5s linear infinite;
 }
+
+/* ProseViewer line numbers — draft.md source line of each top-level block, in the left gutter */
+.ne-prose-lines > [data-line] { position: relative; }
+.ne-prose-lines > [data-line]::before {
+  content: attr(data-line);
+  position: absolute;
+  right: 100%;
+  top: 0;
+  margin-right: 1.2rem;
+  font-family: var(--ne-mono);
+  font-size: calc(var(--ne-prose-size, 16.5px) * 0.66);
+  font-weight: 400;
+  font-style: normal;
+  letter-spacing: 0;
+  text-transform: none;
+  text-indent: 0;
+  line-height: calc(var(--ne-prose-size, 16.5px) * 1.78);
+  color: var(--ne-ink-faint);
+  user-select: none;
+  pointer-events: none;
+}

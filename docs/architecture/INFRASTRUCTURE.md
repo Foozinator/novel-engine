@@ -1,6 +1,6 @@
 # Infrastructure — Implementations
 
-> Last updated: 2026-07-23 (program-030)
+> Last updated: 2026-11-14 (#37)
 
 Everything in `src/infrastructure/`. Implements domain interfaces using Node.js builtins and npm packages.
 
@@ -32,7 +32,9 @@ Key behavior:
 | `schema.ts` | CREATE TABLE statements, WAL mode, foreign keys, migration guards |
 | `migrations.ts` | Forward-only `MIGRATIONS` list (v0–v4) and `runMigrations(db)`. A migration runs its `sql`, or its `apply(db)` function when set (used for idempotent `ADD COLUMN`). |
 | `DatabaseService.ts` | Implements `IDatabaseService`. Prepared statements for all queries. |
-| `index.ts` | Barrel export |
+| `bookHistory.ts` | Per-book history snapshots: export, merge, revert, stats (#37; the seam for #36 archives) |
+| `SourceDataFolder.ts` | `makeSourceDataFolderOpener`: opens another data folder via a migrated temp copy of its DB |
+| `index.ts` | Barrel export (`DatabaseService`, `makeSourceDataFolderOpener`) |
 
 Key behavior:
 - WAL mode + foreign keys enabled at connection time
@@ -40,7 +42,23 @@ Key behavior:
 - Explicit snake_case → camelCase mapping in every query method
 - `pruneStreamEvents(olderThanDays)` deletes old event data
 - `persistStreamEventBatch()` wraps inserts in a transaction for bulk efficiency
-- `updateBookSlug` migrates conversation references on slug rename
+- `updateBookSlug` migrates conversation references on slug rename. It does not rewrite `file_versions`, `word_count_snapshots` or `stream_sessions` (known gap, spike #36).
+
+Per-book history snapshot (`bookHistory.ts`):
+- The snapshot is a standalone SQLite file. It holds `conversations`, `messages` and `token_usage` (both selected through the book's conversation ids), `file_versions`, `word_count_snapshots`, and a copy of `schema_version`. Stream tables are excluded.
+- Export: `ATTACH` the new file, then `CREATE TABLE … AS SELECT` per table in one transaction. Refuses an existing file.
+- Import: `ATTACH` the snapshot and check that all six tables exist and that `schema_version ≤ APP_SCHEMA_VERSION`. Then one transaction runs `INSERT … SELECT` over the columns both sides share:
+  - Conversation and message TEXT ids are kept.
+  - Integer ids are reassigned, in source id order.
+  - `book_slug` is set to the target slug.
+  - Any PK clash rolls back the whole merge.
+- The receipt records the conversation ids and the first new `file_versions` / `word_count_snapshots` ids, so `revertBookHistoryImport` can undo the merge.
+
+Source data folder (`SourceDataFolder.ts`):
+- Requires `novel-engine.db` and `books/`. Refuses the app's own userData (compared by `realpath`).
+- Copies `novel-engine.db` and `-wal` (not `-shm`) into `mkdtemp(tmpRoot)`. It reads the pre-migration `schema_version` with a raw connection, then opens the copy with `DatabaseService`, which migrates the copy.
+- The source files are never opened, so even a live WAL source stays byte-for-byte unchanged.
+- `close()` closes the copy and removes the temp dir.
 
 ### agents/ — Agent Prompt Loader
 

@@ -8,6 +8,7 @@ import type {
   QueueMode,
   QueueStatus,
   ApprovalAction,
+  GateKind,
   AgentName,
   StreamEvent,
   Agent,
@@ -27,8 +28,14 @@ import {
   CLAUDE_CLI_PROVIDER_ID,
   MULTI_CALL_MAX_RETRIES,
   MULTI_CALL_RETRY_EXTRA_TURNS,
+  REVISION_QUEUE_PROTOCOL,
+  MAX_AUTO_GATE_REPLIES,
 } from '@domain/constants';
 import { ContextBuilder } from './ContextBuilder';
+import { classifyGate, isSessionComplete } from './revisionGate';
+
+/** Fixed follow-up for an approved yes/no gate. */
+const APPROVE_REPLY = 'Approved. Continue with the next task.';
 
 // ── Cache types ──────────────────────────────────────────────────────
 
@@ -99,7 +106,11 @@ export class RevisionQueueService implements IRevisionQueueService {
   /** Plans currently being executed by runAll — prevents concurrent runs. */
   private runningPlans: Set<string> = new Set();
   private gateResolvers: Map<string, (decision: { action: ApprovalAction; message?: string }) => void> = new Map();
+  /** Kind of the gate each waiting session is stopped at. */
+  private gateKinds: Map<string, GateKind> = new Map();
   private autoApproveSessionIds: Set<string> = new Set();
+  /** Quick replies the queue has sent on its own per session run (see MAX_AUTO_GATE_REPLIES). */
+  private autoReplyCounts: Map<string, number> = new Map();
 
   constructor(
     private fs: IFileSystemService,
@@ -688,8 +699,9 @@ export class RevisionQueueService implements IRevisionQueueService {
       messages,
       authorEditsSection,
     });
-    const systemPrompt = assembled.systemPrompt;
+    const systemPrompt = `${assembled.systemPrompt}\n\n---\n\n${REVISION_QUEUE_PROTOCOL}`;
 
+    this.autoReplyCounts.delete(session.id);
     await this.runConversationLoop(session, plan, systemPrompt, model, appSettings, verity);
   }
 
@@ -762,63 +774,80 @@ export class RevisionQueueService implements IRevisionQueueService {
       return;
     }
 
-    // Check for approval gate
-    if (this.isApprovalGate(responseBuffer)) {
+    // Complete only on Verity's explicit marker. Anything else is a gate.
+    if (isSessionComplete(responseBuffer)) {
+      this.autoApproveSessionIds.delete(session.id);
+      this.autoReplyCounts.delete(session.id);
+      await this.approveSession(plan.id, session.id);
+      return;
+    }
+
+    const gate = classifyGate(responseBuffer);
+    const continueLoop = () => this.runConversationLoop(session, plan, systemPrompt, model, settings, verity);
+
+    // Quick replies answer only yes/no stops, never a choice, and only up to the cap.
+    const autoReplies = this.autoReplyCounts.get(session.id) ?? 0;
+    if (gate.kind === 'confirm' && autoReplies < MAX_AUTO_GATE_REPLIES) {
       if (plan.mode === 'auto-approve' || this.autoApproveSessionIds.has(session.id)) {
-        await this.sendFollowUp(session, 'Approved. Continue with the next task.');
-        return this.runConversationLoop(session, plan, systemPrompt, model, settings, verity);
-      } else if (plan.mode === 'auto-skip') {
+        this.autoReplyCounts.set(session.id, autoReplies + 1);
+        await this.sendFollowUp(session, APPROVE_REPLY);
+        return continueLoop();
+      }
+      if (plan.mode === 'auto-skip') {
+        this.autoReplyCounts.set(session.id, autoReplies + 1);
         await this.sendFollowUp(session, 'Skip this task and move to the next one without waiting for approval.');
-        return this.runConversationLoop(session, plan, systemPrompt, model, settings, verity);
-      } else {
-        session.status = 'awaiting-approval';
-        this.emit({ type: 'session:status', sessionId: session.id, status: 'awaiting-approval' });
-        await this.persistState(plan);
-        const lastParagraph = responseBuffer.trim().split('\n\n').pop() ?? '';
-        this.emit({ type: 'session:gate', sessionId: session.id, gateText: lastParagraph });
-
-        const decision = await this.waitForDecision(session.id);
-
-        switch (decision.action) {
-          case 'approve':
-            session.status = 'running';
-            this.emit({ type: 'session:status', sessionId: session.id, status: 'running' });
-            await this.sendFollowUp(session, 'Approved. Continue with the next task.');
-            return this.runConversationLoop(session, plan, systemPrompt, model, settings, verity);
-
-          case 'approve-all':
-            this.autoApproveSessionIds.add(session.id);
-            session.status = 'running';
-            this.emit({ type: 'session:status', sessionId: session.id, status: 'running' });
-            await this.sendFollowUp(session, 'Approved. Continue with the next task. Approve all remaining tasks in this session without stopping.');
-            return this.runConversationLoop(session, plan, systemPrompt, model, settings, verity);
-
-          case 'reject':
-            session.status = 'running';
-            this.emit({ type: 'session:status', sessionId: session.id, status: 'running' });
-            await this.sendFollowUp(session, decision.message ?? 'Please redo this task.');
-            return this.runConversationLoop(session, plan, systemPrompt, model, settings, verity);
-
-          case 'skip':
-            session.status = 'running';
-            this.emit({ type: 'session:status', sessionId: session.id, status: 'running' });
-            await this.sendFollowUp(session, 'Skip this task — do not revise it. Move to the next task in the list.');
-            return this.runConversationLoop(session, plan, systemPrompt, model, settings, verity);
-
-          case 'retry':
-            session.status = 'rejected';
-            session.response = '';
-            session.conversationId = null;
-            this.emit({ type: 'session:status', sessionId: session.id, status: 'rejected' });
-            await this.persistState(plan);
-            return;
-        }
+        return continueLoop();
       }
     }
 
-    // No approval gate — session is complete
-    this.autoApproveSessionIds.delete(session.id);
-    await this.approveSession(plan.id, session.id);
+    session.status = 'awaiting-approval';
+    this.emit({ type: 'session:status', sessionId: session.id, status: 'awaiting-approval' });
+    await this.persistState(plan);
+    this.emit({ type: 'session:gate', sessionId: session.id, gateText: gate.gateText, gateKind: gate.kind });
+
+    this.gateKinds.set(session.id, gate.kind);
+    const decision = await this.waitForDecision(session.id);
+    this.gateKinds.delete(session.id);
+
+    // The author answered; the auto-reply budget starts over.
+    this.autoReplyCounts.delete(session.id);
+
+    const resume = async (message: string): Promise<void> => {
+      session.status = 'running';
+      this.emit({ type: 'session:status', sessionId: session.id, status: 'running' });
+      await this.sendFollowUp(session, message);
+      return continueLoop();
+    };
+
+    switch (decision.action) {
+      case 'approve':
+        return resume(APPROVE_REPLY);
+
+      case 'approve-all':
+        // The queue answers this session's later yes/no stops itself; choices still pause.
+        this.autoApproveSessionIds.add(session.id);
+        return resume(APPROVE_REPLY);
+
+      case 'reply':
+        return resume(decision.message?.trim() || 'Please redo this task.');
+
+      case 'skip':
+        return resume('Skip this task — do not revise it. Move to the next task in the list.');
+
+      case 'complete':
+        this.autoApproveSessionIds.delete(session.id);
+        await this.approveSession(plan.id, session.id);
+        return;
+
+      case 'retry':
+        this.autoApproveSessionIds.delete(session.id);
+        session.status = 'rejected';
+        session.response = '';
+        session.conversationId = null;
+        this.emit({ type: 'session:status', sessionId: session.id, status: 'rejected' });
+        await this.persistState(plan);
+        return;
+    }
   }
 
   private async sendFollowUp(
@@ -833,17 +862,6 @@ export class RevisionQueueService implements IRevisionQueueService {
     });
   }
 
-  private isApprovalGate(response: string): boolean {
-    const lastParagraph = response.trim().split('\n\n').pop()?.toLowerCase() ?? '';
-    const signals = [
-      'approval', 'approve', 'proceed', 'continue',
-      'go ahead', 'go-ahead', 'next task', 'shall i',
-      'ready for', 'waiting for', 'let me know',
-      'before moving', 'before proceeding', 'your go',
-    ];
-    return signals.some((s) => lastParagraph.includes(s));
-  }
-
   private waitForDecision(sessionId: string): Promise<{ action: ApprovalAction; message?: string }> {
     return new Promise((resolve) => {
       this.gateResolvers.set(sessionId, resolve);
@@ -851,6 +869,11 @@ export class RevisionQueueService implements IRevisionQueueService {
   }
 
   respondToGate(planId: string, sessionId: string, action: ApprovalAction, message?: string): void {
+    // Backstop to the UI: a quick approval can't answer a choice. The gate stays open.
+    if ((action === 'approve' || action === 'approve-all') && this.gateKinds.get(sessionId) === 'choice') {
+      console.warn(`[revision-queue] Ignored '${action}' on a choice gate for session ${sessionId}`);
+      return;
+    }
     const resolver = this.gateResolvers.get(sessionId);
     if (resolver) {
       resolver({ action, message });

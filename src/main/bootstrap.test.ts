@@ -1,7 +1,15 @@
 import { access, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { bootstrap, ensureAgents, ensureUserGuide, needsBootstrap } from './bootstrap';
+import {
+  PROMPT_HISTORY,
+  PROMPT_MANIFEST,
+  bootstrap,
+  ensureAgents,
+  ensureUserGuide,
+  hashPrompt,
+  needsBootstrap,
+} from './bootstrap';
 import { cleanupTempDirs, makeTempDir } from '../test/tempDir';
 
 let userDataPath: string;
@@ -75,7 +83,7 @@ describe('ensureAgents', () => {
     await ensureAgents(agentsDir, agentsSourceDir);
 
     const copied = (await readdir(agentsDir)).sort();
-    expect(copied).toEqual(['HELPER.MD', 'SPARK.md', 'VERITY-CORE.md']);
+    expect(copied).toEqual([PROMPT_MANIFEST, 'HELPER.MD', 'SPARK.md', 'VERITY-CORE.md']);
   });
 
   it('renames legacy-cased agent files even on case-insensitive filesystems', async () => {
@@ -119,10 +127,121 @@ describe('ensureAgents', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const agentsDir = path.join(userDataPath, 'custom-agents');
 
-    await expect(ensureAgents(agentsDir, path.join(userDataPath, 'no-such-dir'))).resolves.toBeUndefined();
+    await expect(ensureAgents(agentsDir, path.join(userDataPath, 'no-such-dir'))).resolves.toEqual({
+      updated: [],
+      edited: [],
+    });
 
     expect(warn).toHaveBeenCalledWith('[bootstrap] Agent source directory not found:', expect.stringContaining('no-such-dir'));
     expect(await readdir(agentsDir)).toEqual([]); // dir created, nothing copied
+  });
+});
+
+describe('ensureAgents prompt sync (#39)', () => {
+  let agentsDir: string;
+  const read = (name: string) => readFile(path.join(agentsDir, name), 'utf-8');
+  const write = (dir: string, name: string, content: string) => writeFile(path.join(dir, name), content, 'utf-8');
+  const manifest = async () =>
+    JSON.parse(await readFile(path.join(agentsDir, PROMPT_MANIFEST), 'utf-8')) as { files: Record<string, string> };
+
+  beforeEach(() => {
+    agentsDir = path.join(userDataPath, 'custom-agents');
+  });
+
+  it('records the installed hash of every copied prompt', async () => {
+    expect(await ensureAgents(agentsDir, agentsSourceDir)).toEqual({ updated: [], edited: [] });
+    expect((await manifest()).files).toEqual({
+      'SPARK.md': hashPrompt('spark prompt'),
+      'VERITY-CORE.md': hashPrompt('verity prompt'),
+    });
+  });
+
+  it('replaces an unedited prompt when the bundled version changes', async () => {
+    await ensureAgents(agentsDir, agentsSourceDir);
+    await write(agentsSourceDir, 'SPARK.md', 'spark prompt v2');
+
+    expect(await ensureAgents(agentsDir, agentsSourceDir)).toEqual({ updated: ['SPARK.md'], edited: [] });
+    expect(await read('SPARK.md')).toBe('spark prompt v2');
+    expect((await manifest()).files['SPARK.md']).toBe(hashPrompt('spark prompt v2'));
+  });
+
+  it('keeps an edited prompt, reports it, and keeps reporting it', async () => {
+    await ensureAgents(agentsDir, agentsSourceDir);
+    await write(agentsDir, 'SPARK.md', 'my spark');
+    await write(agentsSourceDir, 'SPARK.md', 'spark prompt v2');
+
+    expect(await ensureAgents(agentsDir, agentsSourceDir)).toEqual({ updated: [], edited: ['SPARK.md'] });
+    expect(await read('SPARK.md')).toBe('my spark');
+    expect((await manifest()).files['SPARK.md']).toBe(hashPrompt('spark prompt')); // baseline kept
+    expect(await ensureAgents(agentsDir, agentsSourceDir)).toEqual({ updated: [], edited: ['SPARK.md'] });
+  });
+
+  it('does not report an edited prompt that matches the bundled version', async () => {
+    await ensureAgents(agentsDir, agentsSourceDir);
+    await write(agentsSourceDir, 'SPARK.md', 'spark prompt v2');
+    await write(agentsDir, 'SPARK.md', 'spark prompt v2'); // user applied the fix by hand
+
+    expect(await ensureAgents(agentsDir, agentsSourceDir)).toEqual({ updated: [], edited: [] });
+  });
+
+  describe('installs from before the manifest', () => {
+    beforeEach(async () => {
+      await mkdir(agentsDir, { recursive: true });
+      await write(agentsSourceDir, 'SPARK.md', 'spark prompt v2');
+      await write(
+        agentsSourceDir,
+        PROMPT_HISTORY,
+        JSON.stringify({ 'spark.md': [hashPrompt('spark prompt'), hashPrompt('spark prompt v2')] }),
+      );
+    });
+
+    it('replaces a prompt matching a past bundled version', async () => {
+      await write(agentsDir, 'SPARK.md', 'spark prompt');
+      expect(await ensureAgents(agentsDir, agentsSourceDir)).toEqual({ updated: ['SPARK.md'], edited: [] });
+      expect(await read('SPARK.md')).toBe('spark prompt v2');
+    });
+
+    it('matches past versions across CRLF line endings', async () => {
+      await write(agentsSourceDir, 'VERITY-CORE.md', 'verity\nv2\n');
+      await write(
+        agentsSourceDir,
+        PROMPT_HISTORY,
+        JSON.stringify({ 'verity-core.md': [hashPrompt('verity\nv1\n'), hashPrompt('verity\nv2\n')] }),
+      );
+      await write(agentsDir, 'VERITY-CORE.md', 'verity\r\nv1\r\n');
+      expect((await ensureAgents(agentsDir, agentsSourceDir)).updated).toEqual(['VERITY-CORE.md']);
+    });
+
+    it('treats an unknown version as edited and records no baseline', async () => {
+      await write(agentsDir, 'SPARK.md', 'hand-written spark');
+      expect(await ensureAgents(agentsDir, agentsSourceDir)).toEqual({ updated: [], edited: ['SPARK.md'] });
+      expect(await read('SPARK.md')).toBe('hand-written spark');
+      expect((await manifest()).files['SPARK.md']).toBeUndefined();
+    });
+  });
+
+  it('never copies the history file or manifest as an agent', async () => {
+    await write(agentsSourceDir, PROMPT_HISTORY, '{}');
+    await ensureAgents(agentsDir, agentsSourceDir);
+    expect((await readdir(agentsDir)).sort()).toEqual([PROMPT_MANIFEST, 'SPARK.md', 'VERITY-CORE.md']);
+  });
+});
+
+describe('agents/prompt-history.json', () => {
+  it('lists the current version of every bundled prompt (run `npm run agent-hashes`)', async () => {
+    const repoAgents = path.resolve(__dirname, '../../agents');
+    const history = JSON.parse(await readFile(path.join(repoAgents, PROMPT_HISTORY), 'utf-8')) as Record<
+      string,
+      string[]
+    >;
+    const prompts = (await readdir(repoAgents)).filter((f) => f.toLowerCase().endsWith('.md'));
+    expect(prompts.length).toBeGreaterThan(0);
+    const missing = [];
+    for (const name of prompts) {
+      const hash = hashPrompt(await readFile(path.join(repoAgents, name)));
+      if (!history[name.toLowerCase()]?.includes(hash)) missing.push(name);
+    }
+    expect(missing).toEqual([]);
   });
 });
 

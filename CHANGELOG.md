@@ -1,6 +1,183 @@
 # Changelog
 
-All notable changes to Novel Engine are documented here.
+All notable changes to Novel Engine Spur are documented here.
+
+---
+
+## [2026-11-14] — Rename to Novel Engine Spur, data folder selection, bundled prompt sync (#39)
+
+### Summary
+
+The fork is renamed **Novel Engine Spur**. Upstream and the fork shared the product name, so they shared `%APPDATA%\Novel Engine`, and a fork install would have migrated upstream's live database and probably replaced the upstream program (same Squirrel ID). Spur now has its own display name, default data folder (`{appData}/Novel Engine Spur`), executable, macOS bundle ID, Squirrel ID, deb/rpm package and installer file names, so both apps install side by side. Code identifiers and on-disk names (`window.novelEngine`, `novel-engine.db`, `novel-asset://`, `novel-engine:*` localStorage keys) keep the original name so data folders stay compatible. On first launch, if the pre-rename `Novel Engine` folder holds data, Spur offers once to copy it in, use it in place, or start fresh. The data folder can also be chosen in Settings: a pointer file in the default folder records the choice, and `--data-dir=` or `NOVEL_ENGINE_DATA_DIR` override it for one run. The app redirects Electron's `userData` before `whenReady`, so the DB, books, agents, settings and series move together with no service changes. Separately, `ensureAgents` no longer copies with `COPYFILE_EXCL` only. It now updates prompts the user hasn't edited when the bundled version changes (the #30 `VERITY-LEDGER.md` fix never reached existing installs) and reports edited ones in Settings.
+
+### Added
+- `src/main/dataLocation.ts` — `resolveDataDir()` (flag › env › pointer › default, with usability checks), `readPointer()`/`writePointer()` (atomic) for `data-location.json`, `classifyFolder()` (ignores Chromium profile entries), `checkUsable()`, `LEGACY_DATA_FOLDER_NAME`, `needsLegacyImport()`, `copyAppData()` (skips Chromium profile entries, `Singleton*` and the pointer; never overwrites; removes partial copies on failure).
+- `src/main/dataFolderDialogs.ts` — `runStartupDataFolderChecks()` (unusable folder; first-launch legacy import: copy / use in place / start fresh), `chooseDataFolder()`, `resetDataFolder()`, `relaunch()`.
+- `scripts/agent-hashes.js` and npm script `agent-hashes` — Writes `agents/prompt-history.json` with SHA-256 hashes (CRLF→LF) of every bundled prompt version from git history plus the working tree.
+- `agents/prompt-history.json` — Generated history of past prompt versions. Bundled with `extraResource: ['./agents']`.
+- `src/main/dataLocation.test.ts`, `src/main/dataFolderDialogs.test.ts` — Resolution priority, pointer I/O, folder classification, legacy detection and copy, startup dialog flows.
+
+### Changed
+- `package.json`, `package-lock.json` — `name` `novel-engine-spur`, `productName` `Novel Engine Spur` (sets the default data folder). `author` is now the fork maintainer (name only); deb/rpm Maintainer fields derive from it. Added the `agent-hashes` script.
+- `vite.renderer.config.ts`, `vitest.config.ts` — Define `__APP_VERSION__` from `package.json` `version` for the renderer.
+- `forge.config.ts` — Packager `name` `Novel Engine Spur`, `executableName` `novel-engine-spur`, `appBundleId` `io.github.foozinator.novel-engine-spur`. Squirrel `name` `NovelEngineSpur`. Deb/rpm `name` `novel-engine-spur`, `productName` `Novel Engine Spur`, deb `mimeType` `application/x-novel-engine-spur`.
+- `scripts/ci-build.js`, `.github/workflows/release.yml` — Artifacts are `Novel-Engine-Spur-{version}-{platform}-{arch}.{ext}`. The release is titled `Novel Engine Spur {tag}`.
+- `index.html`, `src/renderer/components/Layout/TitleBar.tsx`, `src/renderer/components/Onboarding/OnboardingWizard.tsx`, `src/renderer/components/Helper/HelperPanel.tsx`, `src/renderer/components/Helper/HelperMessageList.tsx`, `src/renderer/components/Chat/ChatModal.tsx`, `src/renderer/components/Settings/ProviderSection.tsx` — Product name in UI copy.
+- `src/renderer/components/Settings/SettingsView.tsx` — Profile tab gains `DataFolderSection` and `AgentPromptsSection`. About shows `APP_NAME` and the real version (`__APP_VERSION__`; was hard-coded `v0.1.0`), credits upstream, and links to the fork (was the nonexistent `github.com/novel-engine/novel-engine`) and the original project. Product name in UI copy.
+- `src/domain/constants.ts` — Added `APP_NAME`, `APP_REPO_URL` and `UPSTREAM_REPO_URL`.
+- `src/domain/types.ts` — Added `DataFolderSource`, `DataFolderKind`, `DataFolderInfo`, `PromptSyncResult` and `PromptSyncStatus`.
+- `src/application/PipelineService.ts`, `src/infrastructure/codex-cli/CodexCliClient.ts` — Product name in agent-facing text (manual phase advancement note, Codex system instruction).
+- `agents/HELPER.md` — Product name. Bug reports go to the fork's issues instead of the frozen upstream repo.
+- `src/main/bootstrap.ts` — `ensureAgents()` returns `PromptSyncResult`. It keeps `custom-agents/.bundled-manifest.json` (filename → installed hash), replaces unedited prompts when the bundled version changes, and leaves edited ones alone. Pre-manifest installs are matched against `prompt-history.json`. Added `hashPrompt()`, `PROMPT_MANIFEST` and `PROMPT_HISTORY`.
+- `src/main/index.ts` — Resolves the data folder at module top level and calls `app.setPath('userData', …)`. Computes the legacy folder (`{appData}/Novel Engine`). Runs the startup data-folder checks before bootstrap. Passes `dataFolder` and `promptSync` to the IPC handlers.
+- `src/main/ipc/handlers.ts` — New channels `agents:promptSync`, `dataFolder:get`, `dataFolder:change` and `dataFolder:reset`. `paths` gains `dataFolder` and `promptSync`.
+- `src/preload/index.ts` — `agents.promptSync()` and a new `dataFolder` namespace (`get`, `change`, `reset`).
+- `src/test/mocks/electron.ts` — Mocks `app.relaunch`, `app.exit` and `dialog.showMessageBox`.
+- `src/test/novelEngineMock.ts`, `src/main/bootstrap.test.ts`, `src/main/ipc/handlers.test.ts`, `src/preload/index.test.ts`, `src/renderer/components/Settings/SettingsView.test.tsx`, `src/renderer/App.test.tsx`, `src/renderer/components/Onboarding/OnboardingWizard.test.tsx`, `src/renderer/components/Helper/HelperPanel.test.tsx`, `src/renderer/components/Helper/HelperMessageList.test.tsx`, `src/infrastructure/pandoc/pandoc.test.ts` — New bridge methods, prompt-sync table cases, a history-completeness check, channel and UI tests, and renamed strings.
+- `README.md`, `TECHNICAL.md`, `docs/USER_GUIDE.md` — Spur branding with upstream credit; fork release, clone and issue links (the upstream author's email removed from contact text); data folder, legacy import and prompt updates documented.
+- `CLAUDE.md`, `AGENTS.MD`, `FORGE-CONFIG.md`, `CHANGELOG.md` header — Product name; `CLAUDE.md` records the naming rules.
+- `docs/architecture/ARCHITECTURE.md`, `docs/architecture/IPC.md`, `docs/architecture/DOMAIN.md`, `docs/architecture/RENDERER.md` — Product identity, data folder convention, new files, channels, types, constants and UI.
+
+### Architecture Impact
+- New IPC channels: `agents:promptSync`, `dataFolder:get`, `dataFolder:change`, `dataFolder:reset`
+- New preload namespace: `dataFolder`
+- `registerIpcHandlers` `paths` gains `dataFolder: DataFolderInfo` and `promptSync: PromptSyncResult`
+- `userData` defaults to `{appData}/Novel Engine Spur` and may be redirected. Chromium `sessionData` (renderer localStorage) follows it.
+
+### Migration Notes
+- **New default data folder.** Spur no longer reads `{appData}/Novel Engine` automatically. On first launch with data only there, a one-time dialog offers Copy (recommended; the original folder is untouched), Use in place (pointer to the old folder; shares DB and prompts with any upstream install) or Start fresh. Every answer writes `data-location.json` in Spur's folder.
+- **New install identity.** On Windows, Spur installs as `NovelEngineSpur` and no longer replaces an upstream `NovelEngine` install. Shortcuts, Start menu entries and the Linux package are new; an earlier fork build installed under the old IDs must be uninstalled separately.
+- On the first launch after upgrading, prompts in `custom-agents/` that match any past bundled version are replaced with the current one. Files that match no known version are treated as edited, left in place, and listed in Settings. `custom-agents/.bundled-manifest.json` is created.
+- No DB schema change.
+- After editing anything under `agents/`, run `npm run agent-hashes`. A test fails otherwise.
+
+---
+
+## [2026-11-14] — Import books from another Novel Engine data folder (#37)
+
+### Summary
+
+The import menu has a third choice, "From another Novel Engine folder…". It lists the books in another data folder, such as an old install, a copy from another machine, or a restore. Each book shows its word count, chats and history size. The chosen books are copied with their chats, token usage, version history and word-count snapshots. The source is never written: its `novel-engine.db` and `-wal` are copied to a temp dir, and only the copy is opened and migrated. Each book is staged as its folder plus `.novel-engine/history.sqlite`, which is the per-book snapshot from the spike #36 design. Installing a book merges the snapshot into this DB in one transaction and then moves the folder into `books/`. If any step fails, neither rows nor a folder are left behind. A clash with a live or archived folder, or with leftover DB rows under that slug, is resolved by renaming the import or skipping it. A book whose conversations already exist here is treated as already imported. Series that include imported books can be copied, with renamed volumes rewritten. The author profile is copied only over an empty or template profile. `custom-agents/` and `settings.json` are never copied.
+
+### Added
+- `src/infrastructure/database/bookHistory.ts` — Per-book history snapshot functions:
+  - `exportBookHistory` (ATTACH plus CREATE TABLE AS SELECT; covers conversations, messages, token_usage, file_versions, word_count_snapshots and schema_version).
+  - `importBookHistory`: one-transaction merge. It copies columns by name, keeps TEXT ids, reassigns integer ids, pins `book_slug`, and refuses a snapshot from a newer schema.
+  - `revertBookHistoryImport`, `findExistingConversationIds`, `listConversationIds`, `getBookHistoryStats`, `getSchemaVersion`, `APP_SCHEMA_VERSION`.
+- `src/infrastructure/database/SourceDataFolder.ts` — `makeSourceDataFolderOpener(ownUserDataPath, tmpRoot)`:
+  - Validates the folder and refuses this app's own data folder.
+  - Copies the source DB and its `-wal` to a temp dir, then reads the pre-migration schema version.
+  - Opens and migrates the copy only.
+- `src/application/DataFolderImportService.ts` — Implements `IDataFolderImportService`:
+  - `preview()` lists source books and flags clashes and earlier imports.
+  - `commit()` stages and installs each book, then copies series and the author profile.
+- `src/renderer/stores/dataFolderImportStore.ts` — Wizard state: steps, per-book choices (import/rename/skip), series and author-profile toggles.
+- `src/renderer/components/Import/DataFolderImportWizard.tsx` — Book list with sizes, inline rename for clashes, result summary with warnings.
+- Tests:
+  - `src/infrastructure/database/bookHistory.test.ts`
+  - `src/infrastructure/database/SourceDataFolder.test.ts` (a live WAL source stays byte-for-byte unchanged; a v0 source migrates on the copy)
+  - `src/application/DataFolderImportService.test.ts`
+  - `src/renderer/stores/dataFolderImportStore.test.ts`
+  - `src/renderer/components/Import/DataFolderImportWizard.test.tsx`
+
+### Changed
+- `src/domain/types.ts` — Added `DataFolderBookSummary`, `DataFolderPreview`, `DataFolderBookAction`, `DataFolderImportConfig`, `DataFolderImportResult`, `BookHistoryCounts`, `BookHistoryImportReceipt`.
+- `src/domain/interfaces.ts`:
+  - `IDatabaseService` gained `exportBookHistory`, `importBookHistory`, `revertBookHistoryImport`, `findExistingConversationIds`, `listConversationIds`, `getBookHistoryStats`, `getSchemaVersion`.
+  - Added `ISourceDataFolder`, `OpenSourceDataFolder`, `IDataFolderImportService`.
+- `src/domain/constants.ts` — Added `BOOK_HISTORY_DIR` (`.novel-engine`) and `BOOK_HISTORY_FILE` (`history.sqlite`).
+- `src/infrastructure/database/DatabaseService.ts` — Delegates the new history methods to `bookHistory.ts`.
+- `src/infrastructure/database/index.ts` — Exports `makeSourceDataFolderOpener`.
+- `src/main/bootstrap.ts` — Exports `AUTHOR_PROFILE_TEMPLATE`.
+- `src/main/index.ts` — Constructs `DataFolderImportService` (tmp root `os.tmpdir()`) and passes it to `registerIpcHandlers`.
+- `src/main/ipc/handlers.ts` — Added the `import:selectDataFolder`, `import:dataFolderPreview` and `import:dataFolderCommit` handlers.
+- `src/preload/index.ts` — Added the `dataFolderImport` namespace: `selectFolder`, `preview`, `commit`.
+- `src/test/novelEngineMock.ts`, `src/preload/index.test.ts` — Cover the new namespace.
+- `src/renderer/components/Sidebar/ImportChoiceModal.tsx` (+ test) — Third card and `onImportFromDataFolder` prop.
+- `src/renderer/components/Library/LibraryView.tsx` — Wires the card to `useDataFolderImportStore.startImport`.
+- `src/renderer/components/Layout/AppLayout.tsx` — Mounts `DataFolderImportWizard` in `GlobalBookModals`.
+
+### Architecture Impact
+- New service: `DataFolderImportService` → `IDatabaseService`, `ISeriesService`, `OpenSourceDataFolder` (infra `makeSourceDataFolderOpener`).
+- New IPC channels: `import:selectDataFolder`, `import:dataFolderPreview`, `import:dataFolderCommit`.
+- New preload namespace: `window.novelEngine.dataFolderImport`.
+- New Zustand store: `dataFolderImportStore`.
+- Per-book history snapshot format (`<book>/.novel-engine/history.sqlite`). It exists only in staging today; #36 archive/backup zips are meant to reuse it.
+
+### Migration Notes
+- None. No schema change. A temporary `books/_importing-<slug>` folder exists only while a book is being installed. `listBooks` skips it because of the `_` prefix.
+
+---
+
+## [2026-11-14] — Untrack accidentally committed `notes` and `devtools` symlinks
+
+### Summary
+
+Commit ef54cf9 (#35) committed two worktree symlinks, `notes` and `devtools`, that point at the main checkout. Both folders are personal and untracked. The local exclude patterns (`notes/`, `devtools/`) match only directories, so they missed the symlinks. When main was pulled into the root checkout, git replaced the real (ignored) folders with self-referencing symlinks and deleted their contents. This entry removes both paths from the index. Those folders hold only untracked personal tooling, so no tracked file changes.
+
+### Removed
+- `notes` — symlink committed by mistake; local working notes only
+- `devtools` — symlink committed by mistake; local dev tooling only
+
+### Architecture Impact
+- None — no wiring changes
+
+### Migration Notes
+- Local clones: change the `.git/info/exclude` entries `notes/` and `devtools/` to `/notes` and `/devtools`. The trailing-slash form matches only directories, so worktree symlinks get staged by `git add -A`.
+- A checkout that pulled ef54cf9 or later has self-referencing `notes`/`devtools` symlinks where its folders used to be. After pulling this fix, delete the symlinks and restore the folders from a backup.
+
+---
+
+## [2026-11-14] — Reading font selection (#35)
+
+### Summary
+
+Completes #35. The earlier entry today added prose font size and chapter line numbers, and theme selection already existed. Typeset prose views (Chapter, Sources, Reports and Explorer tabs, and the Manuscript reader) now use a reading font chosen in Settings → Appearance → Reading. The presets are Fraunces (default), Classic serif (Georgia, falling back to the system serif), Sans (Inter) and Monospace (JetBrains Mono). Fraunces, Inter and JetBrains Mono are already bundled, so no new packages. "Custom" takes the name of any installed font. The name is sanitised, and Fraunces stays in the stack as the fallback. A preview line shows the choice. Interface fonts are unchanged.
+
+### Changed
+- `src/domain/types.ts` — Added `ProseFontId`. `AppSettings` gains `proseFont: ProseFontId` and `proseFontCustom: string`.
+- `src/domain/constants.ts` — `DEFAULT_SETTINGS` gets `proseFont: 'fraunces'` and `proseFontCustom: ''`. Added `PROSE_FONTS`, `sanitizeFontFamilyName()` and `resolveProseFontStack()`.
+- `src/renderer/components/common/ProseViewer.tsx` — Inline `fontFamily` from `resolveProseFontStack(settings.proseFont, settings.proseFontCustom)`. Raw (monospace) mode is unchanged.
+- `src/renderer/components/Settings/SettingsView.tsx` — `ReadingSection`: "Reading font" select, a custom-name input (saved on blur or Enter, not per keystroke) and a preview line.
+- `src/domain/constants.test.ts`, `src/renderer/components/common/ProseViewer.test.tsx`, `src/renderer/components/Settings/SettingsView.test.tsx` — Font helper, rendering and settings UI tests.
+- `src/test/novelEngineMock.ts` — `makeAppSettings` includes the two new fields.
+- `docs/architecture/DOMAIN.md`, `docs/architecture/RENDERER.md` — New type, fields, constants and UI.
+
+### Architecture Impact
+- None — no wiring changes. The new fields ride `settings:update`.
+
+### Migration Notes
+- None. Missing fields are filled from `DEFAULT_SETTINGS` on load.
+
+---
+
+## [2026-11-14] — Reading font size (Ctrl+wheel) and chapter line numbers (#35)
+
+### Summary
+
+Typeset prose views (Chapter, Sources, Reports and Explorer tabs, and the Manuscript reader) had a fixed 16.5 px font. The size is now a setting, `proseFontSize`. Ctrl/Cmd + mouse wheel, Ctrl/Cmd + `=`/`-` step it by 1 px. Ctrl/Cmd + `0` resets it. Settings → Appearance → Reading has the same controls. Headings and code scale with it. A new `showChapterLineNumbers` setting (off by default) shows each block's `draft.md` source line in a left gutter. It applies in the Chapter tab and the Manuscript single-chapter reader, and the numbers match what an agent's Read tool shows. This covers the two priority items of #35. Font family selection is not done; theme already existed.
+
+### Added
+- `src/renderer/hooks/useProseZoom.ts` — Window-level non-passive `wheel` and `keydown` listeners. Updates `settingsStore` at once and persists via `settings.update` debounced 400 ms, so one wheel spin is one write. Mounted in `App.tsx`.
+- `src/renderer/hooks/useProseZoom.test.tsx` — Wheel up/down, no-Ctrl passthrough, key steps and reset, clamp, debounced single persist.
+
+### Changed
+- `src/domain/types.ts` — `AppSettings` gains `proseFontSize: number` and `showChapterLineNumbers: boolean`.
+- `src/domain/constants.ts` — `DEFAULT_SETTINGS` gets `proseFontSize: 16.5` and `showChapterLineNumbers: false`. Added `PROSE_FONT_SIZE_DEFAULT` / `_MIN` (12) / `_MAX` (28) / `_STEP` (1) and `clampProseFontSize()`.
+- `src/renderer/components/common/ProseViewer.tsx` — Font size comes from settings (inline style plus `--ne-prose-size`). Heading, code and table sizes are now em-relative (same px at the 16.5 default). Raw mode scales at 12.5/16.5. New `lineNumbers` prop. New exported `renderWithLineNumbers()` renders each top-level marked token separately and tags its opening tag with `data-line`. It locates each token in the source with `indexOf`, because marked drops link-definition tokens. CRLF is normalised.
+- `src/renderer/styles/globals.css` — `.ne-prose-lines` gutter: `[data-line]::before` shows the number in the left padding, in mono, faint ink, not selectable.
+- `src/renderer/components/Workbench/companion/ChapterTab.tsx`, `src/renderer/components/Manuscript/ManuscriptView.tsx` (chapter scope only) — Pass `lineNumbers` from `showChapterLineNumbers`.
+- `src/renderer/components/Settings/SettingsView.tsx` — New `ReadingSection` after Appearance: A−/A+/Reset font size stepper and a line-number checkbox.
+- `src/renderer/App.tsx` — Mounts `useProseZoom()`.
+- `src/renderer/components/common/ProseViewer.test.tsx` — Font size from settings and line-number tests, including a parity check against plain `marked.parse` output.
+- `src/test/novelEngineMock.ts` — `makeAppSettings` includes the two new fields.
+- `docs/architecture/DOMAIN.md`, `docs/architecture/RENDERER.md`, `docs/architecture/ARCHITECTURE.md` — New fields, constants, hook and settings section.
+
+### Architecture Impact
+- None — no wiring changes. No new IPC channels or stores; the new fields ride `settings:update`.
+
+### Migration Notes
+- None. `SettingsService` merges `DEFAULT_SETTINGS` under stored settings, so existing `settings.json` files pick up the defaults.
 
 ---
 
@@ -63,6 +240,59 @@ The expanded Revision Queue panel was fixed at `w-[600px] max-w-[50vw]`. With a 
 
 ### Migration Notes
 - None. New renderer localStorage key `novel-engine:revision-queue-width`; no settings or schema change.
+
+---
+
+## [2026-11-12] — Auto-save fallback no longer writes chat replies into phase output files (#8)
+
+### Summary
+
+The post-stream fallback in `ChatService` wrote a pipeline agent's reply text into any missing phase output file whenever the turn made no Write/Edit calls. A Forge turn in Fix Planning that answered in chat, or archived files with `mv`, could put a chat reply into `source/revision-prompts.md` while Forge was holding that file until the author answered Phase 0. The only sign was a status line. The fallback now runs only for non-Claude-CLI providers, only when the turn made no tool calls at all, and only when none of the phase's output files has content yet. When it does write, it emits a `warning` instead of a `status`.
+
+### Changed
+- `src/application/ChatService.ts` — `sendMessage()` computes `fallbackOutputFiles` (empty for Claude CLI) and wraps `onEvent` to record any `toolUse` event. The `onDone` and `onError` hooks extract only when `fallbackOutputFiles` is set and no tool call was seen. This replaces the `done.filesTouched` check. `extractResponseToFiles()` now skips if any output file is populated, where before it filled the missing subset. It emits a `warning` through the new module helper `autoSaveNotice()` instead of a `status`. Moved the method's orphaned JSDoc onto it.
+- `src/domain/constants.ts` — `PHASE_OUTPUT_FILES` doc comment describes the new extraction conditions.
+- `src/application/ChatService.test.ts` — The harness takes `providerId`. Added tests for: Claude CLI never auto-saving (done and error paths), a tool call suppressing extraction, the issue's repro (Forge with `project-tasks.md` present doesn't create `revision-prompts.md`, on both done and error), and the Forge two-file split still working when both files are missing. The existing auto-save test expects the `warning`.
+- `docs/architecture/APPLICATION.md` — Rewrote the "Pipeline file fallback" description.
+
+### Architecture Impact
+- None — no wiring changes. The auto-save notice moved from a `status` to a `warning` StreamEvent; both already exist.
+
+### Migration Notes
+- None. Files that earlier auto-saves already wrote are not touched; check `source/revision-prompts.md` in books that went through Fix Planning or Revision Plan.
+
+---
+
+## [2026-11-12] — Revision queue: explicit completion, choice gates never auto-answered (#17)
+
+### Summary
+
+The revision queue marked a session complete whenever the last paragraph of Verity's reply lacked one of 13 approval keywords. "A or B?" or "Which version do you prefer?" slipped through, so the author's decision was skipped and `runAll` moved on. A turn-limit cutoff did the same. When a gate was caught, Approve, Approve All, auto-approve and auto-skip all sent fixed text that couldn't answer a choice. Now Verity's system prompt in the queue tells her to end a finished session with `<!-- session-complete -->`. The queue completes a session only on that marker; every other ending is a gate. Gates are classified as `confirm` or `choice`. Quick replies (buttons, auto modes, Approve All) answer only `confirm` gates, capped at 8 in a row; `choice` gates always wait for a typed answer. Approve All no longer tells Verity to stop asking. Typed feedback is its own action (`reply`, was `reject`), and a new Mark Complete action closes a session whose marker is missing without spending a call.
+
+### Added
+- `src/application/revisionGate.ts` — `isSessionComplete()`, `classifyGate()`, `stripCompletionMarker()`. Replaces the private keyword check `isApprovalGate`.
+- `src/application/revisionGate.test.ts` — Completion marker rules; confirm vs choice classification (fallback "or" offers, review questions, lettered options, numbered change reports).
+
+### Changed
+- `src/domain/types.ts` — `ApprovalAction`: `reject` renamed `reply`; added `complete`. New `GateKind = 'confirm' | 'choice'`. `session:gate` event carries `gateKind`.
+- `src/domain/constants.ts` — Added `REVISION_SESSION_COMPLETE_MARKER`, `REVISION_QUEUE_PROTOCOL`, `MAX_AUTO_GATE_REPLIES` (8).
+- `src/application/RevisionQueueService.ts` — `runSession` appends `REVISION_QUEUE_PROTOCOL` to Verity's system prompt. `runConversationLoop` completes only on `isSessionComplete()`; otherwise classifies the gate. Auto modes and Approve All answer `confirm` gates only, up to `MAX_AUTO_GATE_REPLIES` per run (`autoReplyCounts`). Approve All sends the plain approval text. New `reply` and `complete` decisions. `respondToGate` ignores `approve`/`approve-all` on a `choice` gate (`gateKinds`) and leaves it open.
+- `src/renderer/stores/revisionQueueStore.ts` — `gateKind` state (cached per book, reset to `confirm`); `sendGateMessage` answers with `reply`.
+- `src/renderer/hooks/useRevisionQueueEvents.ts` — Stores `gateKind` from `session:gate`.
+- `src/renderer/components/RevisionQueue/RevisionSessionPanel.tsx` — Choice gates hide Approve/Approve All and prompt for a typed answer. New Mark Complete button.
+- `src/renderer/components/RevisionQueue/QueueControls.tsx` — Auto mode descriptions say choices pause.
+- `src/application/RevisionQueueService.run.test.ts` — Final-reply fixture carries the marker; new gate-detection suite (no-keyword question, missing marker, complete, choice in auto modes, ignored approve on choice, Approve All, auto-reply cap).
+- `src/renderer/components/RevisionQueue/RevisionSessionPanel.test.tsx`, `src/renderer/stores/revisionQueueStore.test.ts`, `src/renderer/hooks/useRevisionQueueEvents.test.tsx` — `reply` action, `gateKind`, choice bar, Mark Complete.
+- `docs/USER_GUIDE.md` — Execution modes and gate bar rewritten; Auto-Skip documented.
+
+### Architecture Impact
+- New module: `src/application/revisionGate.ts` (pure; used by `RevisionQueueService`)
+- `revision:respondToGate` accepts `reply` and `complete`; `reject` is gone
+- `session:gate` push event payload gains `gateKind`
+
+### Migration Notes
+- None for data. `ApprovalAction` values are not persisted.
+- Behavior: sessions run under a model that never emits the marker now pause at the end instead of completing. Mark Complete closes them.
 
 ---
 

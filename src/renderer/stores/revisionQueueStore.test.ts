@@ -193,16 +193,17 @@ describe('revisionQueueStore', () => {
     });
 
     it('respondToGate clears the gate locally before answering the backend', async () => {
-      useRevisionQueueStore.setState({ gateSessionId: 'sess-1', gateText: 'Approve?' });
+      useRevisionQueueStore.setState({ gateSessionId: 'sess-1', gateText: 'Approve?', gateKind: 'choice' });
 
       await useRevisionQueueStore.getState().respondToGate('approve');
 
       expect(useRevisionQueueStore.getState().gateSessionId).toBeNull();
       expect(useRevisionQueueStore.getState().gateText).toBe('');
+      expect(useRevisionQueueStore.getState().gateKind).toBe('confirm');
       expect(mock.revision.respondToGate).toHaveBeenCalledWith('plan-1', 'sess-1', 'approve', undefined);
     });
 
-    it('sendGateMessage appends an optimistic user message and rejects with the message', async () => {
+    it('sendGateMessage appends an optimistic user message and answers with a reply action', async () => {
       useRevisionQueueStore.setState({ gateSessionId: 'sess-1', gateText: 'Approve?' });
 
       await useRevisionQueueStore.getState().sendGateMessage('tighten chapter 2 first');
@@ -212,7 +213,7 @@ describe('revisionQueueStore', () => {
         content: 'tighten chapter 2 first',
       });
       expect(mock.revision.respondToGate).toHaveBeenCalledWith(
-        'plan-1', 'sess-1', 'reject', 'tighten chapter 2 first',
+        'plan-1', 'sess-1', 'reply', 'tighten chapter 2 first',
       );
     });
 

@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 
 /**
- * CI Build Helper for Novel Engine
+ * CI Build Helper for Novel Engine Spur
  *
  * Usage: node scripts/ci-build.js [--version=x.y.z]
  *
  * Runs electron-forge make with platform-appropriate targets,
  * then collects outputs into dist/ with consistent naming:
  *
- *   Novel-Engine-{version}-{platform}-{arch}.{ext}
- *   Novel-Engine-{version}-{platform}-{arch}.{ext}.sha256
+ *   Novel-Engine-Spur-{version}-{platform}-{arch}.{ext}
+ *   Novel-Engine-Spur-{version}-{platform}-{arch}.{ext}.sha256
  *
  * Environment:
  *   GITHUB_REF_NAME  — git tag (e.g. "v1.2.3"), used if --version not provided
@@ -135,7 +135,7 @@ function collectOutputs(version) {
   const renamed = [];
   for (const src of collected) {
     const ext = getFullExtension(src);
-    const destName = `Novel-Engine-${version}-${platform}-${arch}${ext}`;
+    const destName = `Novel-Engine-Spur-${version}-${platform}-${arch}${ext}`;
     const dest = path.join(DIST, destName);
 
     fs.copyFileSync(src, dest);
@@ -185,7 +185,7 @@ function generateChecksums(files) {
 // ── Main ───────────────────────────────────────────────────────────
 async function main() {
   const version = getVersion();
-  console.log(`Novel Engine build pipeline v${version}`);
+  console.log(`Novel Engine Spur build pipeline v${version}`);
   console.log(`Platform: ${platform}-${arch}\n`);
 
   verify();

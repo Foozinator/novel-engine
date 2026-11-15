@@ -74,6 +74,7 @@ export function useRevisionQueueEvents() {
           useRevisionQueueStore.setState({
             gateSessionId: event.sessionId,
             gateText: event.gateText,
+            gateKind: event.gateKind,
             viewingSessionId: event.sessionId,
           });
 

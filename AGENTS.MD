@@ -31,7 +31,7 @@ Lives at the project root. Append-only. Never edit past entries.
 ```markdown
 # Changelog
 
-All notable changes to Novel Engine are documented here.
+All notable changes to Novel Engine Spur are documented here.
 
 ---
 
@@ -102,7 +102,7 @@ The top-level map. Links to domain docs. Updated when layers, wiring, or convent
 #### Header
 
 ```markdown
-# Architecture — Novel Engine
+# Architecture — Novel Engine Spur
 
 > Last updated: YYYY-MM-DD
 

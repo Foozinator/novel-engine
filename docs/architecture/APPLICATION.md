@@ -1,6 +1,6 @@
 # Application — Services & Orchestration
 
-> Last updated: 2026-07-23 (program-030)
+> Last updated: 2026-11-14 (#37)
 
 Everything in `src/application/`. Business logic that orchestrates infrastructure through injected interfaces.
 
@@ -41,10 +41,17 @@ Clean router (403 lines). Delegates special-purpose flows to sub-services. Only 
 5. Resolve stale model/provider settings through `IProviderRegistry.resolveModelSelection()`
 6. Spawn CLI stream via `IProviderRegistry.sendMessage` using the effective model
 7. Forward stream events to `onEvent` callback
-8. On `done`: save assistant message, record usage under the effective model, run chapter validation, and use `done.filesTouched` to decide whether pipeline post-stream extraction is needed
-9. On `error`: emit error event
+8. On `done`: save assistant message, record usage under the effective model, run chapter validation, and decide whether pipeline post-stream extraction is needed (see below)
+9. On `error`: emit error event (and try the same extraction on the partial buffer)
 
-**Pipeline file fallback:** For pipeline conversations, `ChatService.sendMessage()` checks `done.filesTouched` from the provider stream. If no files were touched and the current phase expects output files, it writes the accumulated response buffer to the missing phase output file(s). Codex, Claude, and other tool-use providers populate `done.filesTouched` from native tool/file events or provider-level fallback detection (for Codex, a bounded workspace snapshot diff), so this fallback only runs when the agent truly failed to write files.
+**Pipeline file fallback:** `ChatService.extractResponseToFiles()` writes the reply text into the phase's `PHASE_OUTPUT_FILES`. It runs on `done` or on a non-empty `error` buffer only when all of these hold:
+- The conversation is a pipeline conversation and the phase has output files.
+- The provider is not Claude CLI. Its agent loop is reliable, so a text-only reply is conversation (questions, Phase 0 decisions), not a document.
+- The turn emitted no `toolUse` event of any kind. `sendMessage()` wraps `onEvent` to track this. It replaces the old `done.filesTouched` check, which counted only Write/Edit and missed Bash-made changes.
+- None of the phase's output files has content yet. A partly populated set (e.g. Forge with `project-tasks.md` written and `revision-prompts.md` held back) is skipped entirely.
+- The phase's `PHASE_OUTPUT_CONTENT_MARKERS` regex matches, if it has one (`query-agents`).
+
+A write emits `filesChanged` plus a `warning` event ("Auto-saved the agent's reply to … Check it before advancing.") instead of a `status` line.
 
 **Special modes** (prompt templates loaded at runtime via `AgentService.loadRaw()`):
 - `voice-setup`: Appends `VOICE-SETUP.md` to Verity's prompt
@@ -309,9 +316,9 @@ Dependencies: `IFileSystemService`, `IProviderRegistry`, `IAgentService`, `IData
 |--------|-------------|
 | `loadPlan(bookSlug)` | Reads revision-prompts.md + project-tasks.md → sends to Wrangler for parsing → returns `RevisionPlan` |
 | `clearCache(bookSlug)` | Removes cached parse from disk |
-| `runSession(planId, sessionId)` | Sends session prompt to Verity, streams response, fires events. Model comes from `resolveSessionModel(session.model, settings)`: Forge's `opus`/`sonnet` tier when the user's model is a Claude CLI model and the tier alias is listed, else `settings.model`. |
+| `runSession(planId, sessionId)` | Sends session prompt to Verity (system prompt + `REVISION_QUEUE_PROTOCOL`), streams response, fires events. Model comes from `resolveSessionModel(session.model, settings)`: Forge's `opus`/`sonnet` tier when the user's model is a Claude CLI model and the tier alias is listed, else `settings.model`. |
 | `runAll(planId, selectedIds?)` | Runs all pending sessions sequentially (respects mode and pause) |
-| `respondToGate(planId, sessionId, action, message?)` | Author decision at approval gate |
+| `respondToGate(planId, sessionId, action, message?)` | Author decision at a gate. Ignores `approve`/`approve-all` on a `choice` gate (the gate stays open). |
 | `approveSession(planId, sessionId)` | Marks tasks as `[x]` in project-tasks.md |
 | `rejectSession(planId, sessionId)` | Resets session to `pending` for re-run |
 | `skipSession(planId, sessionId)` | Marks as `skipped`, tasks stay `[ ]` |
@@ -325,10 +332,16 @@ Dependencies: `IFileSystemService`, `IProviderRegistry`, `IAgentService`, `IData
 **Plan parsing:**
 Uses Wrangler model (Sonnet) with `WRANGLER-PARSE.md` (loaded via `AgentService.loadRaw()`) to parse Forge's markdown output into structured JSON. Caches the parsed result on disk.
 
+**Gates** (`src/application/revisionGate.ts`, #17):
+- After each Verity reply, `isSessionComplete()` checks for `REVISION_SESSION_COMPLETE_MARKER` on the last non-empty line with no `?` in the paragraph before it. Only then is the session approved. Any other ending (including a turn-limit cutoff) is a gate.
+- `classifyGate()` returns `{ kind, gateText }`. `choice` = ≥2 lettered/"Option X" lines in the last 3 paragraphs, an "A or B?" question (fallback offers like "or would you like changes?" excluded), or an open question ("Which version…?"; "How does this read?" excluded). Otherwise `confirm`. Plain numbered lists don't count as options.
+- `confirm` gates in `auto-approve`, `auto-skip`, or after Approve All get a fixed quick reply, up to `MAX_AUTO_GATE_REPLIES` per session run. `choice` gates always pause.
+- Decisions: `approve`, `approve-all` (sends the plain approval; the queue answers later `confirm` gates itself), `reply` (typed text), `skip`, `complete` (approve with no further call), `retry`.
+
 **Queue modes:**
-- `manual`: pause after every session for approval
-- `auto-approve`: approve and continue automatically
-- `auto-skip`: skip all sessions (for testing)
+- `manual`: pause at every gate
+- `auto-approve`: answer `confirm` gates with "Approved. Continue with the next task."; pause on `choice`
+- `auto-skip`: answer `confirm` gates with "Skip this task…"; pause on `choice`
 - `selective`: only run selected sessions
 
 ### MotifLedgerService
@@ -430,6 +443,31 @@ Dependencies: `IManuscriptImportService`, `ISeriesService`
 - Sequential import: books created one at a time to avoid filesystem contention
 - No rollback on partial failure: previously imported books remain if a later one fails
 - Volumes sorted by `volumeNumber` before import to ensure correct series ordering
+
+### DataFolderImportService
+
+File: `src/application/DataFolderImportService.ts`
+
+Dependencies: `IDatabaseService` (target), `ISeriesService`, `OpenSourceDataFolder`, paths `{ userDataPath, booksDir, tmpRoot }`, `defaultAuthorProfile` (bootstrap template)
+
+| Method | What It Does |
+|--------|-------------|
+| `preview(sourcePath)` | Opens a source snapshot. For each live book folder it reports `about.json` title/author, body-chapter word/chapter counts, conversation count and history bytes. It also flags `folderExists` (slug taken) and `alreadyImported` (conversation ids already here), plus the source's series dirs and non-template author profile. |
+| `commit(config)` | For each selected book: resolves the target slug (rename = `slugify(newTitle)`), re-checks clashes, stages it, installs it. Then copies series and the author profile. Returns imported / skipped (with reasons) / warnings. |
+
+**Key behaviors:**
+- **Slug taken** means a folder in `books/` or `books/_archived/`, or leftover DB rows under that slug.
+- **Stage** (temp dir): copy the source folder. On rename, rewrite the `about.json` title. Write `.novel-engine/history.sqlite` with `exportBookHistory` on the source copy.
+- **Install:**
+  1. Copy the staged folder without `.novel-engine/` to `books/_importing-<slug>`.
+  2. `importBookHistory` into the target DB.
+  3. `rename` to `books/<slug>`.
+  - On failure: revert the merged rows and remove the pending folder. A book lands whole or not at all.
+- Only slugs found as live book folders in the source are accepted. That blocks path tricks in renderer input.
+- **Series:** copies source series that contain an imported book, if no series with that slug exists here. Volume slugs are mapped through renames. Volumes whose book is neither imported nor already here are dropped with a warning. Calls `series.invalidateCache()`.
+- **Author profile:** copied only when the target's is missing, empty or the bootstrap template. Otherwise a warning.
+- Never copies `custom-agents/` or `settings.json`.
+- Stage and install are the export and import halves that #36's archive/backup zips will reuse.
 
 ### SourceGenerationService
 

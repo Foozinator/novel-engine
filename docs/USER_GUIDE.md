@@ -1,14 +1,16 @@
-# Novel Engine — User Guide
+# Novel Engine Spur — User Guide
+
+*Novel Engine Spur is a fork of Novel Engine by John Paul Ruf.*
 
 > Last updated: 2026-03-28
 
 ---
 
-## 1. What is Novel Engine?
+## 1. What is Novel Engine Spur?
 
-Novel Engine is an Electron desktop application for writing novels with the help of 7 specialized AI agents. Each agent has a distinct role in the writing process — from pitching a story concept through drafting, revision, copy editing, and publication.
+Novel Engine Spur is an Electron desktop application for writing novels with the help of 7 specialized AI agents. Each agent has a distinct role in the writing process — from pitching a story concept through drafting, revision, copy editing, and publication.
 
-The app uses the **Claude Code CLI** as its AI backend. You need a Claude subscription — Novel Engine doesn't store API keys or handle billing. The CLI authenticates through your own Anthropic account.
+The app uses the **Claude Code CLI** as its AI backend. You need a Claude subscription — Novel Engine Spur doesn't store API keys or handle billing. The CLI authenticates through your own Anthropic account.
 
 All your books, chapters, and project files are stored locally on your machine in the app's user data directory. Nothing is sent to external servers beyond the Claude API calls made through the CLI.
 
@@ -18,7 +20,7 @@ All your books, chapters, and project files are stored locally on your machine i
 
 ### First Launch
 
-When you open Novel Engine for the first time, the **onboarding wizard** guides you through setup:
+When you open Novel Engine Spur for the first time, the **onboarding wizard** guides you through setup:
 
 1. **CLI Detection** — The app checks if the `claude` CLI is installed and authenticated. If not, you'll see instructions to install it.
 2. **Author Name** — Enter your name (used in book metadata and cover pages).
@@ -206,7 +208,7 @@ To archive a book you're no longer actively working on, right-click it in the bo
 
 ### Importing Manuscripts
 
-You can import existing manuscripts into Novel Engine:
+You can import existing manuscripts into Novel Engine Spur:
 
 1. Go to **File > Import Manuscript** (or use the import button in the sidebar).
 2. Select a file — supported formats: **Markdown (.md)** and **Word (.docx)**.
@@ -288,7 +290,7 @@ books/my-novel/
 
 ### Version History
 
-Novel Engine automatically tracks file versions. When an agent writes or modifies a file, a snapshot is saved. You can:
+Novel Engine Spur automatically tracks file versions. When an agent writes or modifies a file, a snapshot is saved. You can:
 
 - **View History** — See all versions of a file with timestamps and sources (agent, user, revert).
 - **Compare Versions** — View a diff between any two versions.
@@ -328,16 +330,19 @@ After Forge creates a revision plan, the **Revision Queue** lets you execute it 
 
 ### Execution Modes
 
-- **Manual** — You approve each session before the next one starts. Best for careful oversight.
-- **Auto-Approve** — Sessions run back-to-back automatically. Best for when you trust the plan.
+- **Manual** — The queue pauses every time Verity stops. Best for careful oversight.
+- **Auto-Approve** — Sessions run back-to-back. Yes/no stops ("Shall I proceed?") are approved for you. Questions with options still pause for your answer.
+- **Auto-Skip** — Like Auto-Approve, but yes/no stops are answered with "skip this task". Questions with options still pause.
 - **Selective** — Choose which sessions to run and skip the rest.
 
 ### Approval Gates
 
-In manual mode, after each session completes, you see the result and choose:
-- **Approve** — Accept the changes, mark tasks complete, proceed.
-- **Reject** — Discard the changes, optionally re-run.
-- **Skip** — Move past this session without changes.
+A session finishes only when Verity says every task is done. Whenever she stops for any other reason, the queue pauses and shows a gate bar:
+- **Approve** — Accept and let her continue with the next task.
+- **Approve All** — Approve this and the session's later yes/no stops. Questions with options still pause.
+- **Mark Complete** — Verity is done; mark the session complete without another call.
+- **Skip** — Tell her to skip the current task.
+- **Type an answer** — Send your own reply. When Verity asks you to choose ("A or B?", "Which version do you prefer?"), Approve and Approve All are hidden and typing an answer is the way forward.
 
 ### Monitoring Progress
 
@@ -349,7 +354,7 @@ The queue view shows a progress bar with completed/total sessions, the current s
 
 ### Export Formats
 
-Novel Engine can export your manuscript in four formats:
+Novel Engine Spur can export your manuscript in four formats:
 - **Markdown** — Concatenated chapters in a single `.md` file
 - **DOCX** — Microsoft Word document (via Pandoc)
 - **EPUB** — E-book format (via Pandoc)
@@ -421,6 +426,23 @@ Configure AI providers in the **Providers** section. Claude CLI is the built-in 
 
 Toggle desktop notifications for when agent calls complete (useful for long-running tasks like full manuscript reads).
 
+### Data Folder
+
+On the **Profile** tab, **Data Folder** shows where Novel Engine Spur keeps your books, conversation history, agent prompts and settings. Use **Change…** to pick another folder, or **Use Default Folder** to go back. Both restart the app.
+
+Changing the folder does not copy or move anything. To take your data along, close Novel Engine Spur, copy the whole folder to the new location, then start Novel Engine Spur and choose the copy. If the new folder already holds Novel Engine Spur data, the app uses it. If it's empty, the app starts fresh.
+
+If you used the original Novel Engine, its data is in a folder named `Novel Engine` next to Spur's own folder. On first launch Spur offers three choices:
+- **Copy it here** (recommended): Spur gets its own copy of your books and history, and the original app keeps working with its folder. Close Novel Engine before copying.
+- **Use the old folder in place**: both apps share one folder, one database and one set of agent prompts.
+- **Start fresh**: begin with no books. You can switch later with **Change…**.
+
+Advanced: start the app with `--data-dir=/absolute/path`, or set the `NOVEL_ENGINE_DATA_DIR` environment variable, to override the folder for that run. While an override is active, the folder can't be changed in Settings.
+
+### Agent Prompts
+
+Also on the **Profile** tab. **Agent Prompts** lists the prompts that were updated when you installed a new version, and the prompts you have edited. Edited prompts never get bundled updates.
+
 ---
 
 ## 13. Motif Ledger
@@ -476,7 +498,7 @@ The Claude Code CLI must be installed and authenticated:
 1. Install: `npm install -g @anthropic-ai/claude-code`
 2. Authenticate: Run `claude` in your terminal and follow the login flow.
 3. Verify: `claude --version` should show the version number.
-4. Restart Novel Engine — it re-checks on startup.
+4. Restart Novel Engine Spur — it re-checks on startup.
 
 ### Agent Not Responding
 
@@ -518,10 +540,12 @@ Include:
 
 ### Where Books Are Stored
 
-Books live in your OS user data directory:
-- **macOS:** `~/Library/Application Support/Novel Engine/books/`
-- **Windows:** `%APPDATA%/Novel Engine/books/`
-- **Linux:** `~/.config/Novel Engine/books/`
+Books live in the `books/` folder of your data folder. By default that is:
+- **macOS:** `~/Library/Application Support/Novel Engine Spur/books/`
+- **Windows:** `%APPDATA%/Novel Engine Spur/books/`
+- **Linux:** `~/.config/Novel Engine Spur/books/`
+
+If you chose another data folder in **Settings → Profile → Data Folder**, books are in that folder instead.
 
 Each book is a self-contained directory with `about.json`, `source/`, `chapters/`, and `dist/`.
 
@@ -529,7 +553,7 @@ Each book is a self-contained directory with `about.json`, `source/`, `chapters/
 
 Agent system prompts are stored in the `custom-agents/` directory (inside the user data path). You can edit these `.md` files to customize how each agent behaves. Changes take effect on the next conversation.
 
-**Warning:** Customized prompts are preserved across app updates (the app never overwrites existing agent files). But if an update changes the default prompts significantly, you may want to compare and merge changes.
+When you install a new version, prompts you haven't edited are updated to the new bundled version automatically. Prompts you have edited are kept as they are and listed under **Settings → Profile → Agent Prompts**. To get a bundled update for an edited prompt, compare and merge by hand, or delete your copy and restart. The app then restores the current bundled version.
 
 ### The Author Profile
 

@@ -10,7 +10,7 @@ const execFileAsync = promisify(execFile);
 
 /**
  * ManuscriptImportService — Orchestrates importing an existing manuscript
- * into Novel Engine's book structure.
+ * into Novel Engine Spur's book structure.
  *
  * Reads the source file, converts DOCX to Markdown via Pandoc if needed,
  * runs chapter detection, and commits the import by creating the full book

@@ -2,12 +2,14 @@ type ImportChoiceModalProps = {
   onClose: () => void;
   onImportBook: () => void;
   onImportSeries: () => void;
+  onImportFromDataFolder: () => void;
 };
 
 export function ImportChoiceModal({
   onClose,
   onImportBook,
   onImportSeries,
+  onImportFromDataFolder,
 }: ImportChoiceModalProps): React.ReactElement {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -37,6 +39,19 @@ export function ImportChoiceModal({
             <span className="text-xs text-zinc-500">Import multiple books as a series</span>
           </button>
         </div>
+        <button
+          onClick={() => {
+            onImportFromDataFolder();
+            onClose();
+          }}
+          className="mt-3 flex w-full items-center gap-3 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 p-3 text-left transition-colors hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/20"
+        >
+          <span className="text-2xl">🗄️</span>
+          <span className="flex flex-col">
+            <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">From another Novel Engine folder…</span>
+            <span className="text-xs text-zinc-500">Copy books with their chats and version history</span>
+          </span>
+        </button>
         <div className="mt-4 flex justify-end">
           <button
             onClick={onClose}

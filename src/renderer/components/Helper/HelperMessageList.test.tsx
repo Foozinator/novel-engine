@@ -36,7 +36,7 @@ function renderList(
 describe('HelperMessageList', () => {
   it('greets when there are no messages', () => {
     renderList();
-    expect(screen.getByText(/I'm your Novel Engine assistant/)).toBeInTheDocument();
+    expect(screen.getByText(/I'm your Novel Engine Spur assistant/)).toBeInTheDocument();
   });
 
   it('renders user and assistant messages', () => {
