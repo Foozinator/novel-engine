@@ -76,4 +76,4 @@ The fork ships as **Novel Engine Spur** (#39). User-facing names, packaging IDs 
 ### Verify
 
 - `npm run lint` (which is `tsc --noEmit`), `npm test` (its pretest rebuilds better-sqlite3 for the Node ABI), and `npm run test:coverage`. There is no `build` script; packaging is `npm run package` or `npm run make`.
-- CI and releases use Node 20. `FORGE-CONFIG.md` says Node 22, and its `Root:` path is the maintainer's macOS checkout; ignore both.
+- Dev, CI and releases use Node 22 (`.nvmrc`; `engines` in `package.json`). `FORGE-CONFIG.md`'s `Root:` path is the maintainer's macOS checkout; ignore it.
