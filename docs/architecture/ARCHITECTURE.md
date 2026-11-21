@@ -439,8 +439,10 @@ The fork ships as **Novel Engine Spur** (`APP_NAME` in `src/domain/constants.ts`
 | `npm run test:e2e` | `pretest:e2e` packages the app (`electron-forge package`), then Playwright launches the packaged binary under `out/` | `e2e/*.spec.ts`, `playwright.config.ts` |
 
 E2E rules (`e2e/launch.ts`):
-- Each run gets a fresh temp data folder, passed as `--user-data-dir`. The real `Novel Engine` data folder is never touched. The spec asserts `app.getPath('userData')` equals the temp folder.
+- Each run gets a fresh temp data folder, passed as both `--user-data-dir` and the app's `--data-dir`. The real `Novel Engine Spur` and pre-rename `Novel Engine` folders are never touched, and `--data-dir` (a non-default source) suppresses the first-launch import dialog, which would otherwise block on any machine that has a `Novel Engine` folder. The spec asserts `app.getPath('userData')` equals the temp folder.
+- `findPackagedExecutable()` looks for `out/Novel Engine Spur-<platform>-<arch>/novel-engine-spur[.exe]` (names from `forge.config.ts`).
 - `settings.json` is seeded (`initialized`, all tours completed, CLI update reminder off) so onboarding and tours don't block the UI.
 - The environment is reduced to a GUI allow-list. PATH (and on Linux/macOS, SHELL, which `fixShellPath()` reads) point at stub `claude`/`codex`/`ollama` commands that exit 127. No model CLI runs and nothing is billed.
 - The packaged binary is used instead of `.vite/build/index.js` because it carries its own Electron-ABI better-sqlite3; the root `node_modules` copy may be built for Node after `npm test`.
 - Packaging needs `resources/pandoc` (`npm run download-pandoc` once).
+- The release workflow (`.github/workflows/release.yml`) runs the same spec against the `make` output: required on Linux x64 (under `xvfb-run`), report-only on Windows.

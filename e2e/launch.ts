@@ -7,8 +7,9 @@ import path from 'node:path';
  * Launch helper for the packaged Novel Engine app.
  *
  * Safety rules (the app is launched on a developer machine that may hold real books):
- * - Every run gets a fresh temporary data folder passed as `--user-data-dir`, so the
- *   real `Novel Engine` data folder is never read or written.
+ * - Every run gets a fresh temporary data folder passed as `--user-data-dir` and
+ *   `--data-dir`, so the real `Novel Engine Spur` and pre-rename `Novel Engine` data
+ *   folders are never read or written, and the first-launch import dialog never shows.
  * - PATH is reduced to a stub directory plus the OS system directories. The stub
  *   directory holds fake `claude`, `codex` and `ollama` commands that exit non-zero,
  *   so no model CLI can run and nothing is billed. On Linux/macOS, SHELL points at a
@@ -28,11 +29,12 @@ export type LaunchedApp = {
 /** Finds the binary that `electron-forge package` wrote for this platform. */
 export function findPackagedExecutable(): string {
   const outDir = path.join(ROOT, 'out');
-  const folder = `Novel Engine-${process.platform}-${process.arch}`;
+  // Names come from forge.config.ts packagerConfig (`name`, `executableName`).
+  const folder = `Novel Engine Spur-${process.platform}-${process.arch}`;
   const candidates: Record<string, string> = {
-    linux: path.join(outDir, folder, 'novel-engine'),
-    win32: path.join(outDir, folder, 'novel-engine.exe'),
-    darwin: path.join(outDir, folder, 'Novel Engine.app', 'Contents', 'MacOS', 'Novel Engine'),
+    linux: path.join(outDir, folder, 'novel-engine-spur'),
+    win32: path.join(outDir, folder, 'novel-engine-spur.exe'),
+    darwin: path.join(outDir, folder, 'Novel Engine Spur.app', 'Contents', 'MacOS', 'Novel Engine Spur'),
   };
   const exe = candidates[process.platform];
   if (!exe || !existsSync(exe)) {
@@ -117,7 +119,9 @@ export async function launchApp(): Promise<LaunchedApp> {
 
   const app = await electron.launch({
     executablePath,
-    args: [`--user-data-dir=${userDataDir}`],
+    // `--data-dir` is the app's own override (#39). Without it, a machine that has a
+    // pre-rename `Novel Engine` folder gets the first-launch import dialog, which blocks.
+    args: [`--user-data-dir=${userDataDir}`, `--data-dir=${userDataDir}`],
     env: safeEnv(binDir, stubDir),
     cwd: baseDir,
   });

@@ -6,13 +6,20 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to build (e.g. 1.2.3) — required for manual runs'
+        description: 'Version to build (e.g. 0.3.0, or 0.3.0-rc1 for a prerelease) — required for manual runs'
         required: true
+      include_macos:
+        description: 'Also build the unsigned, untested macOS DMG (experimental)'
+        type: boolean
+        default: false
 
 # Cancel any in-progress runs for the same ref
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 env:
   NODE_VERSION: '22'
@@ -26,6 +33,7 @@ jobs:
     outputs:
       version: ${{ steps.ver.outputs.version }}
       tag: ${{ steps.ver.outputs.tag }}
+      prerelease: ${{ steps.ver.outputs.prerelease }}
     steps:
       - id: ver
         run: |
@@ -40,15 +48,28 @@ jobs:
             echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
             echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           fi
+          # Squirrel.Windows uses NuGet SemVer 1: the prerelease label is one
+          # alphanumeric word (0.3.0-rc1), never dotted (0.3.0-rc.1).
+          V=$(grep '^version=' "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2)
+          if ! echo "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+)?$'; then
+            echo "::error::Version '$V' must look like 1.2.3 or 1.2.3-rc1 (no dots or plus in the prerelease label)"
+            exit 1
+          fi
+          case "$V" in *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;; *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;; esac
 
-  # ── macOS Apple Silicon ──────────────────────────────────────────
+  # ── macOS Apple Silicon (experimental, opt-in) ───────────────────
+  # Without Apple secrets the DMG is unsigned and Gatekeeper blocks it, and
+  # nobody tests on macOS. Built only when a manual run asks for it, and it
+  # never blocks the release.
   build-macos-arm64:
     needs: resolve-version
+    if: github.event_name == 'workflow_dispatch' && inputs.include_macos
+    continue-on-error: true
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -71,7 +92,7 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: installers-darwin-arm64
           path: dist-installers/*
@@ -82,9 +103,9 @@ jobs:
     needs: resolve-version
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -106,7 +127,13 @@ jobs:
           WINDOWS_CERTIFICATE_FILE: ${{ secrets.WINDOWS_CERTIFICATE_FILE }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
 
-      - uses: actions/upload-artifact@v4
+      # Launches the packaged app from out/ (temp data folder, stubbed CLIs).
+      # Not yet proven on Windows, so a failure is reported but doesn't block.
+      - name: Smoke test (packaged app)
+        continue-on-error: true
+        run: npx playwright test
+
+      - uses: actions/upload-artifact@v5
         with:
           name: installers-win32-x64
           path: dist-installers/*
@@ -117,9 +144,9 @@ jobs:
     needs: resolve-version
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -138,7 +165,16 @@ jobs:
       - name: Build installers
         run: node scripts/ci-build.js --version=${{ needs.resolve-version.outputs.version }}
 
-      - uses: actions/upload-artifact@v4
+      # Launches the packaged app from out/ (temp data folder, stubbed CLIs).
+      # A release never ships a build that doesn't start.
+      - name: Smoke test (packaged app)
+        # Ubuntu 24.04 blocks the unprivileged user namespaces Chromium's sandbox needs.
+        run: |
+          sudo apt-get install -y xvfb
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          xvfb-run -a npx playwright test
+
+      - uses: actions/upload-artifact@v5
         with:
           name: installers-linux-x64
           path: dist-installers/*
@@ -149,9 +185,9 @@ jobs:
     needs: resolve-version
     runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -170,7 +206,7 @@ jobs:
       - name: Build installers
         run: node scripts/ci-build.js --version=${{ needs.resolve-version.outputs.version }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: installers-linux-arm64
           path: dist-installers/*
@@ -184,12 +220,18 @@ jobs:
       - build-windows
       - build-linux-x64
       - build-linux-arm64
+    # macOS is optional: skipped or failed is fine; the others must succeed.
+    if: >-
+      !cancelled() &&
+      needs.build-windows.result == 'success' &&
+      needs.build-linux-x64.result == 'success' &&
+      needs.build-linux-arm64.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Create the tag if it doesn't exist (workflow_dispatch case)
       - name: Ensure tag exists
@@ -200,7 +242,7 @@ jobs:
             git push origin "$TAG"
           fi
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           path: all-artifacts/
           merge-multiple: false
@@ -241,22 +283,42 @@ jobs:
           draft: true
           generate_release_notes: true
           files: release-files/*
+          prerelease: ${{ needs.resolve-version.outputs.prerelease == 'true' }}
           body: |
-            ## Installation
+            Novel Engine Spur is a fork of [Novel Engine](https://github.com/john-paul-ruf/novel-engine), which is no longer maintained.
+
+            ## Installs alongside Novel Engine
+
+            Spur has its own install folder, shortcuts and data folder, so an installed Novel Engine keeps working.
+
+            | | Novel Engine | Novel Engine Spur |
+            |---|---|---|
+            | Windows program | `%LOCALAPPDATA%\NovelEngine` | `%LOCALAPPDATA%\NovelEngineSpur` |
+            | Data folder | `%APPDATA%\Novel Engine` (Windows), `~/.config/Novel Engine` (Linux) | `%APPDATA%\Novel Engine Spur`, `~/.config/Novel Engine Spur` |
+
+            **First launch.** If a Novel Engine data folder exists, Spur asks once:
+            - **Copy it here** (recommended): Spur gets its own copy of your books, chats and history. The original folder isn't changed. Quit Novel Engine before copying.
+            - **Use the old folder in place**: both apps share one folder and database. Not recommended while you still use Novel Engine.
+            - **Start fresh**: no books. You can import them later (Import → From another Novel Engine folder).
+
+            Before Spur upgrades its database, it saves a snapshot in the data folder's `backups/` folder.
+
+            ## Downloads
 
             | Platform | File | Architecture |
             |----------|------|--------------|
-            | **macOS** (Apple Silicon) | `Novel-Engine-Spur-*-darwin-arm64.dmg` | ARM64 |
             | **Windows** | `Novel-Engine-Spur-*-win32-x64.exe` | x86_64 |
             | **Linux** (Debian/Ubuntu) | `Novel-Engine-Spur-*-linux-x64.deb` | x86_64 |
             | **Linux** (Fedora/RHEL) | `Novel-Engine-Spur-*-linux-x64.rpm` | x86_64 |
             | **Linux ARM** (Debian/Ubuntu) | `Novel-Engine-Spur-*-linux-arm64.deb` | ARM64 |
             | **Linux ARM** (Fedora/RHEL) | `Novel-Engine-Spur-*-linux-arm64.rpm` | ARM64 |
 
-            ### Prerequisites
-            - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
+            The installers aren't code-signed. On Windows, SmartScreen warns: choose **More info → Run anyway**. macOS builds, when attached, are experimental and untested; Gatekeeper blocks them.
 
-            ### Verify Downloads
+            ### Prerequisites
+            - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and signed in. Spur and Novel Engine share the same CLI, login and usage limits.
+
+            ### Verify downloads
             ```bash
             sha256sum -c CHECKSUMS.txt
             ```

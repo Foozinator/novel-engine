@@ -4,6 +4,35 @@ All notable changes to Novel Engine Spur are documented here.
 
 ---
 
+## [2026-11-21] — Release workflow ready for the first Spur release (#57)
+
+### Summary
+
+`release.yml` was still upstream's pipeline with the names changed. It would have blocked every release on an unsigned macOS build nobody tests, and the Playwright smoke test (#41) still looked for upstream's binary names. Now macOS is opt-in and can't block the release, the packaged app must pass the smoke test on Linux before anything is uploaded, versions are checked against Squirrel's rules, and the draft release notes explain the side-by-side install and the first-launch copy prompt. The smoke test also passes the app's own `--data-dir` flag, so a machine with a pre-rename `Novel Engine` folder no longer gets the blocking import dialog.
+
+### Changed
+- `.github/workflows/release.yml`:
+  - `workflow_dispatch` takes `include_macos` (default off). The macOS job runs only when asked, has `continue-on-error`, and the `release` job requires only the Windows and Linux builds.
+  - `resolve-version` rejects versions other than `1.2.3` or `1.2.3-<word>` (Squirrel uses NuGet SemVer 1, so `-rc.1` fails) and outputs `prerelease`. The GitHub release is marked as a prerelease when the version has a label.
+  - Linux x64 runs `npx playwright test` under `xvfb-run` after `make` (with `kernel.apparmor_restrict_unprivileged_userns=0` for Chromium's sandbox on Ubuntu 24.04). Windows runs it report-only (`continue-on-error`) until it's proven there.
+  - `actions/checkout`, `setup-node`, `upload-artifact`, `download-artifact` `@v4` → `@v5`. Workflow-level `permissions: contents: read`; only `release` gets `contents: write`.
+  - Release body: side-by-side install table (program and data folders), the first-launch Copy / Use in place / Start fresh choices, the pre-migration backup, unsigned-installer warnings, shared Claude CLI login and limits. macOS removed from the download table.
+- `e2e/launch.ts` — `findPackagedExecutable()` looks for `out/Novel Engine Spur-<platform>-<arch>/novel-engine-spur[.exe]` (and the Spur `.app` on macOS). Launch adds `--data-dir=<temp>` alongside `--user-data-dir`.
+- `e2e/smoke.spec.ts` — Expects the window title `Novel Engine Spur`.
+- `TECHNICAL.md` — New paragraph on the release workflow: version rule, required vs. optional builds, smoke test, draft output.
+- `docs/architecture/ARCHITECTURE.md` — Testing section: `--data-dir`, Spur binary names, smoke test in the release workflow.
+
+### Fixed
+- `e2e/launch.ts`, `e2e/smoke.spec.ts` — The smoke test from #46 still used upstream's binary names and title after the rename (#54) and couldn't find the packaged app.
+
+### Architecture Impact
+- None — no wiring changes.
+
+### Migration Notes
+- None. `package.json` stays at `0.2.0`; `scripts/ci-build.js` writes the release version into it at build time.
+
+---
+
 ## [2026-11-20] — Snapshot the database before schema migrations (#58)
 
 ### Summary

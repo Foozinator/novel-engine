@@ -35,7 +35,7 @@ test('packaged app starts, creates a book and shows a chapter', async () => {
   });
 
   await test.step('main window renders the library', async () => {
-    await expect(page).toHaveTitle('Novel Engine');
+    await expect(page).toHaveTitle('Novel Engine Spur');
     await expect(page.getByRole('button', { name: /New Book/ })).toBeVisible();
   });
 
