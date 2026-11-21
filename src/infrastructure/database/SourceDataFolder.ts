@@ -4,6 +4,7 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import type { ISourceDataFolder, OpenSourceDataFolder } from '@domain/interfaces';
 import { DatabaseService } from './DatabaseService';
+import { readAppliedVersion } from './migrations';
 
 const DB_FILE = 'novel-engine.db';
 
@@ -70,9 +71,7 @@ export function makeSourceDataFolderOpener(ownUserDataPath: string, tmpRoot: str
 function readSchemaVersion(file: string): number {
   const raw = new Database(file, { fileMustExist: true });
   try {
-    const hasTable = raw.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'").get();
-    if (!hasTable) return -1;
-    return (raw.prepare('SELECT MAX(version) v FROM schema_version').get() as { v: number | null }).v ?? -1;
+    return readAppliedVersion(raw);
   } finally {
     raw.close();
   }

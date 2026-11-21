@@ -25,6 +25,7 @@ import type {
   WordCountSnapshot,
 } from '@domain/types';
 import { initializeSchema } from './schema';
+import { backupBeforeMigrations } from './backup';
 import * as bookHistory from './bookHistory';
 
 export class DatabaseService implements IDatabaseService {
@@ -79,8 +80,21 @@ export class DatabaseService implements IDatabaseService {
   private stmtGetWordCountHistoryAll: Database.Statement;
   private stmtGetWordCountHistoryByBook: Database.Statement;
 
-  constructor(dbPath: string) {
+  /**
+   * @param options.migrationBackupDir When set, the DB is snapshotted there
+   *   before pending migrations run (#58). A failed snapshot throws
+   *   `MigrationBackupError` and leaves the DB unmigrated.
+   */
+  constructor(dbPath: string, options: { migrationBackupDir?: string } = {}) {
     this.db = new Database(dbPath);
+    if (options.migrationBackupDir) {
+      try {
+        backupBeforeMigrations(this.db, options.migrationBackupDir);
+      } catch (err) {
+        this.db.close();
+        throw err;
+      }
+    }
     initializeSchema(this.db);
 
     this.stmtInsertConversation = this.db.prepare(`

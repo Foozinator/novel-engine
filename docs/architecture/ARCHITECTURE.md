@@ -1,6 +1,6 @@
 # Architecture — Novel Engine Spur
 
-> Last updated: 2026-11-20 (#63)
+> Last updated: 2026-11-20 (#58)
 
 Electron + React 18 + TypeScript 5 + Tailwind v4 + Zustand + better-sqlite3 + Claude Code CLI + Codex CLI + Ollama CLI + Pandoc
 
@@ -45,6 +45,8 @@ src/
 │   ├── database/
 │   │   ├── schema.ts                        # SQLite CREATE TABLE statements, WAL mode, foreign keys
 │   │   ├── DatabaseService.ts               # Conversations, messages, usage, stream events repos
+│   │   ├── migrations.ts                    # Forward-only schema migrations, APP_SCHEMA_VERSION
+│   │   ├── backup.ts                        # Pre-migration DB snapshot + pruning (#58)
 │   │   ├── bookHistory.ts                   # Per-book history snapshot export/merge (#37, #36 seam)
 │   │   ├── SourceDataFolder.ts              # Opens another data folder via a migrated temp DB copy
 │   │   └── index.ts

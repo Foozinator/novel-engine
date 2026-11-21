@@ -1,7 +1,9 @@
 import { existsSync } from 'node:fs';
 import type Database from 'better-sqlite3';
 import type { BookHistoryCounts, BookHistoryImportReceipt } from '@domain/types';
-import { MIGRATIONS } from './migrations';
+import { APP_SCHEMA_VERSION } from './migrations';
+
+export { APP_SCHEMA_VERSION };
 
 /**
  * Per-book history snapshots.
@@ -21,9 +23,6 @@ import { MIGRATIONS } from './migrations';
  */
 
 const H = 'book_history_snapshot';
-
-/** Highest migration version this app knows. */
-export const APP_SCHEMA_VERSION = Math.max(...MIGRATIONS.map((m) => m.version));
 
 function columnNames(db: Database.Database, schema: string, table: string): string[] {
   const rows = db.prepare('SELECT name FROM pragma_table_info(?, ?)').all(table, schema) as { name: string }[];
