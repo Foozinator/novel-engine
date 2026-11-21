@@ -23,6 +23,8 @@ All notable changes to Novel Engine Spur are documented here.
 - `docs/architecture/ARCHITECTURE.md` — Testing section: `--data-dir`, Spur binary names, smoke test in the release workflow.
 
 ### Fixed
+- `scripts/download-pandoc.js` — On Windows, zips are extracted with `System32\tar.exe` instead of `powershell Expand-Archive`. Started from PowerShell 7 (GitHub's Windows runners), Windows PowerShell 5.1 inherited `PSModulePath`, loaded PS7's Archive module and failed. It also exited 0, so the script only stopped later with "Could not find 'pandoc.exe'".
+- `.github/workflows/release.yml` — Linux x64 builds on `ubuntu-24.04` instead of `ubuntu-latest` (now 26.04). The newer rpm there breaks `electron-installer-redhat`'s spec (`cp: cannot stat 'usr/*'` in `%install`).
 - `e2e/launch.ts`, `e2e/smoke.spec.ts` — The smoke test from #46 still used upstream's binary names and title after the rename (#54) and couldn't find the packaged app.
 
 ### Architecture Impact

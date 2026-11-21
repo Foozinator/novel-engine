@@ -142,7 +142,10 @@ jobs:
   # ── Linux x64 ───────────────────────────────────────────────────
   build-linux-x64:
     needs: resolve-version
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest is 26.04, whose rpm moved the %install build dir,
+    # and electron-installer-redhat's spec fails there (`cp: cannot stat 'usr/*'`).
+    # Matches the arm64 job's 24.04 image (rpm 4.18).
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
