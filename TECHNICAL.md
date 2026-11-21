@@ -100,6 +100,13 @@ Electron Forge config lives in [`forge.config.ts`](./forge.config.ts):
 - **Identity**: product name `Novel Engine Spur`, executable `novel-engine-spur`, macOS bundle ID `io.github.foozinator.novel-engine-spur`, Squirrel ID `NovelEngineSpur`, deb/rpm package `novel-engine-spur`. All differ from upstream, so both apps install side by side.
 - Utility scripts: `scripts/ci-build.js` (installer collection + checksums), `scripts/generate-icons.js`, `scripts/download-pandoc.js`
 
+Releases come from `.github/workflows/release.yml`, run by hand (`workflow_dispatch` with a version) or by a `v*` tag push:
+
+- **Version**: `1.2.3` or a one-word prerelease such as `1.2.3-rc1`. Squirrel uses NuGet SemVer 1, so dotted labels (`-rc.1`) are rejected. A prerelease version marks the GitHub release as a prerelease.
+- **Builds**: Windows x64, Linux x64 and Linux arm64 are required. macOS is opt-in (`include_macos`), unsigned and never blocks the release.
+- **Smoke test**: the Playwright spec runs against each packaged build: required on Linux x64, report-only on Windows.
+- **Output**: always a **draft** release with the installers and `CHECKSUMS.txt`. The owner reviews and publishes it. A manual run creates and pushes the tag itself.
+
 ## Project Structure
 
 ### Source (187 TypeScript/TSX files, five clean-architecture layers)

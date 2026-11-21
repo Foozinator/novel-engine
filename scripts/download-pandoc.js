@@ -13,7 +13,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 
 const PANDOC_VERSION = '3.6.4';
 
@@ -167,7 +167,12 @@ async function main() {
 
     if (config.extract === 'zip') {
       if (platform === 'win32') {
-        execSync(`powershell -Command "Expand-Archive -Path '${archivePath}' -DestinationPath '${extractDir}'"`, { stdio: 'inherit' });
+        // Windows' own bsdtar (System32, Windows 10 1803+) reads zips and exits non-zero on failure.
+        // Not `powershell Expand-Archive`: from a PowerShell 7 parent (GitHub's Windows runners) it
+        // inherits PSModulePath, loads PS7's Archive module into 5.1 and fails without an exit code.
+        // Full path, because Git for Windows' GNU tar on PATH can't read zips.
+        const systemTar = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe');
+        execFileSync(systemTar, ['-xf', archivePath, '-C', extractDir], { stdio: 'inherit' });
       } else {
         execSync(`unzip -q "${archivePath}" -d "${extractDir}"`, { stdio: 'inherit' });
       }
