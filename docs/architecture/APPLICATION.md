@@ -1,6 +1,6 @@
 # Application — Services & Orchestration
 
-> Last updated: 2026-11-14 (#37)
+> Last updated: 2026-11-20 (#63)
 
 Everything in `src/application/`. Business logic that orchestrates infrastructure through injected interfaces.
 
@@ -457,7 +457,7 @@ Dependencies: `IDatabaseService` (target), `ISeriesService`, `OpenSourceDataFold
 
 **Key behaviors:**
 - **Slug taken** means a folder in `books/` or `books/_archived/`, or leftover DB rows under that slug.
-- **Stage** (temp dir): copy the source folder. On rename, rewrite the `about.json` title. Write `.novel-engine/history.sqlite` with `exportBookHistory` on the source copy.
+- **Stage** (temp dir): copy the source folder and drop any `.claude/` folder in the copy. On rename, rewrite the `about.json` title. Write `.novel-engine/history.sqlite` with `exportBookHistory` on the source copy.
 - **Install:**
   1. Copy the staged folder without `.novel-engine/` to `books/_importing-<slug>`.
   2. `importBookHistory` into the target DB.

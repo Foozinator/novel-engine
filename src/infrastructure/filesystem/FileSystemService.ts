@@ -14,7 +14,8 @@ import type {
   ShelvedPitch,
   ShelvedPitchMeta,
 } from '@domain/types';
-import { PITCH_ROOM_SLUG } from '@domain/constants';
+import { CLAUDE_PROJECT_CONFIG_DIR, PITCH_ROOM_SLUG } from '@domain/constants';
+import { resolveBookPath, safeSegment } from './bookPaths';
 
 const VALID_COVER_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
 
@@ -121,7 +122,7 @@ export class FileSystemService implements IFileSystemService {
 
   async createBook(title: string, author?: string): Promise<BookMeta> {
     const slug = this.slugify(title);
-    const bookRoot = path.join(this.booksDir, slug);
+    const bookRoot = resolveBookPath(this.booksDir, slug);
 
     // Create directory tree
     await fs.mkdir(path.join(bookRoot, 'source'), { recursive: true });
@@ -175,7 +176,7 @@ export class FileSystemService implements IFileSystemService {
   }
 
   async getBookMeta(slug: string): Promise<BookMeta> {
-    const aboutPath = path.join(this.booksDir, slug, 'about.json');
+    const aboutPath = resolveBookPath(this.booksDir, slug, 'about.json');
     let raw: string;
     try {
       raw = await fs.readFile(aboutPath, 'utf-8');
@@ -213,7 +214,7 @@ export class FileSystemService implements IFileSystemService {
     }
 
     if (newSlug && newSlug !== slug) {
-      const oldDir = path.join(this.booksDir, slug);
+      const oldDir = resolveBookPath(this.booksDir, slug);
       const newDir = path.join(this.booksDir, newSlug);
 
       try {
@@ -233,7 +234,7 @@ export class FileSystemService implements IFileSystemService {
       }
     }
 
-    const aboutPath = path.join(this.booksDir, currentSlug, 'about.json');
+    const aboutPath = resolveBookPath(this.booksDir, currentSlug, 'about.json');
     await fs.writeFile(
       aboutPath,
       JSON.stringify(
@@ -300,7 +301,7 @@ export class FileSystemService implements IFileSystemService {
     let totalWordCount = 0;
 
     try {
-      const chaptersDir = path.join(this.booksDir, slug, 'chapters');
+      const chaptersDir = resolveBookPath(this.booksDir, slug, 'chapters');
       const entries = await fs.readdir(chaptersDir, { withFileTypes: true });
 
       for (const entry of entries) {
@@ -341,8 +342,12 @@ export class FileSystemService implements IFileSystemService {
 
   // ── File Operations ───────────────────────────────────────────────
 
+  getAbsolutePath(bookSlug: string, relativePath: string): string {
+    return resolveBookPath(this.booksDir, bookSlug, relativePath);
+  }
+
   async readFile(bookSlug: string, relativePath: string): Promise<string> {
-    const filePath = path.join(this.booksDir, bookSlug, relativePath);
+    const filePath = resolveBookPath(this.booksDir, bookSlug, relativePath);
     try {
       return await fs.readFile(filePath, 'utf-8');
     } catch {
@@ -351,13 +356,13 @@ export class FileSystemService implements IFileSystemService {
   }
 
   async writeFile(bookSlug: string, relativePath: string, content: string): Promise<void> {
-    const filePath = path.join(this.booksDir, bookSlug, relativePath);
+    const filePath = resolveBookPath(this.booksDir, bookSlug, relativePath);
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, content, 'utf-8');
   }
 
   async deleteFile(bookSlug: string, relativePath: string): Promise<void> {
-    const filePath = path.join(this.booksDir, bookSlug, relativePath);
+    const filePath = resolveBookPath(this.booksDir, bookSlug, relativePath);
     try {
       await fs.unlink(filePath);
     } catch (err: unknown) {
@@ -369,7 +374,7 @@ export class FileSystemService implements IFileSystemService {
   }
 
   async deletePath(bookSlug: string, relativePath: string): Promise<void> {
-    const fullPath = path.join(this.booksDir, bookSlug, relativePath);
+    const fullPath = resolveBookPath(this.booksDir, bookSlug, relativePath);
     try {
       const stat = await fs.stat(fullPath);
       if (stat.isDirectory()) {
@@ -385,8 +390,8 @@ export class FileSystemService implements IFileSystemService {
   }
 
   async renameFile(bookSlug: string, oldPath: string, newPath: string): Promise<void> {
-    const sourcePath = path.join(this.booksDir, bookSlug, oldPath);
-    const destPath = path.join(this.booksDir, bookSlug, newPath);
+    const sourcePath = resolveBookPath(this.booksDir, bookSlug, oldPath);
+    const destPath = resolveBookPath(this.booksDir, bookSlug, newPath);
 
     // Verify source exists
     try {
@@ -401,7 +406,7 @@ export class FileSystemService implements IFileSystemService {
   }
 
   async fileExists(bookSlug: string, relativePath: string): Promise<boolean> {
-    const filePath = path.join(this.booksDir, bookSlug, relativePath);
+    const filePath = resolveBookPath(this.booksDir, bookSlug, relativePath);
     try {
       await fs.access(filePath);
       return true;
@@ -411,14 +416,15 @@ export class FileSystemService implements IFileSystemService {
   }
 
   async listDirectory(bookSlug: string, relativePath?: string): Promise<FileEntry[]> {
-    const bookRoot = path.join(this.booksDir, bookSlug);
+    const bookRoot = resolveBookPath(this.booksDir, bookSlug);
+    resolveBookPath(this.booksDir, bookSlug, relativePath ?? ''); // throws if the subfolder leaves the book
     return this.buildFileTree(bookRoot, relativePath ?? '', 0, 3);
   }
 
   // ── Word Count ────────────────────────────────────────────────────
 
   async countWords(bookSlug: string): Promise<number> {
-    const chaptersDir = path.join(this.booksDir, bookSlug, 'chapters');
+    const chaptersDir = resolveBookPath(this.booksDir, bookSlug, 'chapters');
     let entries: string[];
     try {
       entries = await fs.readdir(chaptersDir);
@@ -441,7 +447,7 @@ export class FileSystemService implements IFileSystemService {
   }
 
   async countWordsPerChapter(bookSlug: string): Promise<{ slug: string; wordCount: number }[]> {
-    const chaptersDir = path.join(this.booksDir, bookSlug, 'chapters');
+    const chaptersDir = resolveBookPath(this.booksDir, bookSlug, 'chapters');
     let entries: string[];
     try {
       entries = await fs.readdir(chaptersDir);
@@ -474,7 +480,7 @@ export class FileSystemService implements IFileSystemService {
   }
 
   async getRecentFiles(bookSlug: string, limit = 10): Promise<RecentFile[]> {
-    const bookDir = path.join(this.booksDir, bookSlug);
+    const bookDir = resolveBookPath(this.booksDir, bookSlug);
     const files: RecentFile[] = [];
 
     const collectFiles = async (dir: string, rel: string): Promise<void> => {
@@ -510,7 +516,7 @@ export class FileSystemService implements IFileSystemService {
   }
 
   async assembleManuscript(bookSlug: string): Promise<ManuscriptAssembly> {
-    const chaptersDir = path.join(this.booksDir, bookSlug, 'chapters');
+    const chaptersDir = resolveBookPath(this.booksDir, bookSlug, 'chapters');
     let entries: string[];
     try {
       entries = await fs.readdir(chaptersDir);
@@ -556,7 +562,7 @@ export class FileSystemService implements IFileSystemService {
       throw new Error(`Unsupported image type "${ext}". Supported: ${[...VALID_COVER_EXTENSIONS].join(', ')}`);
     }
 
-    const bookRoot = path.join(this.booksDir, bookSlug);
+    const bookRoot = resolveBookPath(this.booksDir, bookSlug);
 
     // Delete any existing cover with a different extension
     const meta = await this.getBookMeta(bookSlug);
@@ -582,7 +588,7 @@ export class FileSystemService implements IFileSystemService {
   // ── Book Archiving ──────────────────────────────────────────────
 
   async archiveBook(slug: string): Promise<void> {
-    const bookDir = path.join(this.booksDir, slug);
+    const bookDir = resolveBookPath(this.booksDir, slug);
     const archivedDir = path.join(this.booksDir, '_archived');
     const destDir = path.join(archivedDir, slug);
 
@@ -616,7 +622,7 @@ export class FileSystemService implements IFileSystemService {
 
   async unarchiveBook(slug: string): Promise<BookMeta> {
     const archivedDir = path.join(this.booksDir, '_archived', slug);
-    const destDir = path.join(this.booksDir, slug);
+    const destDir = resolveBookPath(this.booksDir, slug);
 
     // Verify the archived book exists
     try {
@@ -635,6 +641,9 @@ export class FileSystemService implements IFileSystemService {
     }
 
     await fs.rename(archivedDir, destDir);
+
+    // Drop any Claude CLI project config the folder picked up while archived.
+    await fs.rm(path.join(destDir, CLAUDE_PROJECT_CONFIG_DIR), { recursive: true, force: true });
 
     // Read and return the meta
     return this.getBookMeta(slug);
@@ -760,7 +769,12 @@ export class FileSystemService implements IFileSystemService {
     const meta = await this.getBookMeta(bookSlug);
     if (!meta.coverImage) return null;
 
-    const absPath = path.join(this.booksDir, bookSlug, meta.coverImage);
+    let absPath: string;
+    try {
+      absPath = resolveBookPath(this.booksDir, bookSlug, meta.coverImage);
+    } catch {
+      return null; // coverImage points outside the book
+    }
     try {
       await fs.access(absPath);
       return absPath;
@@ -800,7 +814,7 @@ export class FileSystemService implements IFileSystemService {
   }
 
   async readShelvedPitch(slug: string): Promise<ShelvedPitch> {
-    const filePath = path.join(this.booksDir, '_pitches', `${slug}.md`);
+    const filePath = path.join(this.booksDir, '_pitches', `${safeSegment(slug, 'pitch slug')}.md`);
     let raw: string;
     try {
       raw = await fs.readFile(filePath, 'utf-8');
@@ -814,7 +828,7 @@ export class FileSystemService implements IFileSystemService {
   }
 
   async deleteShelvedPitch(slug: string): Promise<void> {
-    const filePath = path.join(this.booksDir, '_pitches', `${slug}.md`);
+    const filePath = path.join(this.booksDir, '_pitches', `${safeSegment(slug, 'pitch slug')}.md`);
     try {
       await fs.unlink(filePath);
     } catch (err: unknown) {
@@ -885,7 +899,7 @@ export class FileSystemService implements IFileSystemService {
   // ── Pitch Room Drafts ────────────────────────────────────────────
 
   getPitchDraftPath(conversationId: string): string {
-    const draftDir = path.join(this.booksDir, PITCH_ROOM_SLUG, 'drafts', conversationId);
+    const draftDir = path.join(this.booksDir, PITCH_ROOM_SLUG, 'drafts', safeSegment(conversationId, 'draft ID'));
     // Synchronous path resolution — directory creation happens lazily when the CLI runs
     return draftDir;
   }
@@ -915,7 +929,7 @@ export class FileSystemService implements IFileSystemService {
   }
 
   async getPitchDraft(conversationId: string): Promise<PitchDraft | null> {
-    const draftDir = path.join(this.booksDir, PITCH_ROOM_SLUG, 'drafts', conversationId);
+    const draftDir = path.join(this.booksDir, PITCH_ROOM_SLUG, 'drafts', safeSegment(conversationId, 'draft ID'));
     const stat = await fs.stat(draftDir).catch(() => null);
     if (!stat || !stat.isDirectory()) return null;
 
@@ -931,7 +945,7 @@ export class FileSystemService implements IFileSystemService {
   }
 
   async deletePitchDraft(conversationId: string): Promise<void> {
-    const draftDir = path.join(this.booksDir, PITCH_ROOM_SLUG, 'drafts', conversationId);
+    const draftDir = path.join(this.booksDir, PITCH_ROOM_SLUG, 'drafts', safeSegment(conversationId, 'draft ID'));
     try {
       await fs.rm(draftDir, { recursive: true, force: true });
     } catch (err: unknown) {
@@ -1047,7 +1061,7 @@ export class FileSystemService implements IFileSystemService {
    * Returns the absolute path to the pitch file, or null if none found.
    */
   private async resolvePitchFile(conversationId: string): Promise<string | null> {
-    const draftDir = path.join(this.booksDir, PITCH_ROOM_SLUG, 'drafts', conversationId);
+    const draftDir = path.join(this.booksDir, PITCH_ROOM_SLUG, 'drafts', safeSegment(conversationId, 'draft ID'));
 
     // 1. Check canonical path
     const canonicalPath = path.join(draftDir, 'source', 'pitch.md');

@@ -4,6 +4,47 @@ All notable changes to Novel Engine Spur are documented here.
 
 ---
 
+## [2026-11-20] — Harden renderer and agent defaults (#63)
+
+### Summary
+
+Tighter defaults for rendering content and running agents, ahead of the first release. All rendered markdown now goes through one helper that sanitizes the HTML with DOMPurify. The main window stays on the app's own page: `https:` links open in the system browser, and every IPC handler serves only that page. Book paths go through one helper that checks the slug and keeps the path inside the book. `shell:openExternal` and `shell:openPath` accept fewer targets. For the Claude CLI, `Read`/`Write`/`Edit` are limited to the books folder, the series folder and the author profile, the CLI loads user settings only, and WebFetch becomes a setting (Settings → Writing → Web Access, on by default). Agents can still write chapters and edit the series bible and author profile; this was checked against Claude CLI 2.1.318.
+
+### Added
+- `src/renderer/utils/markdown.ts` — `renderMarkdown()` (marked + DOMPurify) and `sanitizeHtml()`. Sets marked's options once (`gfm`, `breaks`, `async: false`).
+- `src/main/appUrl.ts` — `createAppUrlMatcher()`: true only for the app's entry page (packaged: the exact `index.html` file URL; dev: the Vite server origin).
+- `src/infrastructure/filesystem/bookPaths.ts` — `resolveBookPath()` and `safeSegment()`.
+- `src/domain/agentToolScope.test.ts`, `src/infrastructure/filesystem/bookPaths.test.ts`, `src/infrastructure/filesystem/FileSystemService.paths.test.ts`, `src/main/appUrl.test.ts`, `src/renderer/utils/markdown.test.ts` — Tests for the above.
+- `package.json` — `dompurify` 3.4.17.
+
+### Changed
+- `src/domain/constants.ts` — `CLAUDE_CLI_ALLOWED_TOOLS` replaced by `buildClaudeCliAllowedTools({ scopes, webFetch })`. Added `toClaudeCliRulePath()` (absolute paths in the CLI's `//…` rule form, Windows drive paths as `//c/…`), `isSafePathSegment()`, `CLAUDE_PROJECT_CONFIG_DIR`. `DEFAULT_SETTINGS.allowWebFetch = true`.
+- `src/domain/types.ts` — `AppSettings.allowWebFetch: boolean`.
+- `src/domain/interfaces.ts` — `IFileSystemService.getAbsolutePath(bookSlug, relativePath)`.
+- `src/infrastructure/claude-cli/ClaudeCodeClient.ts` — Builds `--allowedTools` per spawn from the books dir plus `options.extraToolScopes`; WebFetch only when `options.loadSettings()` says `allowWebFetch`, with a prompt note when it's off. Adds `--setting-sources user`. Writes the system prompt file in a private `mkdtemp` directory (0700, file 0600) and removes the directory after exit. Refuses a `bookSlug` that isn't one folder name.
+- `src/infrastructure/filesystem/FileSystemService.ts` — Book-relative paths go through `resolveBookPath()`; pitch slugs and draft IDs through `safeSegment()`. `getCoverImageAbsolutePath()` returns null for a cover outside the book. `unarchiveBook()` removes the book's `.claude/` folder. Added `getAbsolutePath()`.
+- `src/infrastructure/filesystem/index.ts` — Exports `resolveBookPath`.
+- `src/application/DataFolderImportService.ts` — Drops a `.claude/` folder from each staged book.
+- `src/main/index.ts` — Main window gets `sandbox: true`, `will-navigate`/`will-redirect` handlers and a deny-all `setWindowOpenHandler` (`https:` URLs go to the system browser). `novel-asset://cover` resolves through `resolveBookPath()`. `ClaudeCodeClient` gets the series folder and author profile as extra scopes and the settings loader. Passes `isAppUrl` to `registerIpcHandlers`.
+- `src/main/ipc/handlers.ts` — All channels register through `handle()`, which checks `event.senderFrame.url` with `isAppUrl`. `shell:openExternal` accepts `https:`/`mailto:` only. `shell:openPath` accepts the books folder and files saved through the export save dialogs this session. `books:getAbsolutePath` and `build:exportZip` use `fs.getAbsolutePath()`.
+- `index.html` — CSP adds `form-action 'none'; base-uri 'none'; object-src 'none'`.
+- `src/renderer/components/Chat/{MessageBubble,ChatModal,ThinkingBlock,StreamingMessage}.tsx`, `src/renderer/components/Files/FileEditor.tsx`, `src/renderer/components/PitchRoom/PitchRoomView.tsx`, `src/renderer/components/RevisionQueue/RevisionSessionPanel.tsx`, `src/renderer/components/Sidebar/PitchPreviewModal.tsx`, `src/renderer/components/common/ProseViewer.tsx` — Render through `renderMarkdown()`/`sanitizeHtml()`; per-component `marked.setOptions` removed.
+- `src/renderer/components/Settings/SettingsView.tsx` — Author profile renders through `renderMarkdown()`. New `WebAccessSection` (Writing tab) toggles `allowWebFetch`.
+- `src/main/ipc/handlers.test.ts`, `src/infrastructure/claude-cli/ClaudeCodeClient.test.ts`, `src/application/DataFolderImportService.test.ts`, `src/test/novelEngineMock.ts` — Tests for the sender check, shell limits, tool scopes, WebFetch switch, temp directory, slug check and `.claude/` removal.
+- `docs/architecture/{ARCHITECTURE,DOMAIN,INFRASTRUCTURE,APPLICATION,IPC,RENDERER}.md` — Updated for the above.
+
+### Architecture Impact
+- New dependency: `dompurify` (renderer).
+- `registerIpcHandlers` takes `paths.isAppUrl`; every invoke channel checks its sender.
+- `ClaudeCodeClient` constructor takes an optional third `options` argument (`extraToolScopes`, `loadSettings`).
+- New setting: `AppSettings.allowWebFetch` (default `true`; merged from defaults for existing settings files).
+- No new IPC channels, stores or schema changes.
+
+### Migration Notes
+- None for data. Existing settings files pick up `allowWebFetch: true` from the defaults.
+- Agents can no longer read or write files outside `books/`, `series/` and `author-profile.md` in the data folder. Prompts that pointed agents elsewhere will get a permission error.
+- The CLI no longer loads `.claude/` settings or hooks from a book folder.
+- `shell:openPath` refuses paths outside the books folder unless they were saved through an export dialog in the same session.
 ## [2026-11-20] — Move dev, CI and release to Node 22 (#40)
 
 ### Summary

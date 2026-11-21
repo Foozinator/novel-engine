@@ -46,7 +46,9 @@ let hooks: { onActiveBookChanged: ReturnType<typeof vi.fn<(slug: string) => void
 let handlers: Map<string, Handler>;
 let win: BrowserWindow;
 
-const fakeEvent = { sender: {} } as unknown as IpcMainInvokeEvent;
+/** The app page's URL as the handlers see it in these tests. */
+const APP_URL = 'app://novel-engine/index.html';
+const fakeEvent = { sender: {}, senderFrame: { url: APP_URL } } as unknown as IpcMainInvokeEvent;
 const invoke = (channel: string, ...args: unknown[]): unknown => {
   const handler = handlers.get(channel);
   if (!handler) throw new Error(`No handler registered for ${channel}`);
@@ -82,6 +84,7 @@ beforeEach(async () => {
       booksDir: '/fake/books-dir',
       dataFolder: dataFolderInfo,
       promptSync: { updated: ['SPARK.md'], edited: ['QUILL.md'] },
+      isAppUrl: (url: string) => url === APP_URL,
     },
     hooks,
   );
@@ -200,10 +203,81 @@ describe('books namespace', () => {
     expect(svc.fs.saveCoverImage).toHaveBeenCalledWith('book-a', '/tmp/cover.png');
   });
 
-  it('books:getAbsolutePath joins against the injected books dir', async () => {
+  it('books:getAbsolutePath delegates to the filesystem service', async () => {
+    svc.fs.getAbsolutePath.mockReturnValue('/fake/books-dir/book-a/chapters/01/draft.md');
     expect(await invoke('books:getAbsolutePath', 'book-a', 'chapters/01/draft.md')).toBe(
-      path.join('/fake/books-dir', 'book-a', 'chapters/01/draft.md'),
+      '/fake/books-dir/book-a/chapters/01/draft.md',
     );
+    expect(svc.fs.getAbsolutePath).toHaveBeenCalledWith('book-a', 'chapters/01/draft.md');
+  });
+});
+
+describe('sender check', () => {
+  const callFrom = (senderFrame: unknown, channel: string, ...args: unknown[]): unknown => {
+    const handler = handlers.get(channel);
+    if (!handler) throw new Error(`No handler registered for ${channel}`);
+    return handler({ sender: {}, senderFrame } as unknown as IpcMainInvokeEvent, ...args);
+  };
+
+  it('serves the app page', async () => {
+    expect(await callFrom({ url: APP_URL }, 'settings:load')).toEqual(settings.current);
+  });
+
+  it('refuses every channel when the call comes from another page', async () => {
+    for (const channel of handlers.keys()) {
+      await expect(
+        Promise.resolve().then(() => callFrom({ url: 'https://example.com/' }, channel)),
+        channel,
+      ).rejects.toThrow(/did not come from the app window/);
+    }
+    expect(svc.fs.readFile).not.toHaveBeenCalled();
+  });
+
+  it('refuses a call with no sender frame', async () => {
+    await expect(Promise.resolve().then(() => callFrom(null, 'files:read', 'book-a', 'x.md')))
+      .rejects.toThrow(/did not come from the app window/);
+    expect(svc.fs.readFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('shell namespace', () => {
+  it('shell:openExternal opens https: and mailto: links only', async () => {
+    await invoke('shell:openExternal', 'https://example.com/a');
+    await invoke('shell:openExternal', 'mailto:someone@example.com');
+    expect(shell.openExternal).toHaveBeenCalledTimes(2);
+
+    for (const url of ['http://example.com', 'file:///etc/hosts', 'smb://host/share', 'not a url']) {
+      await expect(Promise.resolve().then(() => invoke('shell:openExternal', url)), url).rejects.toThrow();
+    }
+    expect(shell.openExternal).toHaveBeenCalledTimes(2);
+  });
+
+  it('shell:openPath opens paths inside the books folder', async () => {
+    await invoke('shell:openPath', path.join('/fake/books-dir', 'book-a', 'dist'));
+    expect(shell.openPath).toHaveBeenCalledWith(path.join('/fake/books-dir', 'book-a', 'dist'));
+  });
+
+  it('shell:openPath refuses relative paths and paths outside the books folder', async () => {
+    for (const target of ['relative/file.md', '/etc/hosts', '/fake/books-dir/../elsewhere', '/fake/books-dir-other/x']) {
+      await expect(Promise.resolve().then(() => invoke('shell:openPath', target)), target).rejects.toThrow();
+    }
+    expect(shell.openPath).not.toHaveBeenCalled();
+  });
+
+  it('shell:openPath opens an export the user saved this session', async () => {
+    vi.mocked(BrowserWindow.fromWebContents).mockReturnValue(win);
+    const target = path.join(userDataPath, 'book-a-build.zip');
+    expect(() => invoke('shell:openPath', target)).toThrow();
+
+    const distDir = await makeTempDir();
+    svc.fs.getAbsolutePath.mockReturnValue(distDir);
+    svc.fs.getBookMeta.mockResolvedValue({ title: 'Book A' });
+    vi.mocked(dialog.showSaveDialog).mockResolvedValue({ canceled: false, filePath: target });
+    expect(await invoke('build:exportZip', 'book-a')).toBe(target);
+    expect(svc.fs.getAbsolutePath).toHaveBeenCalledWith('book-a', 'dist');
+
+    await invoke('shell:openPath', target);
+    expect(shell.openPath).toHaveBeenCalledWith(target);
   });
 });
 

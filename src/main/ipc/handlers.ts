@@ -112,9 +112,35 @@ export function registerIpcHandlers(services: {
   booksDir: string;
   dataFolder: DataFolderInfo;
   promptSync: PromptSyncResult;
+  /** True only for the app's own page (see `createAppUrlMatcher`). */
+  isAppUrl: (url: string) => boolean;
 }, hooks?: {
   onActiveBookChanged?: (slug: string) => void;
 }): void {
+
+  /**
+   * Register an invoke handler that serves only the app's own page. Calls
+   * from any other frame (another URL, or a destroyed frame) are refused.
+   */
+  const handle = (channel: string, listener: Parameters<typeof ipcMain.handle>[1]): void => {
+    ipcMain.handle(channel, (event, ...args) => {
+      const senderUrl = event.senderFrame?.url;
+      if (typeof senderUrl !== 'string' || !paths.isAppUrl(senderUrl)) {
+        throw new Error(`Refused ${channel}: the call did not come from the app window`);
+      }
+      return listener(event, ...args);
+    });
+  };
+
+  /** Files the user picked in a save dialog this session; shell:openPath may open them. */
+  const savedExportPaths = new Set<string>();
+
+  /** True when `target` is the books folder or inside it. */
+  const isInBooksDir = (target: string): boolean => {
+    const root = path.resolve(paths.booksDir);
+    const resolved = path.resolve(target);
+    return resolved === root || resolved.startsWith(root + path.sep);
+  };
 
   /**
    * Snapshot changed files after a CLI stream completes.
@@ -131,24 +157,24 @@ export function registerIpcHandlers(services: {
 
   // === Settings ===
 
-  ipcMain.handle('settings:load', () => services.settings.load());
+  handle('settings:load', () => services.settings.load());
 
-  ipcMain.handle('settings:detectClaudeCli', () => services.settings.detectClaudeCli());
+  handle('settings:detectClaudeCli', () => services.settings.detectClaudeCli());
 
-  ipcMain.handle('settings:detectCodexCli', () => services.settings.detectCodexCli());
+  handle('settings:detectCodexCli', () => services.settings.detectCodexCli());
 
   // === Claude CLI updates ===
 
-  ipcMain.handle('claudeCli:checkUpdateReminder', () => services.claudeCliUpdate.checkReminder());
+  handle('claudeCli:checkUpdateReminder', () => services.claudeCliUpdate.checkReminder());
 
-  ipcMain.handle('claudeCli:runUpdate', () => services.claudeCliUpdate.runUpdate());
+  handle('claudeCli:runUpdate', () => services.claudeCliUpdate.runUpdate());
 
   // On demand only — a successful probe is a billed Fable request.
-  ipcMain.handle('claudeCli:checkFableAccess', () => services.fableAccess.check());
+  handle('claudeCli:checkFableAccess', () => services.fableAccess.check());
 
-  ipcMain.handle('settings:detectOllamaCli', () => services.settings.detectOllamaCli());
+  handle('settings:detectOllamaCli', () => services.settings.detectOllamaCli());
 
-  ipcMain.handle('settings:update', async (_, partial: Partial<AppSettings>) => {
+  handle('settings:update', async (_, partial: Partial<AppSettings>) => {
     await services.settings.update(partial);
 
     // Sync Electron's native theme when the user changes the appearance setting
@@ -157,21 +183,21 @@ export function registerIpcHandlers(services: {
     }
   });
 
-  ipcMain.handle('settings:getAvailableModels', () =>
+  handle('settings:getAvailableModels', () =>
     services.providerRegistry.listAllModels()
   );
 
   // === Providers ===
 
-  ipcMain.handle('providers:list', () =>
+  handle('providers:list', () =>
     services.providerRegistry.listProviders()
   );
 
-  ipcMain.handle('providers:getConfig', (_, providerId: ProviderId) =>
+  handle('providers:getConfig', (_, providerId: ProviderId) =>
     services.providerRegistry.getProviderConfig(providerId)
   );
 
-  ipcMain.handle('providers:add', async (_, config: ProviderConfig) => {
+  handle('providers:add', async (_, config: ProviderConfig) => {
     if (config.type === 'openai-compatible') {
       const { OpenAiCompatibleProvider } = await import('@infra/providers');
       const provider = new OpenAiCompatibleProvider(
@@ -181,19 +207,19 @@ export function registerIpcHandlers(services: {
     }
   });
 
-  ipcMain.handle('providers:update', (_, providerId: ProviderId, partial: Partial<ProviderConfig>) =>
+  handle('providers:update', (_, providerId: ProviderId, partial: Partial<ProviderConfig>) =>
     services.providerRegistry.updateProviderConfig(providerId, partial)
   );
 
-  ipcMain.handle('providers:remove', (_, providerId: ProviderId) =>
+  handle('providers:remove', (_, providerId: ProviderId) =>
     services.providerRegistry.removeProvider(providerId)
   );
 
-  ipcMain.handle('providers:checkStatus', (_, providerId: ProviderId) =>
+  handle('providers:checkStatus', (_, providerId: ProviderId) =>
     services.providerRegistry.checkProviderStatus(providerId)
   );
 
-  ipcMain.handle('providers:setDefault', async (_, providerId: ProviderId) => {
+  handle('providers:setDefault', async (_, providerId: ProviderId) => {
     const registry = services.providerRegistry as { setDefaultProvider?: (id: string) => void };
     registry.setDefaultProvider?.(providerId);
     await services.settings.update({ activeProviderId: providerId });
@@ -201,29 +227,29 @@ export function registerIpcHandlers(services: {
 
   // === Agents ===
 
-  ipcMain.handle('agents:list', async () => {
+  handle('agents:list', async () => {
     const agents = await services.agents.loadAll();
     return agents.map(({ systemPrompt: _prompt, ...meta }): AgentMeta => meta);
   });
 
-  ipcMain.handle('agents:get', async (_, name: AgentName) => {
+  handle('agents:get', async (_, name: AgentName) => {
     const agent = await services.agents.load(name);
     const { systemPrompt: _prompt, ...meta } = agent;
     return meta as AgentMeta;
   });
 
   /** Result of this launch's bundled-prompt sync (#39). */
-  ipcMain.handle('agents:promptSync', (): PromptSyncStatus => ({
+  handle('agents:promptSync', (): PromptSyncStatus => ({
     ...paths.promptSync,
     agentsDir: path.join(paths.userDataPath, 'custom-agents'),
   }));
 
   // === Data Folder (#39) ===
 
-  ipcMain.handle('dataFolder:get', (): DataFolderInfo => paths.dataFolder);
+  handle('dataFolder:get', (): DataFolderInfo => paths.dataFolder);
 
   /** Pick a folder, confirm, write the pointer and restart. False if cancelled. */
-  ipcMain.handle('dataFolder:change', async (event): Promise<boolean> => {
+  handle('dataFolder:change', async (event): Promise<boolean> => {
     const { source, defaultDir, current } = paths.dataFolder;
     if (source === 'flag' || source === 'env') return false; // overrides always win
     const win = BrowserWindow.fromWebContents(event.sender);
@@ -234,7 +260,7 @@ export function registerIpcHandlers(services: {
   });
 
   /** Point back at the default folder and restart. False if cancelled. */
-  ipcMain.handle('dataFolder:reset', async (event): Promise<boolean> => {
+  handle('dataFolder:reset', async (event): Promise<boolean> => {
     const { source, defaultDir } = paths.dataFolder;
     if (source !== 'pointer') return false; // already default, or overridden
     const win = BrowserWindow.fromWebContents(event.sender);
@@ -245,25 +271,25 @@ export function registerIpcHandlers(services: {
 
   // === Books ===
 
-  ipcMain.handle('books:list', () => services.fs.listBooks());
+  handle('books:list', () => services.fs.listBooks());
 
-  ipcMain.handle('books:getActiveSlug', () => services.fs.getActiveBookSlug());
+  handle('books:getActiveSlug', () => services.fs.getActiveBookSlug());
 
-  ipcMain.handle('books:setActive', async (_, slug: string) => {
+  handle('books:setActive', async (_, slug: string) => {
     await services.fs.setActiveBook(slug);
     hooks?.onActiveBookChanged?.(slug);
   });
 
-  ipcMain.handle('books:create', async (_, title: string) => {
+  handle('books:create', async (_, title: string) => {
     const settings = await services.settings.load();
     const meta = await services.fs.createBook(title, settings.authorName);
     hooks?.onActiveBookChanged?.(meta.slug);
     return meta;
   });
 
-  ipcMain.handle('books:getMeta', (_, slug: string) => services.fs.getBookMeta(slug));
+  handle('books:getMeta', (_, slug: string) => services.fs.getBookMeta(slug));
 
-  ipcMain.handle('books:updateMeta', async (_, slug: string, partial: Partial<BookMeta>) => {
+  handle('books:updateMeta', async (_, slug: string, partial: Partial<BookMeta>) => {
     const updated = await services.fs.updateBookMeta(slug, partial);
     if (updated.slug !== slug) {
       services.db.updateBookSlug(slug, updated.slug);
@@ -272,9 +298,9 @@ export function registerIpcHandlers(services: {
     return updated;
   });
 
-  ipcMain.handle('books:wordCount', (_, slug: string) => services.fs.countWordsPerChapter(slug));
+  handle('books:wordCount', (_, slug: string) => services.fs.countWordsPerChapter(slug));
 
-  ipcMain.handle('books:uploadCover', async (event, bookSlug: string) => {
+  handle('books:uploadCover', async (event, bookSlug: string) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) throw new Error('No window found');
     const { canceled, filePaths } = await dialog.showOpenDialog(win, {
@@ -286,33 +312,33 @@ export function registerIpcHandlers(services: {
     return services.fs.saveCoverImage(bookSlug, filePaths[0]);
   });
 
-  ipcMain.handle('books:getCoverImagePath', (_, slug: string) =>
+  handle('books:getCoverImagePath', (_, slug: string) =>
     services.fs.getCoverImageAbsolutePath(slug),
   );
 
-  ipcMain.handle('books:getAbsolutePath', (_, bookSlug: string, relativePath: string) =>
-    path.join(paths.booksDir, bookSlug, relativePath),
+  handle('books:getAbsolutePath', (_, bookSlug: string, relativePath: string) =>
+    services.fs.getAbsolutePath(bookSlug, relativePath),
   );
 
-  ipcMain.handle('books:archive', async (_, slug: string) => {
+  handle('books:archive', async (_, slug: string) => {
     await services.fs.archiveBook(slug);
   });
 
-  ipcMain.handle('books:unarchive', async (_, slug: string) => {
+  handle('books:unarchive', async (_, slug: string) => {
     const meta = await services.fs.unarchiveBook(slug);
     hooks?.onActiveBookChanged?.(meta.slug);
     return meta;
   });
 
-  ipcMain.handle('books:listArchived', () => services.fs.listArchivedBooks());
+  handle('books:listArchived', () => services.fs.listArchivedBooks());
 
-  ipcMain.handle('books:assembleManuscript', (_e, bookSlug: string) =>
+  handle('books:assembleManuscript', (_e, bookSlug: string) =>
     services.fs.assembleManuscript(bookSlug)
   );
 
   // === Manuscript Import ===
 
-  ipcMain.handle('import:selectFile', async (event) => {
+  handle('import:selectFile', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) throw new Error('No window found');
 
@@ -330,17 +356,17 @@ export function registerIpcHandlers(services: {
     return filePaths[0];
   });
 
-  ipcMain.handle('import:preview', (_, filePath: string) =>
+  handle('import:preview', (_, filePath: string) =>
     services.manuscriptImport.preview(filePath),
   );
 
-  ipcMain.handle('import:commit', async (_, config: ImportCommitConfig) => {
+  handle('import:commit', async (_, config: ImportCommitConfig) => {
     const result = await services.manuscriptImport.commit(config);
     hooks?.onActiveBookChanged?.(result.bookSlug);
     return result;
   });
 
-  ipcMain.handle('import:generateSources', async (_, bookSlug: string) => {
+  handle('import:generateSources', async (_, bookSlug: string) => {
     const broadcastGenProgress = (genEvent: SourceGenerationEvent) => {
       for (const w of BrowserWindow.getAllWindows()) {
         if (!isWebContentsAlive(w)) continue;
@@ -373,7 +399,7 @@ export function registerIpcHandlers(services: {
 
   // ── Import from another data folder (#37) ─────────────────────────
 
-  ipcMain.handle('import:selectDataFolder', async (event) => {
+  handle('import:selectDataFolder', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) throw new Error('No window found');
 
@@ -387,17 +413,17 @@ export function registerIpcHandlers(services: {
     return filePaths[0];
   });
 
-  ipcMain.handle('import:dataFolderPreview', (_, sourcePath: string) =>
+  handle('import:dataFolderPreview', (_, sourcePath: string) =>
     services.dataFolderImport.preview(sourcePath),
   );
 
-  ipcMain.handle('import:dataFolderCommit', (_, config: DataFolderImportConfig) =>
+  handle('import:dataFolderCommit', (_, config: DataFolderImportConfig) =>
     services.dataFolderImport.commit(config),
   );
 
   // ── Series Import ──────────────────────────────────────────────────
 
-  ipcMain.handle('import:selectFiles', async (event) => {
+  handle('import:selectFiles', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) throw new Error('No window found');
 
@@ -415,11 +441,11 @@ export function registerIpcHandlers(services: {
     return filePaths;
   });
 
-  ipcMain.handle('import:seriesPreview', (_, filePaths: string[]) =>
+  handle('import:seriesPreview', (_, filePaths: string[]) =>
     services.seriesImport.preview(filePaths),
   );
 
-  ipcMain.handle('import:seriesCommit', async (_, config: SeriesImportCommitConfig) => {
+  handle('import:seriesCommit', async (_, config: SeriesImportCommitConfig) => {
     const result = await services.seriesImport.commit(config);
 
     // Set the first book as active so the user lands somewhere useful
@@ -432,11 +458,11 @@ export function registerIpcHandlers(services: {
 
   // === Files ===
 
-  ipcMain.handle('files:read', (_, bookSlug: string, path: string) =>
+  handle('files:read', (_, bookSlug: string, path: string) =>
     services.fs.readFile(bookSlug, path),
   );
 
-  ipcMain.handle('files:write', async (_, bookSlug: string, path: string, content: string) => {
+  handle('files:write', async (_, bookSlug: string, path: string, content: string) => {
     await services.fs.writeFile(bookSlug, path, content);
     // Auto-snapshot the written content (dedup by hash — no-op if unchanged)
     await services.version.snapshotContent(bookSlug, path, content, 'user').catch((err) => {
@@ -444,33 +470,33 @@ export function registerIpcHandlers(services: {
     });
   });
 
-  ipcMain.handle('files:exists', (_, bookSlug: string, path: string) =>
+  handle('files:exists', (_, bookSlug: string, path: string) =>
     services.fs.fileExists(bookSlug, path),
   );
 
-  ipcMain.handle('files:listDir', (_, bookSlug: string, path?: string) =>
+  handle('files:listDir', (_, bookSlug: string, path?: string) =>
     services.fs.listDirectory(bookSlug, path),
   );
 
-  ipcMain.handle('files:delete', (_, bookSlug: string, relativePath: string) =>
+  handle('files:delete', (_, bookSlug: string, relativePath: string) =>
     services.fs.deletePath(bookSlug, relativePath),
   );
 
   // === Versions ===
 
-  ipcMain.handle('versions:getHistory', (_, bookSlug: string, filePath: string, limit?: number, offset?: number) =>
+  handle('versions:getHistory', (_, bookSlug: string, filePath: string, limit?: number, offset?: number) =>
     services.version.getHistory(bookSlug, filePath, limit ?? 50, offset ?? 0),
   );
 
-  ipcMain.handle('versions:getVersion', (_, versionId: number) =>
+  handle('versions:getVersion', (_, versionId: number) =>
     services.version.getVersion(versionId),
   );
 
-  ipcMain.handle('versions:getDiff', (_, oldVersionId: number | null, newVersionId: number) =>
+  handle('versions:getDiff', (_, oldVersionId: number | null, newVersionId: number) =>
     services.version.getDiff(oldVersionId, newVersionId),
   );
 
-  ipcMain.handle('versions:revert', async (_, bookSlug: string, filePath: string, versionId: number) => {
+  handle('versions:revert', async (_, bookSlug: string, filePath: string, versionId: number) => {
     const result = await services.version.revertToVersion(bookSlug, filePath, versionId);
     // Notify renderer that a file was changed (revert is a write)
     for (const w of BrowserWindow.getAllWindows()) {
@@ -484,54 +510,54 @@ export function registerIpcHandlers(services: {
     return result;
   });
 
-  ipcMain.handle('versions:getCount', (_, bookSlug: string, filePath: string) =>
+  handle('versions:getCount', (_, bookSlug: string, filePath: string) =>
     services.version.getVersionCount(bookSlug, filePath),
   );
 
-  ipcMain.handle('versions:snapshot', (_, bookSlug: string, filePath: string, source: FileVersionSource) =>
+  handle('versions:snapshot', (_, bookSlug: string, filePath: string, source: FileVersionSource) =>
     services.version.snapshotFile(bookSlug, filePath, source),
   );
 
-  ipcMain.handle('versions:getUserEdits', (_, bookSlug: string, filePath: string) =>
+  handle('versions:getUserEdits', (_, bookSlug: string, filePath: string) =>
     services.version.getUserEditsSinceAgentBaseline(bookSlug, filePath),
   );
 
-  ipcMain.handle('versions:getChapterEditStatuses', (_, bookSlug: string) =>
+  handle('versions:getChapterEditStatuses', (_, bookSlug: string) =>
     services.version.getChapterEditStatuses(bookSlug),
   );
 
   // === Conversations ===
 
-  ipcMain.handle('chat:createConversation', (_, params: {
+  handle('chat:createConversation', (_, params: {
     bookSlug: string;
     agentName: AgentName;
     pipelinePhase: PipelinePhaseId | null;
     purpose?: ConversationPurpose;
   }) => services.chat.createConversation(params));
 
-  ipcMain.handle('chat:getConversations', (_, bookSlug: string) =>
+  handle('chat:getConversations', (_, bookSlug: string) =>
     services.chat.getConversations(bookSlug),
   );
 
-  ipcMain.handle('chat:getMessages', (_, conversationId: string) =>
+  handle('chat:getMessages', (_, conversationId: string) =>
     services.chat.getMessages(conversationId),
   );
 
-  ipcMain.handle('chat:deleteConversation', (_, conversationId: string) =>
+  handle('chat:deleteConversation', (_, conversationId: string) =>
     services.db.deleteConversation(conversationId),
   );
 
   // === Chat (abort) ===
 
-  ipcMain.handle('chat:abort', (_, conversationId: string) =>
+  handle('chat:abort', (_, conversationId: string) =>
     services.chat.abortStream(conversationId),
   );
 
-  ipcMain.handle('chat:isCliIdle', (_, bookSlug?: string) => services.chat.isCliIdle(bookSlug));
+  handle('chat:isCliIdle', (_, bookSlug?: string) => services.chat.isCliIdle(bookSlug));
 
   // === Chat (streaming) ===
 
-  ipcMain.handle('chat:send', async (event, params: SendMessageParams) => {
+  handle('chat:send', async (event, params: SendMessageParams) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) throw new Error('No window found');
 
@@ -613,33 +639,33 @@ export function registerIpcHandlers(services: {
 
   // === Pipeline ===
 
-  ipcMain.handle('pipeline:detect', (_, bookSlug: string) =>
+  handle('pipeline:detect', (_, bookSlug: string) =>
     services.pipeline.detectPhases(bookSlug),
   );
 
-  ipcMain.handle('pipeline:getActive', (_, bookSlug: string) =>
+  handle('pipeline:getActive', (_, bookSlug: string) =>
     services.pipeline.getActivePhase(bookSlug),
   );
 
-  ipcMain.handle('pipeline:markPhaseComplete', (_, bookSlug: string, phaseId: PipelinePhaseId) =>
+  handle('pipeline:markPhaseComplete', (_, bookSlug: string, phaseId: PipelinePhaseId) =>
     services.pipeline.markPhaseComplete(bookSlug, phaseId),
   );
 
-  ipcMain.handle('pipeline:completeRevision', (_, bookSlug: string) =>
+  handle('pipeline:completeRevision', (_, bookSlug: string) =>
     services.pipeline.completeRevision(bookSlug),
   );
 
-  ipcMain.handle('pipeline:confirmAdvancement', (_, bookSlug: string, phaseId: PipelinePhaseId) =>
+  handle('pipeline:confirmAdvancement', (_, bookSlug: string, phaseId: PipelinePhaseId) =>
     services.pipeline.confirmPhaseAdvancement(bookSlug, phaseId),
   );
 
-  ipcMain.handle('pipeline:revertPhase', (_, bookSlug: string, phaseId: PipelinePhaseId) =>
+  handle('pipeline:revertPhase', (_, bookSlug: string, phaseId: PipelinePhaseId) =>
     services.pipeline.revertPhase(bookSlug, phaseId),
   );
 
   // === Build ===
 
-  ipcMain.handle('build:run', async (event, bookSlug: string) => {
+  handle('build:run', async (event, bookSlug: string) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     const result = await services.build.build(bookSlug, (message) => {
       win?.webContents.send('build:progress', message);
@@ -657,13 +683,13 @@ export function registerIpcHandlers(services: {
     return result;
   });
 
-  ipcMain.handle('build:isPandocAvailable', () => services.build.isPandocAvailable());
+  handle('build:isPandocAvailable', () => services.build.isPandocAvailable());
 
-  ipcMain.handle('build:exportZip', async (event, bookSlug: string) => {
+  handle('build:exportZip', async (event, bookSlug: string) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) throw new Error('No window found');
 
-    const distDir = path.join(paths.booksDir, bookSlug, 'dist');
+    const distDir = services.fs.getAbsolutePath(bookSlug, 'dist');
     const meta = await services.fs.getBookMeta(bookSlug);
     const slug = meta.title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 
@@ -674,6 +700,7 @@ export function registerIpcHandlers(services: {
     });
 
     if (canceled || !filePath) return null;
+    savedExportPaths.add(path.resolve(filePath));
 
     return new Promise<string>((resolve, reject) => {
       const output = createWriteStream(filePath);
@@ -690,7 +717,7 @@ export function registerIpcHandlers(services: {
 
   // === Catalog Export ===
 
-  ipcMain.handle('catalog:exportZip', async (event) => {
+  handle('catalog:exportZip', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) throw new Error('No window found');
 
@@ -703,6 +730,7 @@ export function registerIpcHandlers(services: {
     });
 
     if (canceled || !filePath) return null;
+    savedExportPaths.add(path.resolve(filePath));
 
     return new Promise<string>((resolve, reject) => {
       const output = createWriteStream(filePath);
@@ -719,31 +747,31 @@ export function registerIpcHandlers(services: {
 
   // === Usage ===
 
-  ipcMain.handle('usage:summary', (_, bookSlug?: string) => services.usage.getSummary(bookSlug));
+  handle('usage:summary', (_, bookSlug?: string) => services.usage.getSummary(bookSlug));
 
-  ipcMain.handle('usage:byConversation', (_, conversationId: string) =>
+  handle('usage:byConversation', (_, conversationId: string) =>
     services.usage.getByConversation(conversationId),
   );
 
   // === Context Diagnostics ===
 
-  ipcMain.handle('context:getLastDiagnostics', (_, conversationId?: string) =>
+  handle('context:getLastDiagnostics', (_, conversationId?: string) =>
     services.chat.getLastDiagnostics(conversationId),
   );
 
   // === Active Stream (for renderer refresh recovery) ===
 
-  ipcMain.handle('chat:getActiveStream', () => services.chat.getActiveStream());
+  handle('chat:getActiveStream', () => services.chat.getActiveStream());
 
-  ipcMain.handle('chat:getActiveStreamForBook', (_, bookSlug: string) =>
+  handle('chat:getActiveStreamForBook', (_, bookSlug: string) =>
     services.chat.getActiveStreamForBook(bookSlug),
   );
 
-  ipcMain.handle('chat:getOrphanedSessions', () =>
+  handle('chat:getOrphanedSessions', () =>
     services.chat.getRecoveredOrphans()
   );
 
-  ipcMain.handle('chat:deepDive', async (event, params: { bookSlug: string; chapterSlug: string; conversationId?: string; callId?: string }) => {
+  handle('chat:deepDive', async (event, params: { bookSlug: string; chapterSlug: string; conversationId?: string; callId?: string }) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) throw new Error('No window found');
     const callId = params.callId ?? randomUUID();
@@ -764,12 +792,12 @@ export function registerIpcHandlers(services: {
 
   // === Author Profile ===
 
-  ipcMain.handle('settings:saveAuthorProfile', async (_, content: string) => {
+  handle('settings:saveAuthorProfile', async (_, content: string) => {
     const profilePath = path.join(paths.userDataPath, 'author-profile.md');
     await fsPromises.writeFile(profilePath, content, 'utf-8');
   });
 
-  ipcMain.handle('settings:loadAuthorProfile', async () => {
+  handle('settings:loadAuthorProfile', async () => {
     const profilePath = path.join(paths.userDataPath, 'author-profile.md');
     try {
       return await fsPromises.readFile(profilePath, 'utf-8');
@@ -781,23 +809,43 @@ export function registerIpcHandlers(services: {
 
   // === Shell ===
 
-  ipcMain.handle('shell:openExternal', (_, url: string) => shell.openExternal(url));
+  handle('shell:openExternal', (_, url: string) => {
+    let protocol: string;
+    try {
+      protocol = new URL(url).protocol;
+    } catch {
+      throw new Error('shell:openExternal needs a valid URL');
+    }
+    if (protocol !== 'https:' && protocol !== 'mailto:') {
+      throw new Error(`shell:openExternal opens only https: and mailto: links (got ${protocol})`);
+    }
+    return shell.openExternal(url);
+  });
 
-  ipcMain.handle('shell:openPath', (_, absolutePath: string) => shell.openPath(absolutePath));
+  // Opens a book file or folder, or an export the user saved this session.
+  handle('shell:openPath', (_, absolutePath: string) => {
+    if (typeof absolutePath !== 'string' || !path.isAbsolute(absolutePath)) {
+      throw new Error('shell:openPath needs an absolute path');
+    }
+    if (!isInBooksDir(absolutePath) && !savedExportPaths.has(path.resolve(absolutePath))) {
+      throw new Error('shell:openPath opens only files in the books folder or exports saved this session');
+    }
+    return shell.openPath(absolutePath);
+  });
 
   // === Shelved Pitches ===
 
-  ipcMain.handle('pitches:list', () => services.fs.listShelvedPitches());
+  handle('pitches:list', () => services.fs.listShelvedPitches());
 
-  ipcMain.handle('pitches:read', (_, slug: string) => services.fs.readShelvedPitch(slug));
+  handle('pitches:read', (_, slug: string) => services.fs.readShelvedPitch(slug));
 
-  ipcMain.handle('pitches:delete', (_, slug: string) => services.fs.deleteShelvedPitch(slug));
+  handle('pitches:delete', (_, slug: string) => services.fs.deleteShelvedPitch(slug));
 
-  ipcMain.handle('pitches:shelve', (_, bookSlug: string, logline?: string) =>
+  handle('pitches:shelve', (_, bookSlug: string, logline?: string) =>
     services.fs.shelvePitch(bookSlug, logline),
   );
 
-  ipcMain.handle('pitches:restore', async (_, pitchSlug: string) => {
+  handle('pitches:restore', async (_, pitchSlug: string) => {
     const meta = await services.fs.restorePitch(pitchSlug);
     hooks?.onActiveBookChanged?.(meta.slug);
     return meta;
@@ -805,34 +853,34 @@ export function registerIpcHandlers(services: {
 
   // === Pitch Room ===
 
-  ipcMain.handle('pitchRoom:listDrafts', () => services.fs.listPitchDrafts());
+  handle('pitchRoom:listDrafts', () => services.fs.listPitchDrafts());
 
-  ipcMain.handle('pitchRoom:getDraft', (_, convId: string) =>
+  handle('pitchRoom:getDraft', (_, convId: string) =>
     services.fs.getPitchDraft(convId),
   );
 
-  ipcMain.handle('pitchRoom:readContent', (_, convId: string) =>
+  handle('pitchRoom:readContent', (_, convId: string) =>
     services.fs.readPitchDraftContent(convId),
   );
 
-  ipcMain.handle('pitchRoom:promote', async (_, convId: string) => {
+  handle('pitchRoom:promote', async (_, convId: string) => {
     const meta = await services.fs.promotePitchToBook(convId);
     hooks?.onActiveBookChanged?.(meta.slug);
     return meta;
   });
 
-  ipcMain.handle('pitchRoom:shelve', (_, convId: string, logline?: string) =>
+  handle('pitchRoom:shelve', (_, convId: string, logline?: string) =>
     services.fs.shelvePitchDraft(convId, logline),
   );
 
-  ipcMain.handle('pitchRoom:discard', async (_, convId: string) => {
+  handle('pitchRoom:discard', async (_, convId: string) => {
     await services.fs.deletePitchDraft(convId);
     services.db.deleteConversation(convId);
   });
 
   // === Hot Take ===
 
-  ipcMain.handle('hot-take:start', async (event, bookSlug: string) => {
+  handle('hot-take:start', async (event, bookSlug: string) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) throw new Error('No window found');
 
@@ -889,7 +937,7 @@ export function registerIpcHandlers(services: {
 
   // === Ad Hoc Revision ===
 
-  ipcMain.handle('adhoc-revision:start', async (event, bookSlug: string, description: string) => {
+  handle('adhoc-revision:start', async (event, bookSlug: string, description: string) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) throw new Error('No window found');
 
@@ -981,7 +1029,7 @@ export function registerIpcHandlers(services: {
     }
   };
 
-  ipcMain.handle('verity:auditChapter', async (_, bookSlug: string, chapterSlug: string, rendererCallId?: string, rendererConversationId?: string) => {
+  handle('verity:auditChapter', async (_, bookSlug: string, chapterSlug: string, rendererCallId?: string, rendererConversationId?: string) => {
     const callId = rendererCallId ?? `audit:${randomUUID()}`;
     const broadcastConversationId = rendererConversationId ?? `audit-${randomUUID()}`;
     emitVerityCallStart(callId, broadcastConversationId, bookSlug);
@@ -993,7 +1041,7 @@ export function registerIpcHandlers(services: {
     });
   });
 
-  ipcMain.handle('verity:fixChapter', async (_, bookSlug: string, chapterSlug: string, conversationId: string, rendererCallId?: string) => {
+  handle('verity:fixChapter', async (_, bookSlug: string, chapterSlug: string, conversationId: string, rendererCallId?: string) => {
     const sessionId = randomUUID();
     const callId = rendererCallId ?? `fix:${sessionId}`;
     emitVerityCallStart(callId, conversationId, bookSlug);
@@ -1007,7 +1055,7 @@ export function registerIpcHandlers(services: {
     });
   });
 
-  ipcMain.handle('verity:fixChapterWithAudit', async (_, bookSlug: string, chapterSlug: string, conversationId: string, auditResultJson: string, rendererCallId?: string) => {
+  handle('verity:fixChapterWithAudit', async (_, bookSlug: string, chapterSlug: string, conversationId: string, auditResultJson: string, rendererCallId?: string) => {
     const sessionId = randomUUID();
     const callId = rendererCallId ?? `fix:${sessionId}`;
     const auditResult = JSON.parse(auditResultJson);
@@ -1022,7 +1070,7 @@ export function registerIpcHandlers(services: {
     });
   });
 
-  ipcMain.handle('verity:runMotifAudit', async (_, bookSlug: string, rendererCallId?: string) => {
+  handle('verity:runMotifAudit', async (_, bookSlug: string, rendererCallId?: string) => {
     const appSettings = await services.settings.load();
     const sessionId = randomUUID();
     const callId = rendererCallId ?? `motif-audit:${sessionId}`;
@@ -1037,70 +1085,70 @@ export function registerIpcHandlers(services: {
 
   // === Revision Queue ===
 
-  ipcMain.handle('revision:loadPlan', async (_, bookSlug: string) => {
+  handle('revision:loadPlan', async (_, bookSlug: string) => {
     return services.revisionQueue.loadPlan(bookSlug);
   });
 
-  ipcMain.handle('revision:clearCache', async (_, bookSlug: string) => {
+  handle('revision:clearCache', async (_, bookSlug: string) => {
     await services.revisionQueue.clearCache(bookSlug);
   });
 
-  ipcMain.handle('revision:runSession', async (_, planId: string, sessionId: string) => {
+  handle('revision:runSession', async (_, planId: string, sessionId: string) => {
     return services.revisionQueue.runSession(planId, sessionId);
   });
 
-  ipcMain.handle('revision:runAll', async (_, planId: string, selectedSessionIds?: string[]) => {
+  handle('revision:runAll', async (_, planId: string, selectedSessionIds?: string[]) => {
     return services.revisionQueue.runAll(planId, selectedSessionIds);
   });
 
-  ipcMain.handle('revision:respondToGate', (_, planId: string, sessionId: string, action: string, message?: string) => {
+  handle('revision:respondToGate', (_, planId: string, sessionId: string, action: string, message?: string) => {
     services.revisionQueue.respondToGate(planId, sessionId, action as ApprovalAction, message);
   });
 
-  ipcMain.handle('revision:approveSession', async (_, planId: string, sessionId: string) => {
+  handle('revision:approveSession', async (_, planId: string, sessionId: string) => {
     return services.revisionQueue.approveSession(planId, sessionId);
   });
 
-  ipcMain.handle('revision:rejectSession', async (_, planId: string, sessionId: string) => {
+  handle('revision:rejectSession', async (_, planId: string, sessionId: string) => {
     return services.revisionQueue.rejectSession(planId, sessionId);
   });
 
-  ipcMain.handle('revision:skipSession', async (_, planId: string, sessionId: string) => {
+  handle('revision:skipSession', async (_, planId: string, sessionId: string) => {
     return services.revisionQueue.skipSession(planId, sessionId);
   });
 
-  ipcMain.handle('revision:pause', (_, planId: string) => {
+  handle('revision:pause', (_, planId: string) => {
     services.revisionQueue.pause(planId);
   });
 
-  ipcMain.handle('revision:setMode', (_, planId: string, mode: string) => {
+  handle('revision:setMode', (_, planId: string, mode: string) => {
     services.revisionQueue.setMode(planId, mode as QueueMode);
   });
 
-  ipcMain.handle('revision:getPlan', (_, planId: string) => {
+  handle('revision:getPlan', (_, planId: string) => {
     return services.revisionQueue.getPlan(planId);
   });
 
-  ipcMain.handle('revision:startVerification', (_, planId: string) =>
+  handle('revision:startVerification', (_, planId: string) =>
     services.revisionQueue.startVerification(planId),
   );
 
 
-  ipcMain.handle('revision:getQueueStatus', (_, bookSlug: string) => {
+  handle('revision:getQueueStatus', (_, bookSlug: string) => {
     return services.revisionQueue.getQueueStatus(bookSlug);
   });
 
   // === Motif Ledger ===
 
-  ipcMain.handle('motifLedger:load', (_, bookSlug: string) =>
+  handle('motifLedger:load', (_, bookSlug: string) =>
     services.motifLedger.load(bookSlug),
   );
 
-  ipcMain.handle('motifLedger:save', (_, bookSlug: string, ledger: MotifLedger) =>
+  handle('motifLedger:save', (_, bookSlug: string, ledger: MotifLedger) =>
     services.motifLedger.save(bookSlug, ledger),
   );
 
-  ipcMain.handle('motifLedger:getUnauditedChapters', (_, bookSlug: string) =>
+  handle('motifLedger:getUnauditedChapters', (_, bookSlug: string) =>
     services.motifLedger.getUnauditedChapters(bookSlug),
   );
 
@@ -1143,47 +1191,47 @@ export function registerIpcHandlers(services: {
 
   // === Series ===
 
-  ipcMain.handle('series:list', () => services.series.listSeries());
+  handle('series:list', () => services.series.listSeries());
 
-  ipcMain.handle('series:get', (_e, slug: string) => services.series.getSeries(slug));
+  handle('series:get', (_e, slug: string) => services.series.getSeries(slug));
 
-  ipcMain.handle('series:create', (_e, name: string, description?: string) =>
+  handle('series:create', (_e, name: string, description?: string) =>
     services.series.createSeries(name, description));
 
-  ipcMain.handle('series:update', (_e, slug: string, partial: Partial<Pick<SeriesMeta, 'name' | 'description'>>) =>
+  handle('series:update', (_e, slug: string, partial: Partial<Pick<SeriesMeta, 'name' | 'description'>>) =>
     services.series.updateSeries(slug, partial));
 
-  ipcMain.handle('series:delete', (_e, slug: string) => services.series.deleteSeries(slug));
+  handle('series:delete', (_e, slug: string) => services.series.deleteSeries(slug));
 
-  ipcMain.handle('series:addVolume', (_e, seriesSlug: string, bookSlug: string, volumeNumber?: number) =>
+  handle('series:addVolume', (_e, seriesSlug: string, bookSlug: string, volumeNumber?: number) =>
     services.series.addVolume(seriesSlug, bookSlug, volumeNumber));
 
-  ipcMain.handle('series:removeVolume', (_e, seriesSlug: string, bookSlug: string) =>
+  handle('series:removeVolume', (_e, seriesSlug: string, bookSlug: string) =>
     services.series.removeVolume(seriesSlug, bookSlug));
 
-  ipcMain.handle('series:reorderVolumes', (_e, seriesSlug: string, orderedSlugs: string[]) =>
+  handle('series:reorderVolumes', (_e, seriesSlug: string, orderedSlugs: string[]) =>
     services.series.reorderVolumes(seriesSlug, orderedSlugs));
 
-  ipcMain.handle('series:getForBook', (_e, bookSlug: string) =>
+  handle('series:getForBook', (_e, bookSlug: string) =>
     services.series.getSeriesForBook(bookSlug));
 
-  ipcMain.handle('series:readBible', (_e, seriesSlug: string) =>
+  handle('series:readBible', (_e, seriesSlug: string) =>
     services.series.readSeriesBible(seriesSlug));
 
-  ipcMain.handle('series:writeBible', (_e, seriesSlug: string, content: string) =>
+  handle('series:writeBible', (_e, seriesSlug: string, content: string) =>
     services.series.writeSeriesBible(seriesSlug, content));
 
   // === Helper ===
 
-  ipcMain.handle('helper:getOrCreateConversation', async () => {
+  handle('helper:getOrCreateConversation', async () => {
     return services.helper.getOrCreateConversation();
   });
 
-  ipcMain.handle('helper:getMessages', async (_e, conversationId: string) => {
+  handle('helper:getMessages', async (_e, conversationId: string) => {
     return services.helper.getMessages(conversationId);
   });
 
-  ipcMain.handle('helper:send', async (_e, params: { message: string; conversationId: string; callId?: string }) => {
+  handle('helper:send', async (_e, params: { message: string; conversationId: string; callId?: string }) => {
     const { message, conversationId, callId } = params;
     const resolvedCallId = callId ?? randomUUID();
     await services.helper.sendMessage({
@@ -1206,21 +1254,21 @@ export function registerIpcHandlers(services: {
     });
   });
 
-  ipcMain.handle('helper:abort', async (_e, conversationId: string) => {
+  handle('helper:abort', async (_e, conversationId: string) => {
     services.helper.abortStream(conversationId);
   });
 
-  ipcMain.handle('helper:reset', async () => {
+  handle('helper:reset', async () => {
     await services.helper.resetConversation();
   });
 
   // === Find & Replace ===
 
-  ipcMain.handle('findReplace:preview', async (_, bookSlug: string, searchTerm: string, options: FindReplaceOptions): Promise<FindReplacePreviewResult> =>
+  handle('findReplace:preview', async (_, bookSlug: string, searchTerm: string, options: FindReplaceOptions): Promise<FindReplacePreviewResult> =>
     services.findReplace.preview(bookSlug, searchTerm, options),
   );
 
-  ipcMain.handle('findReplace:apply', async (_, params: {
+  handle('findReplace:apply', async (_, params: {
     bookSlug: string;
     searchTerm: string;
     replacement: string;
@@ -1232,39 +1280,39 @@ export function registerIpcHandlers(services: {
 
   // === Dashboard ===
 
-  ipcMain.handle('dashboard:getData', async (_event, bookSlug: string): Promise<BookDashboardData> =>
+  handle('dashboard:getData', async (_event, bookSlug: string): Promise<BookDashboardData> =>
     services.dashboard.getDashboardData(bookSlug),
   );
 
   // === Statistics ===
 
-  ipcMain.handle('statistics:get', async (_event, bookSlug?: string): Promise<BookStatistics> =>
+  handle('statistics:get', async (_event, bookSlug?: string): Promise<BookStatistics> =>
     services.statistics.getStatistics(bookSlug),
   );
 
-  ipcMain.handle('statistics:recordSnapshot', async (_event, bookSlug: string): Promise<void> =>
+  handle('statistics:recordSnapshot', async (_event, bookSlug: string): Promise<void> =>
     services.statistics.recordWordCountSnapshot(bookSlug),
   );
 
   // === Query Manager ===
 
-  ipcMain.handle('query:loadTracker', (_, bookSlug: string) =>
+  handle('query:loadTracker', (_, bookSlug: string) =>
     services.query.loadTracker(bookSlug),
   );
 
-  ipcMain.handle('query:saveTracker', (_, bookSlug: string, tracker: QueryTracker) =>
+  handle('query:saveTracker', (_, bookSlug: string, tracker: QueryTracker) =>
     services.query.saveTracker(bookSlug, tracker),
   );
 
-  ipcMain.handle('query:addTarget', (_, bookSlug: string, target: Omit<QueryTarget, 'id' | 'queryLetterPath' | 'submittedDate' | 'responseDate'>) =>
+  handle('query:addTarget', (_, bookSlug: string, target: Omit<QueryTarget, 'id' | 'queryLetterPath' | 'submittedDate' | 'responseDate'>) =>
     services.query.addTarget(bookSlug, target),
   );
 
-  ipcMain.handle('query:updateTargetStatus', (_, bookSlug: string, targetId: string, status: QueryStatus, responseDate?: string) =>
+  handle('query:updateTargetStatus', (_, bookSlug: string, targetId: string, status: QueryStatus, responseDate?: string) =>
     services.query.updateTargetStatus(bookSlug, targetId, status, responseDate),
   );
 
-  ipcMain.handle('query:removeTarget', (_, bookSlug: string, targetId: string) =>
+  handle('query:removeTarget', (_, bookSlug: string, targetId: string) =>
     services.query.removeTarget(bookSlug, targetId),
   );
 
@@ -1276,7 +1324,7 @@ export function registerIpcHandlers(services: {
     }
   };
 
-  ipcMain.handle('query:generateLetter', async (_event, bookSlug: string, targetId: string) => {
+  handle('query:generateLetter', async (_event, bookSlug: string, targetId: string) => {
     const callId = `query:generate:${randomUUID().slice(0, 8)}`;
     const result = await services.query.generateQueryLetter(bookSlug, targetId, (streamEvent) => {
       broadcastQueryStreamEvent(streamEvent, callId);
@@ -1287,19 +1335,19 @@ export function registerIpcHandlers(services: {
     return result;
   });
 
-  ipcMain.handle('query:listLetters', (_, bookSlug: string) =>
+  handle('query:listLetters', (_, bookSlug: string) =>
     services.query.listQueryLetters(bookSlug),
   );
 
-  ipcMain.handle('query:readLetter', (_, bookSlug: string, targetSlug: string) =>
+  handle('query:readLetter', (_, bookSlug: string, targetSlug: string) =>
     services.query.readQueryLetter(bookSlug, targetSlug),
   );
 
-  ipcMain.handle('query:saveLetter', (_, bookSlug: string, targetSlug: string, content: string) =>
+  handle('query:saveLetter', (_, bookSlug: string, targetSlug: string, content: string) =>
     services.query.saveQueryLetter(bookSlug, targetSlug, content),
   );
 
-  ipcMain.handle('query:researchTargets', async (_event, bookSlug: string) => {
+  handle('query:researchTargets', async (_event, bookSlug: string) => {
     const callId = `query:research:${randomUUID().slice(0, 8)}`;
     const result = await services.query.researchTargets(bookSlug, (streamEvent) => {
       broadcastQueryStreamEvent(streamEvent, callId);
@@ -1307,7 +1355,7 @@ export function registerIpcHandlers(services: {
     return result;
   });
 
-  ipcMain.handle('query:fillTargetField', async (_event, bookSlug: string, targetId: string, field: QueryFillableField) => {
+  handle('query:fillTargetField', async (_event, bookSlug: string, targetId: string, field: QueryFillableField) => {
     const callId = `query:fill:${randomUUID().slice(0, 8)}`;
     const result = await services.query.fillTargetField(bookSlug, targetId, field, (streamEvent) => {
       broadcastQueryStreamEvent(streamEvent, callId);

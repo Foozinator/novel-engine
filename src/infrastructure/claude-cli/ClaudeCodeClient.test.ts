@@ -386,15 +386,20 @@ describe('sendMessage — spawn contract', () => {
     ]);
   });
 
-  it('passes the shared allowed-tools list, Bash limited to the allowlist', async () => {
+  it('scopes file tools to the books dir, limits Bash to the allowlist, and loads user settings only', async () => {
     const promise = send();
     await fake.waitForChild();
 
     const { args } = fake.lastCall();
-    const allowed = args[args.indexOf('--allowedTools') + 1];
-    expect(allowed).toContain('Read,Write,Edit');
-    expect(allowed).toContain('Bash(wc:*)');
-    expect(allowed).not.toContain('python');
+    const allowed = args[args.indexOf('--allowedTools') + 1].split(',');
+    expect(allowed).toEqual(expect.arrayContaining([
+      'Read(//fake/books/**)', 'Write(//fake/books/**)', 'Edit(//fake/books/**)', 'WebFetch', 'Bash(wc:*)',
+    ]));
+    expect(allowed).not.toContain('Read');
+    expect(allowed).not.toContain('Write');
+    expect(allowed).not.toContain('Edit');
+    expect(allowed.join(',')).not.toContain('python');
+    expect(args[args.indexOf('--setting-sources') + 1]).toBe('user');
 
     // The system prompt file tells the model the same limits
     const promptFile = args[args.indexOf('--system-prompt-file') + 1];
@@ -414,6 +419,57 @@ describe('sendMessage — spawn contract', () => {
     expect(events).toEqual([
       { type: 'error', message: expect.stringContaining('System prompt exceeds 500KB limit') },
     ]);
+  });
+
+  it('adds extra tool scopes and drops WebFetch when the setting is off', async () => {
+    const db = { persistStreamEventBatch: vi.fn() } as unknown as IDatabaseService;
+    client = new ClaudeCodeClient(BOOKS_DIR, db, {
+      extraToolScopes: ['/fake/data/series/**', '/fake/data/author-profile.md'],
+      loadSettings: async () => ({ allowWebFetch: false }),
+    });
+    const promise = send();
+    await fake.waitForChild();
+
+    const { args } = fake.lastCall();
+    const allowed = args[args.indexOf('--allowedTools') + 1].split(',');
+    expect(allowed).toEqual(expect.arrayContaining([
+      'Read(//fake/data/series/**)', 'Edit(//fake/data/series/**)', 'Write(//fake/data/author-profile.md)',
+    ]));
+    expect(allowed).not.toContain('WebFetch');
+    expect(allowed).toContain('WebSearch');
+
+    const written = await readFile(args[args.indexOf('--system-prompt-file') + 1], 'utf-8');
+    expect(written).toContain('WebFetch is turned off');
+
+    fake.lastChild().exit(0);
+    await promise;
+  });
+
+  it('writes the system prompt into a private temp directory', async () => {
+    const promise = send();
+    await fake.waitForChild();
+
+    const promptFile = fake.lastCall().args[fake.lastCall().args.indexOf('--system-prompt-file') + 1];
+    expect(path.basename(path.dirname(promptFile))).toMatch(/^novel-engine-sysprompt-/);
+    if (process.platform !== 'win32') {
+      const { stat } = await import('node:fs/promises');
+      expect((await stat(promptFile)).mode & 0o777).toBe(0o600);
+      expect((await stat(path.dirname(promptFile))).mode & 0o777).toBe(0o700);
+    }
+
+    fake.lastChild().exit(0);
+    await promise;
+  });
+
+  it('refuses a book slug that is not a single folder name', async () => {
+    for (const bookSlug of ['../elsewhere', '/etc', 'a/b']) {
+      events = [];
+      await send({ bookSlug });
+      expect(events, bookSlug).toEqual([
+        { type: 'error', message: expect.stringContaining('Invalid book slug') },
+      ]);
+    }
+    expect(fake.children.length).toBe(0);
   });
 });
 

@@ -78,6 +78,7 @@
     "archiver": "^7.0.1",
     "better-sqlite3": "^11.0.0",
     "diff": "^8.0.4",
+    "dompurify": "3.4.17",
     "electron-squirrel-startup": "^1.0.1",
     "marked": "^15.0.0",
     "nanoid": "3",

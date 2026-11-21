@@ -474,6 +474,8 @@ export type AppSettings = {
   lastClaudeCliUpdateCheck: string | null; // ISO date the reminder was last offered (or an update ran)
   // Fable access — checked only on demand from Settings (never at launch)
   lastFableProbe: FableProbeResult | null;
+  /** Let Claude CLI agents fetch web pages (WebFetch). WebSearch is unaffected. */
+  allowWebFetch: boolean;
 };
 
 // === Token Usage ===

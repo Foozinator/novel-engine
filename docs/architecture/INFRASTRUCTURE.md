@@ -1,6 +1,6 @@
 # Infrastructure — Implementations
 
-> Last updated: 2026-11-14 (#37)
+> Last updated: 2026-11-20 (#63)
 
 Everything in `src/infrastructure/`. Implements domain interfaces using Node.js builtins and npm packages.
 
@@ -78,6 +78,7 @@ Key behavior:
 | File | Purpose |
 |------|---------|
 | `FileSystemService.ts` | Implements `IFileSystemService`. Book CRUD, file read/write, directory listing, shelved pitches, pitch room drafts. |
+| `bookPaths.ts` | `resolveBookPath(booksDir, slug, rel)`: joins under `<booksDir>/<slug>`, throws on a slug that isn't one folder name or a result outside the book. `safeSegment(value, what)` for pitch slugs and draft IDs. |
 | `BookWatcher.ts` | Watches active book dir for file changes, debounced notifications. |
 | `BooksDirWatcher.ts` | Watches `books/` root for new/deleted books (folder add/remove). |
 | `index.ts` | Barrel export |
@@ -87,7 +88,8 @@ Key behavior:
 - `createBook` generates slug from title, creates directory structure with `about.json`
 - `reconcileBookSlugs` renames folders whose name no longer matches the slugified title
 - `saveCoverImage` copies image into book directory, updates `about.json`
-- `archiveBook`/`unarchiveBook` moves books to/from `_archived/` subdirectory
+- `archiveBook`/`unarchiveBook` moves books to/from `_archived/` subdirectory; `unarchiveBook` removes the book's `.claude/` folder
+- Every book-relative path goes through `resolveBookPath()` (read/write/delete/rename/exists/list, covers, word counts, manifest). Pitch slugs and draft IDs go through `safeSegment()`. A `coverImage` outside the book reads as no cover
 - Shelved pitches stored in `{userData}/shelved-pitches/{slug}.md` with YAML front matter
 - Pitch Room drafts stored in `{userData}/pitch-drafts/{conversationId}/`
 - `BookWatcher.watch(slug)` switches which book directory is being monitored
@@ -111,7 +113,10 @@ Key behavior:
 - Maps CLI events to `StreamEvent` union variants
 - Resolved model: the `system`/`init` event's `model` (e.g. `opus` → `claude-opus-5-5`) is stored on the `StreamSessionTracker`, emitted once as `modelResolved`, and attached to `done` as `model`
 - CLI session: the `system`/`init` event's `session_id` (a UUID) is emitted as `cliSession`. With `resumeCliSessionId` set, the client adds `--resume <id>` and sends only the new user message on stdin; the CLI reloads the session's transcript, tool results included. IDs that aren't UUIDs are refused with an `error` event before spawning
-- Bash limits: a `## Bash Limits` note listing `CLAUDE_CLI_ALLOWED_BASH_COMMANDS` is appended to every system prompt file, since `--system-prompt-file` replaces Claude Code's own prompt and print mode can't approve other commands
+- Bash limits: a `## Bash Limits` note listing `CLAUDE_CLI_ALLOWED_BASH_COMMANDS` is appended to every system prompt file, since `--system-prompt-file` replaces Claude Code's own prompt and print mode can't approve other commands. With WebFetch off, a line saying so follows it
+- Constructor: `(booksDir, db, options?)`. `options.extraToolScopes` adds Read/Write/Edit scopes (the composition root passes `{userData}/series/**` and `{userData}/author-profile.md`); `options.loadSettings` is read at each spawn for `allowWebFetch`
+- The system prompt file lives in a fresh `mkdtemp` directory (`novel-engine-sysprompt-*`, 0700; file 0600), removed when the CLI exits
+- A `bookSlug` that isn't one folder name is refused with an `error` event before spawning (unless an explicit `workingDir` is given)
 - `abortStream` sends SIGTERM, then SIGKILL after 2s grace period
 - `isAvailable()` caches result of `claude --version` check
 - Persists stream events to SQLite in batches (100ms flush interval, max 20, critical events flush immediately) for reduced I/O pressure
@@ -354,7 +359,8 @@ claude --output-format stream-json \
 ```
 
 - Working directory set to book path (enables tool file operations)
-- `--allowedTools` set to `CLAUDE_CLI_ALLOWED_TOOLS` (`src/domain/constants.ts`): `Read,Write,Edit,LS,Glob,Grep,WebSearch,WebFetch,Task,TodoWrite` plus `Bash(<cmd>:*)` for each of `mkdir cat mv cp ls find grep wc head tail rm rmdir`
+- `--allowedTools` from `buildClaudeCliAllowedTools()` (`src/domain/constants.ts`): `Read(…)`, `Write(…)`, `Edit(…)` for `//<booksDir>/**` and each extra scope; `LS,Glob,Grep,WebSearch,Task,TodoWrite`; `WebFetch` when `allowWebFetch` is on; `Bash(<cmd>:*)` for each of `mkdir cat mv cp ls find grep wc head tail rm rmdir`. Rule paths use the CLI's absolute form (`//…`)
+- `--setting-sources user`: the CLI ignores project settings in the book folder (including hooks)
 - `--resume <cliSessionId>` when `AutoTurnResumer` continues a max-turns session
 - Process spawned via `child_process.spawn`
 

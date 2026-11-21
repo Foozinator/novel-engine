@@ -201,11 +201,59 @@ export const CLAUDE_CLI_ALLOWED_BASH_COMMANDS = [
   'mkdir', 'cat', 'mv', 'cp', 'ls', 'find', 'grep', 'wc', 'head', 'tail', 'rm', 'rmdir',
 ] as const;
 
-/** Value of the CLI's `--allowedTools` flag. */
-export const CLAUDE_CLI_ALLOWED_TOOLS = [
-  'Read', 'Write', 'Edit', 'LS', 'Glob', 'Grep', 'WebSearch', 'WebFetch', 'Task', 'TodoWrite',
-  ...CLAUDE_CLI_ALLOWED_BASH_COMMANDS.map((cmd) => `Bash(${cmd}:*)`),
-].join(',');
+/**
+ * Convert an absolute filesystem path to the form Claude CLI permission rules
+ * expect for absolute paths. A rule path with a single leading slash is
+ * relative to the project, so absolute paths take two: `//home/u/books/**`.
+ * Windows paths use the CLI's POSIX form: `C:\Users\u` → `//c/Users/u`.
+ */
+export function toClaudeCliRulePath(absPath: string): string {
+  const posix = absPath
+    .replace(/\\/g, '/')
+    .replace(/^([A-Za-z]):/, (_m, drive: string) => `/${drive.toLowerCase()}`);
+  return `/${posix.startsWith('/') ? posix : `/${posix}`}`;
+}
+
+/**
+ * Value of the CLI's `--allowedTools` flag.
+ *
+ * Read/Write/Edit are limited to `scopes`: absolute paths, where a trailing
+ * `/**` covers a directory tree. WebFetch is included only when enabled in
+ * settings (`allowWebFetch`).
+ */
+export function buildClaudeCliAllowedTools(options: { scopes: string[]; webFetch: boolean }): string {
+  const fileRules = options.scopes.flatMap((scope) => {
+    const rulePath = toClaudeCliRulePath(scope);
+    return [`Read(${rulePath})`, `Write(${rulePath})`, `Edit(${rulePath})`];
+  });
+  return [
+    ...fileRules,
+    'LS', 'Glob', 'Grep', 'WebSearch',
+    ...(options.webFetch ? ['WebFetch'] : []),
+    'Task', 'TodoWrite',
+    ...CLAUDE_CLI_ALLOWED_BASH_COMMANDS.map((cmd) => `Bash(${cmd}:*)`),
+  ].join(',');
+}
+
+/**
+ * Folder name the Claude CLI reads project settings and hooks from. NE runs
+ * the CLI with `--setting-sources user`, and strips this folder from books
+ * that are unarchived or imported from another data folder.
+ */
+export const CLAUDE_PROJECT_CONFIG_DIR = '.claude';
+
+/**
+ * True when `slug` is a single folder name: non-empty, not `.` or `..`, and
+ * free of path separators, drive colons and NUL. Book folders copied in by
+ * hand may hold spaces or capitals, so this checks structure, not style.
+ */
+export function isSafePathSegment(slug: unknown): slug is string {
+  return typeof slug === 'string'
+    && slug.length > 0
+    && slug !== '.'
+    && slug !== '..'
+    && !/[/\\:\0]/.test(slug);
+}
 
 /** Reserved provider ID for OpenCode CLI (future implementation). */
 export const OPENCODE_CLI_PROVIDER_ID: ProviderId = 'opencode-cli';
@@ -392,6 +440,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   claudeCliUpdateReminder: true,
   lastClaudeCliUpdateCheck: null,
   lastFableProbe: null,
+  allowWebFetch: true,
 };
 
 // === Reading View ===
