@@ -3,8 +3,7 @@ import { marked, type Token, type TokensList } from 'marked';
 import { PROSE_FONT_SIZE_DEFAULT, resolveProseFontStack } from '@domain/constants';
 import { useFileChangeStore } from '../../stores/fileChangeStore';
 import { useSettingsStore } from '../../stores/settingsStore';
-
-marked.setOptions({ async: false });
+import { renderMarkdown, sanitizeHtml } from '../../utils/markdown';
 
 /**
  * Literary typeset styling per the streamlined-workspace mock. The base size
@@ -111,7 +110,7 @@ export function ProseViewer({
       </pre>
     );
   }
-  const html = lineNumbers ? renderWithLineNumbers(content) : (marked.parse(content) as string);
+  const html = lineNumbers ? sanitizeHtml(renderWithLineNumbers(content)) : renderMarkdown(content);
   const measure = lineNumbers
     ? `ne-prose-lines pl-[3.2em] ${wide ? 'max-w-[calc(68ch+3.2em)]' : 'max-w-[calc(62ch+3.2em)]'}`
     : wide

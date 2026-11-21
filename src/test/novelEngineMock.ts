@@ -87,6 +87,7 @@ export function makeAppSettings(overrides: Partial<AppSettings> = {}): AppSettin
     claudeCliUpdateReminder: false,
     lastClaudeCliUpdateCheck: null,
     lastFableProbe: null,
+    allowWebFetch: true,
     ...overrides,
   };
 }

@@ -3,12 +3,12 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import path from 'node:path';
 import os from 'node:os';
-import { writeFile, unlink } from 'node:fs/promises';
+import { writeFile, mkdtemp, rm } from 'node:fs/promises';
 import { nanoid } from 'nanoid';
 
 import type { IClaudeClient, IModelProvider, IDatabaseService } from '@domain/interfaces';
-import type { MessageRole, StreamEvent, StreamUsage, ProviderCapability, ProviderId } from '@domain/types';
-import { CHARS_PER_TOKEN, CLAUDE_CLI_ALLOWED_BASH_COMMANDS, CLAUDE_CLI_ALLOWED_TOOLS, CLAUDE_CLI_PROVIDER_ID } from '@domain/constants';
+import type { AppSettings, MessageRole, StreamEvent, StreamUsage, ProviderCapability, ProviderId } from '@domain/types';
+import { CHARS_PER_TOKEN, CLAUDE_CLI_ALLOWED_BASH_COMMANDS, CLAUDE_CLI_PROVIDER_ID, buildClaudeCliAllowedTools, isSafePathSegment } from '@domain/constants';
 import { StreamSessionTracker } from './StreamSessionTracker';
 
 const execFileAsync = promisify(execFile);
@@ -27,6 +27,20 @@ const ABORT_KILL_GRACE_MS = 2000;
 const BASH_LIMITS_NOTE = `## Bash Limits
 
 Bash runs only these commands: ${CLAUDE_CLI_ALLOWED_BASH_COMMANDS.join(', ')}. Anything else is denied, including python, awk, sed, jq, shell variables ($VAR, \${...}) and redirecting output into files. Use Read and Grep to inspect files, Edit and Write to change them, and \`wc -w\` to count words.`;
+
+/** Appended when WebFetch is turned off in settings, so agents don't spend turns on it. */
+const WEB_FETCH_OFF_NOTE = 'WebFetch is turned off in Settings. Use WebSearch for research; you cannot open web pages.';
+
+/** Options for ClaudeCodeClient beyond the books directory. */
+export type ClaudeCodeClientOptions = {
+  /**
+   * Absolute paths, besides the books directory, that Read/Write/Edit may
+   * touch. A trailing `/**` covers a directory tree.
+   */
+  extraToolScopes?: string[];
+  /** Reads the WebFetch setting at each spawn. Omitted → WebFetch allowed. */
+  loadSettings?: () => Promise<Pick<AppSettings, 'allowWebFetch'>>;
+};
 
 /** Shape of a CLI session ID (a UUID). Checked before passing one to --resume. */
 const CLI_SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -53,6 +67,7 @@ export class ClaudeCodeClient implements IClaudeClient, IModelProvider {
   constructor(
     private booksDir: string,
     private db: IDatabaseService,
+    private options: ClaudeCodeClientOptions = {},
   ) {}
 
   async isAvailable(): Promise<boolean> {
@@ -216,26 +231,55 @@ export class ClaudeCodeClient implements IClaudeClient, IModelProvider {
       return;
     }
 
+    // The working directory comes from the book slug unless the caller gave
+    // one. Refuse a slug that isn't a single folder name.
+    if (!workingDir && bookSlug && !isSafePathSegment(bookSlug)) {
+      params.onEvent({ type: 'error', message: `Invalid book slug: ${JSON.stringify(bookSlug)}` });
+      return;
+    }
+
+    // WebFetch is a user setting (on by default). Read it per spawn so a
+    // change in Settings applies to the next agent call.
+    let webFetch = true;
+    if (this.options.loadSettings) {
+      try {
+        webFetch = (await this.options.loadSettings()).allowWebFetch !== false;
+      } catch {
+        // Settings unreadable — keep the default.
+      }
+    }
+
     // Pass the system prompt via a temp file instead of argv.
     // Windows caps the entire CreateProcess command line at ~32,767 chars, so
     // large agent prompts (e.g. FORGE.md at ~42KB) would fail spawn() with
     // ENAMETOOLONG if passed as a --system-prompt argument. The CLI supports
     // --system-prompt-file, which sidesteps the argv limit on every platform.
-    const systemPromptFile = path.join(os.tmpdir(), `novel-engine-sysprompt-${sessionId}.md`);
+    // The file goes in a fresh private directory (mkdtemp creates it 0700),
+    // and the file itself is 0600.
+    let systemPromptDir: string;
+    let systemPromptFile: string;
     try {
-      await writeFile(systemPromptFile, `${systemPrompt}\n\n${BASH_LIMITS_NOTE}`, 'utf-8');
+      systemPromptDir = await mkdtemp(path.join(os.tmpdir(), 'novel-engine-sysprompt-'));
+      systemPromptFile = path.join(systemPromptDir, 'system-prompt.md');
+      const notes = webFetch ? BASH_LIMITS_NOTE : `${BASH_LIMITS_NOTE}\n\n${WEB_FETCH_OFF_NOTE}`;
+      await writeFile(systemPromptFile, `${systemPrompt}\n\n${notes}`, { encoding: 'utf-8', mode: 0o600 });
     } catch (err) {
       const message = `Failed to write system prompt temp file: ${err instanceof Error ? err.message : String(err)}`;
       params.onEvent({ type: 'error', message });
       return;
     }
 
-    /** Best-effort removal of the system prompt temp file after the CLI exits. */
+    /** Best-effort removal of the system prompt temp directory after the CLI exits. */
     const cleanupSystemPromptFile = () => {
-      unlink(systemPromptFile).catch(() => {
+      rm(systemPromptDir, { recursive: true, force: true }).catch(() => {
         // Best-effort: temp dir is cleaned by the OS eventually.
       });
     };
+
+    const allowedTools = buildClaudeCliAllowedTools({
+      scopes: [`${this.booksDir}/**`, ...(this.options.extraToolScopes ?? [])],
+      webFetch,
+    });
 
     const args = [
       '--print',
@@ -244,7 +288,10 @@ export class ClaudeCodeClient implements IClaudeClient, IModelProvider {
       '--model', model,
       '--max-turns', String(params.maxTurns ?? 30),
       '--system-prompt-file', systemPromptFile,
-      '--allowedTools', CLAUDE_CLI_ALLOWED_TOOLS,
+      '--allowedTools', allowedTools,
+      // Load user settings only. Project settings come from the working
+      // directory (the book folder), and their hooks would run commands.
+      '--setting-sources', 'user',
       '--add-dir', this.booksDir,
     ];
 

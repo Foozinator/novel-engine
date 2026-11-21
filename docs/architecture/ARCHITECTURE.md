@@ -1,6 +1,6 @@
 # Architecture — Novel Engine Spur
 
-> Last updated: 2026-11-15 (#37, after #39)
+> Last updated: 2026-11-20 (#63)
 
 Electron + React 18 + TypeScript 5 + Tailwind v4 + Zustand + better-sqlite3 + Claude Code CLI + Codex CLI + Ollama CLI + Pandoc
 
@@ -53,6 +53,7 @@ src/
 │   │   └── index.ts
 │   ├── filesystem/
 │   │   ├── FileSystemService.ts             # Book CRUD, file I/O, shelved pitches, pitch room
+│   │   ├── bookPaths.ts                     # resolveBookPath(): book-relative paths that stay in the book
 │   │   ├── BookWatcher.ts                   # Watches active book dir for file changes
 │   │   ├── BooksDirWatcher.ts               # Watches books/ root for new/deleted books
 │   │   └── index.ts
@@ -122,6 +123,7 @@ src/
 │   ├── dataLocation.ts                      # Resolves the data folder (flag › env › pointer › default); pointer I/O
 │   ├── dataFolderDialogs.ts                 # Native dialogs: startup data-folder checks, change/reset from Settings
 │   ├── notifications.ts                     # OS notification manager
+│   ├── appUrl.ts                            # createAppUrlMatcher(): the app's own page, for the window lock and IPC sender check
 │   └── ipc/
 │       └── handlers.ts                      # Thin adapter: IPC channel → service call
 │
@@ -131,6 +133,8 @@ src/
 └── renderer/                                # LAYER 5: React UI
     ├── App.tsx                              # Root component, onboarding gate
     ├── main.tsx                             # React 18 createRoot entry
+    ├── utils/
+    │   └── markdown.ts                      # renderMarkdown()/sanitizeHtml(): marked + DOMPurify for every HTML sink
     ├── stores/
     │   ├── settingsStore.ts
     │   ├── bookStore.ts
@@ -336,6 +340,14 @@ The renderer layer normally uses `import type` only from domain. However, **pure
 
 - `contextIsolation: true` — always
 - `nodeIntegration: false` — always
+- `sandbox: true` — set explicitly on the main window
+- Window lock: `will-navigate`/`will-redirect` keep the main window on the app's entry page (`createAppUrlMatcher`, `src/main/appUrl.ts`); `https:` links open in the system browser, other targets are dropped, and `setWindowOpenHandler` denies new windows
+- IPC sender check: every `ipcMain.handle` channel in `handlers.ts` serves only calls whose `senderFrame.url` is the app's entry page
+- Rendered markdown: every `dangerouslySetInnerHTML` sink goes through `renderMarkdown()`/`sanitizeHtml()` (`src/renderer/utils/markdown.ts`, DOMPurify)
+- CSP (`index.html`): `script-src 'self'`, plus `form-action 'none'`, `base-uri 'none'`, `object-src 'none'`
+- Book paths: `resolveBookPath()` checks the slug is one folder name and the path stays in the book; pitch slugs and draft IDs are checked the same way
+- `shell:openExternal` opens `https:`/`mailto:` only; `shell:openPath` opens the books folder and exports saved this session only
+- Claude CLI: `Read`/`Write`/`Edit` limited to `books/`, `series/` and `author-profile.md`; `--setting-sources user`; WebFetch is a setting (`allowWebFetch`, on by default)
 - No API keys stored — Claude Code CLI handles its own authentication
 - All renderer↔main communication through the preload bridge
 - Custom `novel-asset://` protocol for serving local files (cover images) to renderer
@@ -408,6 +420,7 @@ The fork ships as **Novel Engine Spur** (`APP_NAME` in `src/domain/constants.ts`
 | Build | Pandoc | (bundled binary) |
 | IDs | nanoid | 3 |
 | Markdown | marked | ^15.0.0 |
+| HTML sanitizer | dompurify | 3.4.17 |
 | Archive | archiver | ^7.0.1 |
 | Build Tool | Electron Forge | ^7.11.1 |
 | Unit tests | Vitest | ^4.1.10 |

@@ -1,6 +1,6 @@
 # Domain — Types, Interfaces, Constants
 
-> Last updated: 2026-11-15 (#37, after #39)
+> Last updated: 2026-11-20 (#63)
 
 Everything in `src/domain/`. Pure TypeScript declarations — zero imports from other layers.
 
@@ -98,7 +98,7 @@ Everything in `src/domain/`. Pure TypeScript declarations — zero imports from 
 
 | Type | Shape | Used By |
 |------|-------|---------|
-| `AppSettings` | `{ hasClaudeCli, hasOllamaCli, hasCodexCli, model, secondaryModel, maxTokens, enableThinking, thinkingBudget, overrideThinkingBudget, autoCollapseThinking, enableNotifications, theme, proseFontSize, showChapterLineNumbers, proseFont, proseFontCustom, initialized, authorName, providers, activeProviderId, completedTours, savedPrompts, claudeCliUpdateReminder, lastClaudeCliUpdateCheck, lastFableProbe }` | SettingsService, SettingsView, tourStore, ClaudeCliUpdateService, FableAccessService |
+| `AppSettings` | `{ hasClaudeCli, hasOllamaCli, hasCodexCli, model, secondaryModel, maxTokens, enableThinking, thinkingBudget, overrideThinkingBudget, autoCollapseThinking, enableNotifications, theme, proseFontSize, showChapterLineNumbers, proseFont, proseFontCustom, initialized, authorName, providers, activeProviderId, completedTours, savedPrompts, claudeCliUpdateReminder, lastClaudeCliUpdateCheck, lastFableProbe, allowWebFetch }` | SettingsService, SettingsView, tourStore, ClaudeCliUpdateService, FableAccessService |
 | `ProseFontId` | `'fraunces' \| 'classic-serif' \| 'sans' \| 'mono' \| 'custom'` | `AppSettings.proseFont`, ProseViewer, SettingsView |
 | `FableProbeStatus` | `'available' \| 'unavailable' \| 'error'` | FableProbe, FableAccessService |
 | `FableProbeResult` | `{ status: FableProbeStatus, checkedAt, detail? }` | `AppSettings.lastFableProbe`, `claudeCli:checkFableAccess` |
@@ -390,7 +390,8 @@ Implemented by: `FileSystemService` (`src/infrastructure/filesystem/`)
 | `countWords` | `(bookSlug) => Promise<number>` | Total manuscript words |
 | `countWordsPerChapter` | `(bookSlug) => Promise<{slug, wordCount}[]>` | Per-chapter counts |
 | `saveCoverImage` | `(bookSlug, sourcePath) => Promise<string>` | Relative path to saved image |
-| `getCoverImageAbsolutePath` | `(bookSlug) => Promise<string \| null>` | Absolute path or null |
+| `getCoverImageAbsolutePath` | `(bookSlug) => Promise<string \| null>` | Absolute path or null (also null when `coverImage` points outside the book) |
+| `getAbsolutePath` | `(bookSlug, relativePath) => string` | Absolute in-book path; throws on a bad slug or a path outside the book. No I/O |
 | `archiveBook` | `(slug) => Promise<void>` | Moves to _archived/ |
 | `unarchiveBook` | `(slug) => Promise<BookMeta>` | Restores from _archived/ |
 | `listArchivedBooks` | `() => Promise<BookSummary[]>` | Archived books |
@@ -745,7 +746,10 @@ Implemented by: `QueryService` (`src/application/QueryService.ts`)
 | `AVAILABLE_MODELS` | 3-element array | **(deprecated)** `opus`, `sonnet`, `haiku` aliases. Use `BUILT_IN_PROVIDER_CONFIGS[0].models` or `IProviderRegistry.listAllModels()` |
 | `CLAUDE_CLI_PROVIDER_ID` | `'claude-cli'` | Built-in Claude CLI provider ID |
 | `CLAUDE_CLI_ALLOWED_BASH_COMMANDS` | `readonly string[]` (`mkdir`, `cat`, `mv`, `cp`, `ls`, `find`, `grep`, `wc`, `head`, `tail`, `rm`, `rmdir`) | Bash commands the CLI may run without approval; also listed in the CLI's Bash Limits prompt note |
-| `CLAUDE_CLI_ALLOWED_TOOLS` | `string` | `--allowedTools` value: core tools plus `Bash(<cmd>:*)` for each allowed command |
+| `buildClaudeCliAllowedTools(options)` | `({ scopes: string[]; webFetch: boolean }) => string` | `--allowedTools` value. `Read`/`Write`/`Edit` once per scope (absolute path, `/**` for a tree), never bare; `LS Glob Grep WebSearch Task TodoWrite`; `WebFetch` only when `webFetch`; `Bash(<cmd>:*)` per allowed command. Replaces `CLAUDE_CLI_ALLOWED_TOOLS`. |
+| `toClaudeCliRulePath(absPath)` | `(string) => string` | Absolute path in CLI permission-rule form: `//home/u/…`, Windows `C:\…` → `//c/…` (a single leading slash is project-relative) |
+| `isSafePathSegment(value)` | `(unknown) => value is string` | True for one folder/file name: non-empty, not `.`/`..`, no `/` `\` `:` or NUL. Used for book slugs, pitch slugs and draft IDs |
+| `CLAUDE_PROJECT_CONFIG_DIR` | `'.claude'` | Claude CLI project-config folder; removed from books on unarchive and data-folder import |
 | `OPENCODE_CLI_PROVIDER_ID` | `'opencode-cli'` | Reserved for future OpenCode CLI provider |
 | `OLLAMA_CLI_PROVIDER_ID` | `'ollama-cli'` | Built-in Ollama provider ID |
 | `LLAMA_SERVER_PROVIDER_ID` | `'llama-server'` | Built-in llama-server provider ID |

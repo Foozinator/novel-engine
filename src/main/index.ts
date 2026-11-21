@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeTheme, protocol, net } from 'electron';
+import { app, BrowserWindow, ipcMain, nativeTheme, protocol, net, shell } from 'electron';
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -54,6 +54,7 @@ if (squirrelStartup) {
 // Chromium's sessionData follows, so renderer localStorage is per folder too.
 import { LEGACY_DATA_FOLDER_NAME, resolveDataDir } from './dataLocation';
 import { runStartupDataFolderChecks } from './dataFolderDialogs';
+import { createAppUrlMatcher } from './appUrl';
 // Default is `{appData}/Novel Engine Spur` (from package.json productName).
 // The pre-rename `{appData}/Novel Engine` is offered for import on first launch.
 const defaultDataDir = app.getPath('userData');
@@ -69,7 +70,7 @@ if (dataResolution.problem) {
 import { SettingsService } from '@infra/settings';
 import { DatabaseService, makeSourceDataFolderOpener } from '@infra/database';
 import { AgentService } from '@infra/agents';
-import { FileSystemService, BookWatcher, BooksDirWatcher } from '@infra/filesystem';
+import { FileSystemService, BookWatcher, BooksDirWatcher, resolveBookPath } from '@infra/filesystem';
 import { ClaudeCodeClient, ClaudeCliUpdater, FableProbe } from '@infra/claude-cli';
 import { CodexCliClient } from '@infra/codex-cli';
 import { OllamaCodeClient, OllamaCliRunner } from '@infra/ollama-cli';
@@ -128,6 +129,15 @@ let mainWindow: BrowserWindow | null = null;
 
 // Variable captured by the protocol handler (assigned during initializeApp)
 let booksDir: string;
+
+/** The renderer's entry page, packaged builds. */
+const INDEX_HTML_PATH = path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`);
+
+/** True only for the app's own page: the window lock and the IPC sender check use it. */
+const isAppUrl = createAppUrlMatcher({
+  devServerUrl: MAIN_WINDOW_VITE_DEV_SERVER_URL,
+  indexHtmlPath: INDEX_HTML_PATH,
+});
 
 // ── Custom Protocol ────────────────────────────────────────────────
 // Register before app.whenReady() per Electron docs
@@ -334,7 +344,31 @@ function createWindow(): void {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
+  });
+
+  // Keep the window on the app's own page. Links that would navigate away
+  // open in the system browser instead (https only); new windows are denied.
+  const openExternally = (url: string): void => {
+    if (/^https:\/\//i.test(url)) {
+      shell.openExternal(url).catch(() => {
+        // Browser launch failed — nothing to do.
+      });
+    }
+  };
+  const keepOnAppPage = (event: Electron.Event, url: string): void => {
+    if (isAppUrl(url)) return;
+    event.preventDefault();
+    openExternally(url);
+  };
+  mainWindow.webContents.on('will-navigate', keepOnAppPage);
+  mainWindow.webContents.on('will-redirect', (event, url) => {
+    if (!isAppUrl(url)) event.preventDefault();
+  });
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    openExternally(url);
+    return { action: 'deny' };
   });
 
   // Forward maximize/unmaximize events to renderer for title bar button state
@@ -349,9 +383,7 @@ function createWindow(): void {
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
   } else {
-    mainWindow.loadFile(
-      path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
-    );
+    mainWindow.loadFile(INDEX_HTML_PATH);
   }
 }
 
@@ -439,7 +471,11 @@ async function initializeApp(): Promise<void> {
   db = new DatabaseService(dbPath);
   const agents = new AgentService(agentsDir);
   const fs = new FileSystemService(booksDir, userDataPath);
-  const claudeClient = new ClaudeCodeClient(booksDir, db);
+  // Agents' file tools reach the books, the series bibles and the author profile.
+  const claudeClient = new ClaudeCodeClient(booksDir, db, {
+    extraToolScopes: [`${path.join(userDataPath, 'series')}/**`, fs.getAuthorProfilePath()],
+    loadSettings: () => settings.load(),
+  });
 
   // 3b. Initialize provider registry
   const providerRegistry = new ProviderRegistry(settings);
@@ -648,20 +684,19 @@ async function initializeApp(): Promise<void> {
     const url = new URL(request.url);
 
     if (url.hostname === 'cover') {
-      const bookSlug = url.pathname.replace(/^\//, '');
-      const bookDir = path.join(booksDir, bookSlug);
-      const aboutPath = path.join(bookDir, 'about.json');
-
       try {
+        const bookSlug = decodeURIComponent(url.pathname.replace(/^\//, ''));
+        const aboutPath = resolveBookPath(booksDir, bookSlug, 'about.json');
         const aboutRaw = readFileSync(aboutPath, 'utf-8');
         const about = JSON.parse(aboutRaw) as { coverImage?: string };
 
         if (about.coverImage) {
-          const coverAbsPath = path.join(bookDir, about.coverImage);
+          // Throws if coverImage points outside the book.
+          const coverAbsPath = resolveBookPath(booksDir, bookSlug, about.coverImage);
           return net.fetch(pathToFileURL(coverAbsPath).href);
         }
       } catch {
-        // about.json doesn't exist or is malformed — fall through to 404
+        // Bad slug, missing or malformed about.json, or a cover outside the book — 404
       }
 
       return new Response('Not found', { status: 404 });
@@ -723,6 +758,7 @@ async function initializeApp(): Promise<void> {
         source: dataResolution.problem ? 'default' : dataResolution.source,
       },
       promptSync,
+      isAppUrl,
     },
     {
       onActiveBookChanged: (slug: string) => {

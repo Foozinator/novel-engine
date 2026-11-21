@@ -159,6 +159,18 @@ describe('DataFolderImportService.commit', () => {
     expect(await readdir(tmpRoot)).toEqual([]);
   });
 
+  it('drops a .claude folder from imported books and leaves the source alone', async () => {
+    const srcClaude = path.join(src.booksDir, 'the-long-road', '.claude');
+    await mkdir(srcClaude, { recursive: true });
+    await writeFile(path.join(srcClaude, 'settings.json'), '{"hooks":{}}');
+
+    await service.commit(config());
+
+    expect(existsSync(path.join(dst.booksDir, 'the-long-road', '.claude'))).toBe(false);
+    expect(existsSync(path.join(dst.booksDir, 'the-long-road', 'chapters', '01-start', 'draft.md'))).toBe(true);
+    expect(existsSync(path.join(srcClaude, 'settings.json'))).toBe(true);
+  });
+
   it('renames on a clash: new folder, new title, rows and series rewritten', async () => {
     await seedBook(dst, 'the-long-road', { title: 'Mine' });
     const result = await service.commit(

@@ -1,8 +1,10 @@
 # IPC — Channels, Preload Bridge, Handler Registry
 
-> Last updated: 2026-11-15 (#37, after #39)
+> Last updated: 2026-11-20 (#63)
 
 Everything in `src/main/ipc/` and `src/preload/`. Thin adapter layer between application services and the renderer.
+
+**Sender check:** `registerIpcHandlers(services, paths, hooks)` takes `paths.isAppUrl` (from `createAppUrlMatcher`, `src/main/appUrl.ts`). Every channel below is registered through a local `handle()` wrapper that throws `Refused <channel>: the call did not come from the app window` unless `event.senderFrame.url` is the app's entry page (packaged: the exact `index.html` file URL; dev: the Vite server origin).
 
 ---
 
@@ -70,7 +72,7 @@ Everything in `src/main/ipc/` and `src/preload/`. Thin adapter layer between app
 | `books:wordCount` | invoke | `fs.countWordsPerChapter(slug)` | `{slug, wordCount}[]` |
 | `books:uploadCover` | invoke | `dialog.showOpenDialog()` → `fs.saveCoverImage()` | `string \| null` |
 | `books:getCoverImagePath` | invoke | `fs.getCoverImageAbsolutePath(slug)` | `string \| null` |
-| `books:getAbsolutePath` | invoke | `path.join(booksDir, bookSlug, relativePath)` | `string` |
+| `books:getAbsolutePath` | invoke | `fs.getAbsolutePath(bookSlug, relativePath)` — throws on a bad slug or a path outside the book | `string` |
 | `books:archive` | invoke | `fs.archiveBook(slug)` | `void` |
 | `books:unarchive` | invoke | `fs.unarchiveBook(slug)` + triggers watcher switch | `BookMeta` |
 | `books:listArchived` | invoke | `fs.listArchivedBooks()` | `BookSummary[]` |
@@ -236,8 +238,8 @@ Everything in `src/main/ipc/` and `src/preload/`. Thin adapter layer between app
 
 | Channel | Direction | Handler | Returns |
 |---------|-----------|---------|---------|
-| `shell:openExternal` | invoke | `shell.openExternal(url)` | `void` |
-| `shell:openPath` | invoke | `shell.openPath(absolutePath)` | `string` |
+| `shell:openExternal` | invoke | `shell.openExternal(url)` for `https:` and `mailto:` URLs; throws otherwise | `void` |
+| `shell:openPath` | invoke | `shell.openPath(absolutePath)` for an absolute path in the books folder, or a file saved through the `build:exportZip`/`catalog:exportZip` save dialog this session; throws otherwise | `string` |
 
 ### window:*
 

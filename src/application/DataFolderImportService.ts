@@ -15,7 +15,7 @@ import type {
   DataFolderPreview,
   SeriesMeta,
 } from '@domain/types';
-import { BOOK_HISTORY_DIR, BOOK_HISTORY_FILE, HELPER_SLUG, PITCH_ROOM_SLUG } from '@domain/constants';
+import { BOOK_HISTORY_DIR, BOOK_HISTORY_FILE, CLAUDE_PROJECT_CONFIG_DIR, HELPER_SLUG, PITCH_ROOM_SLUG } from '@domain/constants';
 
 export type DataFolderImportPaths = {
   /** This app's data folder. */
@@ -156,6 +156,7 @@ export class DataFolderImportService implements IDataFolderImportService {
     await cp(path.join(src.booksDir, slug), stage, { recursive: true, errorOnExist: true, force: false });
     const historyDir = path.join(stage, BOOK_HISTORY_DIR);
     await rm(historyDir, { recursive: true, force: true }); // never trust one shipped inside a live folder
+    await rm(path.join(stage, CLAUDE_PROJECT_CONFIG_DIR), { recursive: true, force: true }); // no CLI project config from elsewhere
     await mkdir(historyDir);
     const historyFile = path.join(historyDir, BOOK_HISTORY_FILE);
     src.db.exportBookHistory(slug, historyFile);

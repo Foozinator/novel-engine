@@ -282,6 +282,8 @@ export interface IFileSystemService {
   // Cover image
   saveCoverImage(bookSlug: string, sourcePath: string): Promise<string>;
   getCoverImageAbsolutePath(bookSlug: string): Promise<string | null>;
+  /** Absolute path of a file inside a book. Throws on an invalid slug or a path outside the book. No I/O. */
+  getAbsolutePath(bookSlug: string, relativePath: string): string;
 
   // Book archiving — moves books to/from _archived/ directory
   archiveBook(slug: string): Promise<void>;

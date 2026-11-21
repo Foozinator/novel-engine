@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { marked } from 'marked';
+import { renderMarkdown } from '../../utils/markdown';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useCliUpdateStore } from '../../stores/cliUpdateStore';
 import { useBookStore } from '../../stores/bookStore';
@@ -526,6 +526,31 @@ function NotificationsSection(): React.ReactElement {
   );
 }
 
+function WebAccessSection(): React.ReactElement {
+  const { settings, update } = useSettingsStore();
+  const enabled = settings?.allowWebFetch ?? true;
+
+  return (
+    <section className="space-y-3">
+      <SectionHeading>Web Access</SectionHeading>
+      <label className="flex cursor-pointer items-center gap-3">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => update({ allowWebFetch: e.target.checked })}
+          className="h-4 w-4 rounded border-zinc-300 dark:border-zinc-600 bg-zinc-100 dark:bg-zinc-800 text-blue-500 focus:ring-2 focus:ring-blue-500 focus:ring-offset-0"
+        />
+        <span className="text-sm text-zinc-700 dark:text-zinc-300">
+          Let agents open web pages
+        </span>
+      </label>
+      <HelpText>
+        Agents can always search the web. Turn this off to stop them opening the pages they find (the Claude CLI&apos;s WebFetch tool). Applies from the next agent call.
+      </HelpText>
+    </section>
+  );
+}
+
 function AppearanceSection(): React.ReactElement {
   const { settings, update } = useSettingsStore();
   const currentTheme = settings?.theme ?? 'dark';
@@ -1016,7 +1041,7 @@ function AuthorProfileSection(): React.ReactElement {
           {authorProfile ? (
             <div
               className="prose dark:prose-invert prose-sm"
-              dangerouslySetInnerHTML={{ __html: String(marked.parse(authorProfile)) }}
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(authorProfile) }}
             />
           ) : (
             <p className="italic text-zinc-500">No author profile yet.</p>
@@ -1206,6 +1231,8 @@ export function SettingsView(): React.ReactElement {
               <ModelSelectionSection />
               <SectionDivider />
               <ThinkingSection />
+              <SectionDivider />
+              <WebAccessSection />
             </>
           )}
 
