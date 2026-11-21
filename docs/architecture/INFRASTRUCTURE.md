@@ -1,6 +1,6 @@
 # Infrastructure — Implementations
 
-> Last updated: 2026-11-20 (#63)
+> Last updated: 2026-11-20 (#58)
 
 Everything in `src/infrastructure/`. Implements domain interfaces using Node.js builtins and npm packages.
 
@@ -30,11 +30,12 @@ Key behavior:
 | File | Purpose |
 |------|---------|
 | `schema.ts` | CREATE TABLE statements, WAL mode, foreign keys, migration guards |
-| `migrations.ts` | Forward-only `MIGRATIONS` list (v0–v4) and `runMigrations(db)`. A migration runs its `sql`, or its `apply(db)` function when set (used for idempotent `ADD COLUMN`). |
+| `migrations.ts` | Forward-only `MIGRATIONS` list (v0–v4) and `runMigrations(db)`. A migration runs its `sql`, or its `apply(db)` function when set (used for idempotent `ADD COLUMN`). Also `APP_SCHEMA_VERSION` and `readAppliedVersion(db)` (-1 without `schema_version`; creates nothing). |
+| `backup.ts` | Pre-migration snapshot (#58): `backupBeforeMigrations`, `pruneMigrationBackups`, `MigrationBackupError` |
 | `DatabaseService.ts` | Implements `IDatabaseService`. Prepared statements for all queries. |
 | `bookHistory.ts` | Per-book history snapshots: export, merge, revert, stats (#37; the seam for #36 archives) |
 | `SourceDataFolder.ts` | `makeSourceDataFolderOpener`: opens another data folder via a migrated temp copy of its DB |
-| `index.ts` | Barrel export (`DatabaseService`, `makeSourceDataFolderOpener`) |
+| `index.ts` | Barrel export (`DatabaseService`, `makeSourceDataFolderOpener`, `MigrationBackupError`) |
 
 Key behavior:
 - WAL mode + foreign keys enabled at connection time
@@ -43,6 +44,13 @@ Key behavior:
 - `pruneStreamEvents(olderThanDays)` deletes old event data
 - `persistStreamEventBatch()` wraps inserts in a transaction for bulk efficiency
 - `updateBookSlug` migrates conversation references on slug rename. It does not rewrite `file_versions`, `word_count_snapshots` or `stream_sessions` (known gap, spike #36).
+
+Pre-migration snapshot (`backup.ts`, #58):
+- `new DatabaseService(dbPath, { migrationBackupDir })` calls `backupBeforeMigrations` on the fresh connection, before `initializeSchema`. Only `src/main/index.ts` passes the option (`{userData}/backups`). Tests and the `SourceDataFolder` temp copy don't.
+- Skipped when `readAppliedVersion(db) >= APP_SCHEMA_VERSION`, or when the DB has no tables (a new file).
+- Writes `novel-engine-pre-v<from>-to-v<to>-<ISO timestamp, ':' and '.' → '-'>.db` with `VACUUM INTO`. `from` is `unversioned` for a DB without `schema_version`. The copy is one file and includes WAL pages from other connections.
+- Then keeps the newest `MIGRATION_BACKUPS_KEPT` (3) by the timestamp in the name. Other files in the folder are left alone. A failed prune only logs a warning.
+- A failed snapshot throws `MigrationBackupError`. `DatabaseService` closes the connection without migrating. Main shows an error box and exits with code 1.
 
 Per-book history snapshot (`bookHistory.ts`):
 - The snapshot is a standalone SQLite file. It holds `conversations`, `messages` and `token_usage` (both selected through the book's conversation ids), `file_versions`, `word_count_snapshots`, and a copy of `schema_version`. Stream tables are excluded.

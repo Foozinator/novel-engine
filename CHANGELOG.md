@@ -4,6 +4,32 @@ All notable changes to Novel Engine Spur are documented here.
 
 ---
 
+## [2026-11-20] — Snapshot the database before schema migrations (#58)
+
+### Summary
+
+Opening the app's database used to run schema migrations in place with no backup. That matters when Spur uses the old Novel Engine folder in place (#39) and on every Spur release that adds a migration. Now, when migrations are pending, `DatabaseService` first writes a consistent single-file copy to `{userData}/backups/novel-engine-pre-v<from>-to-v<to>-<timestamp>.db` and keeps the newest 3. If the copy fails, nothing is migrated: startup shows an error dialog and quits. The copy uses SQLite `VACUUM INTO` rather than better-sqlite3's async `db.backup()`, because `DatabaseService` opens and migrates synchronously. Like `db.backup()`, it includes pages still in another connection's WAL.
+
+### Added
+- `src/infrastructure/database/backup.ts` — `backupBeforeMigrations(db, backupDir, now?)`, `pruneMigrationBackups(dir, keep)`, `migrationBackupFileName(from, to, now)`, `MigrationBackupError`, `MIGRATION_BACKUPS_KEPT` (3). No snapshot when nothing is pending or the DB has no tables yet. A DB without `schema_version` is labelled `unversioned` in the file name.
+- `src/infrastructure/database/backup.test.ts` — Snapshot on pending migrations, WAL contents included, none when up to date or empty, pruning by timestamp, abort on a failed snapshot (DB left unmigrated).
+
+### Changed
+- `src/infrastructure/database/DatabaseService.ts` — Constructor takes `options.migrationBackupDir`. When set, it snapshots before `initializeSchema`; on failure it closes the connection and rethrows. Without the option, there is no snapshot (tests, and the temp copy in `SourceDataFolder.ts`).
+- `src/infrastructure/database/migrations.ts` — Added `APP_SCHEMA_VERSION` (moved from `bookHistory.ts`) and `readAppliedVersion(db)`, which reads the applied version without creating `schema_version`.
+- `src/infrastructure/database/bookHistory.ts` — Re-exports `APP_SCHEMA_VERSION` from `migrations.ts`.
+- `src/infrastructure/database/SourceDataFolder.ts` — `readSchemaVersion` uses `readAppliedVersion`.
+- `src/infrastructure/database/index.ts` — Exports `MigrationBackupError`.
+- `src/main/index.ts` — Opens the DB with `migrationBackupDir: {userData}/backups`. On `MigrationBackupError` it logs, shows `dialog.showErrorBox`, and calls `app.exit(1)`.
+
+### Architecture Impact
+- None — no new services, IPC channels or stores. New data folder `{userData}/backups/` holds pre-migration snapshots.
+
+### Migration Notes
+- None. No schema change. The first launch that runs a migration writes a snapshot to `{userData}/backups/`.
+
+---
+
 ## [2026-11-20] — Harden renderer and agent defaults (#63)
 
 ### Summary

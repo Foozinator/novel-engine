@@ -86,6 +86,22 @@ export const MIGRATIONS: Migration[] = [
   },
 ];
 
+/** Highest version in `MIGRATIONS` — the schema version this build migrates to. */
+export const APP_SCHEMA_VERSION = Math.max(...MIGRATIONS.map((m) => m.version));
+
+/**
+ * Highest applied migration version, read without creating anything.
+ * -1 when the DB has no `schema_version` table (new, or predates version tracking).
+ */
+export function readAppliedVersion(db: Database.Database): number {
+  const hasTable = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'")
+    .get();
+  if (!hasTable) return -1;
+  const row = db.prepare('SELECT MAX(version) AS v FROM schema_version').get() as { v: number | null };
+  return row.v ?? -1;
+}
+
 /**
  * Run all pending migrations. Called after schema.ts creates the base tables.
  *
