@@ -5,6 +5,9 @@
   "description": "A multi-agent AI writing desktop application",
   "main": ".vite/build/index.js",
   "private": true,
+  "engines": {
+    "node": ">=22.12"
+  },
   "scripts": {
     "start": "electron-forge start",
     "package": "electron-forge package",

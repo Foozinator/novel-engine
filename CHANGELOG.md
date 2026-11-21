@@ -4,6 +4,30 @@ All notable changes to Novel Engine Spur are documented here.
 
 ---
 
+## [2026-11-20] — Move dev, CI and release to Node 22 (#40)
+
+### Summary
+
+Node 20 has been end-of-life since 2026-04. Dev, CI and release builds now use Node 22. This changes only the Node that installs, tests and packages the app. The shipped app still runs on the Node built into Electron 33 (20.18). Node 22 is also a prerequisite for the later better-sqlite3 13 (#42) and Electron 45 (#43) upgrades. Lint and all unit tests pass on Node 22.23.5 with the existing dependencies, so no dependency versions changed.
+
+### Added
+- `.nvmrc` — Pins Node `22` for nvm and fnm.
+
+### Changed
+- `.github/workflows/ci.yml` — `node-version` `'20'` → `'22'`.
+- `.github/workflows/release.yml` — `NODE_VERSION` `'20'` → `'22'`.
+- `package.json`, `package-lock.json` — Added `"engines": { "node": ">=22.12" }`. This is the minimum that Electron 45's npm package declares.
+- `README.md` — The Node prerequisite for building from source goes from 18+ (stale) to 22.12+.
+- `CLAUDE.md` — The Verify section says dev, CI and releases use Node 22. Dropped the note telling readers to ignore FORGE-CONFIG's Node 22.
+
+### Architecture Impact
+- None — no wiring changes.
+
+### Migration Notes
+- Contributors need Node 22.12 or later. `npm` only warns on an older Node, because `engine-strict` is not set.
+
+---
+
 ## [2026-11-14] — Rename to Novel Engine Spur, data folder selection, bundled prompt sync (#39)
 
 ### Summary

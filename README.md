@@ -97,7 +97,7 @@ npm run download-pandoc   # optional — enables DOCX/EPUB export
 npm start
 ```
 
-You'll need [Node.js](https://nodejs.org) 18+ installed first. Full build and packaging instructions are in the [technical guide](./TECHNICAL.md).
+You'll need [Node.js](https://nodejs.org) 22.12+ installed first. Full build and packaging instructions are in the [technical guide](./TECHNICAL.md).
 
 ---
 
