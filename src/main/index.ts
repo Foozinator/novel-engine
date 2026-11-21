@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeTheme, protocol, net, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, protocol, net, shell } from 'electron';
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -68,7 +68,7 @@ if (dataResolution.problem) {
 
 // Infrastructure
 import { SettingsService } from '@infra/settings';
-import { DatabaseService, makeSourceDataFolderOpener } from '@infra/database';
+import { DatabaseService, MigrationBackupError, makeSourceDataFolderOpener } from '@infra/database';
 import { AgentService } from '@infra/agents';
 import { FileSystemService, BookWatcher, BooksDirWatcher, resolveBookPath } from '@infra/filesystem';
 import { ClaudeCodeClient, ClaudeCliUpdater, FableProbe } from '@infra/claude-cli';
@@ -78,7 +78,7 @@ import { LlamaServerClient } from '@infra/llama-server';
 import { ProviderRegistry, OpenAiCompatibleProvider } from '@infra/providers';
 import { resolvePandocPath } from '@infra/pandoc';
 import { SeriesService } from '@infra/series';
-import { BUILT_IN_PROVIDER_CONFIGS, OLLAMA_CLI_PROVIDER_ID, LLAMA_SERVER_PROVIDER_ID, CODEX_CLI_PROVIDER_ID } from '@domain/constants';
+import { BUILT_IN_PROVIDER_CONFIGS, OLLAMA_CLI_PROVIDER_ID, LLAMA_SERVER_PROVIDER_ID, CODEX_CLI_PROVIDER_ID, APP_NAME } from '@domain/constants';
 import type { ModelInfo } from '@domain/types';
 
 // Application
@@ -468,7 +468,17 @@ async function initializeApp(): Promise<void> {
 
   // 3. Instantiate infrastructure
   const settings = new SettingsService(userDataPath);
-  db = new DatabaseService(dbPath);
+  // Snapshot to {userData}/backups before any schema migration (#58). If the
+  // snapshot fails, the DB is left as it was and the app quits.
+  try {
+    db = new DatabaseService(dbPath, { migrationBackupDir: path.join(userDataPath, 'backups') });
+  } catch (err) {
+    if (!(err instanceof MigrationBackupError)) throw err;
+    console.error('[startup]', err);
+    dialog.showErrorBox(`${APP_NAME} cannot start`, err.message);
+    app.exit(1);
+    return;
+  }
   const agents = new AgentService(agentsDir);
   const fs = new FileSystemService(booksDir, userDataPath);
   // Agents' file tools reach the books, the series bibles and the author profile.
