@@ -24,6 +24,43 @@ All notable changes to Novel Engine Spur are documented here.
 
 ### Migration Notes
 - None. Keys already dropped from a book's `about.json` don't come back; the agent that wrote them (Spark for genre and comp titles) has to write them again.
+## [2026-11-22] — Repeat passes run every step and keep earlier reports (#81)
+
+### Summary
+
+A second Forge pass skipped "Build Task List": `MultiCallOrchestrator` treated any existing output as a finished step, so the old `project-tasks.md` was reused, the session prompts were rebuilt from it, and the archive instruction inside that step never ran. The same rule let an interrupted read resume from scratch notes about chapters that had since changed. Separately, `completeRevision()` overwrote `reader-report-v1.md` / `dev-report-v1.md` on every revision, and reverting Revision deleted both. Now a multi-call run keeps a run record and resumes only its own finished steps, and only while the book is unchanged. The app, not the agents, archives earlier plans and reports under the next free `-vN` number and never deletes them. Phase detection compares against the newest archive. Minimal fix ahead of the run log in #87.
+
+### Added
+- `src/application/archives.ts` — Versioned archive helpers: `archivePath`, `archiveVersions`, `latestArchive`, `latestPlanArchive`, `archiveGroup` (copy or move a group under one shared version; no new archive when the newest already matches), `archivePlan` (task list + session prompts, and on a move `session-handoffs/` → `session-handoffs-vN/`). Path constants `PLAN_FILES`, `SESSION_HANDOFFS_DIR`, `READER_REPORT`, `DEV_REPORT`.
+
+### Changed
+- `src/application/MultiCallOrchestrator.ts` — Run record at `source/.scratch/<agent>-run.json` (`stepsHash`, `inputsHash`, `completedSteps`). A run resumes only when the step list and a content fingerprint of the manifest's files (minus scratch, re-taken after each finished step) match; it then skips only steps the record lists. Otherwise it deletes this agent's scratch files and archives the agent's earlier output before step 1: Forge's plan moves (`archivePlan(..., 'move')`), reports are copied. Each attempt deletes its own stale scratch file first. A step whose output file existed before it ran fails unless it changes that file. The record is removed after synthesis.
+- `src/application/PipelineService.ts` — `completeRevision()` copies `reader-report.md` (required; clear error if missing), `dev-report.md` and the plan to their next free version instead of overwriting `-v1`. `revertPhase('revision')` no longer deletes archives. New `ACTION_GATED` set (`revision`): such a phase is never `pending-completion`, so with archives kept it returns to `active` after a revert. Detection uses the newest archive: `revision-plan-1` = live plan pair or any plan archive; `second-read` / `second-assessment` compare with the newest report archive; `revision-plan-2` compares task list and prompts with the newest archived plan and no longer requires a prompts archive at that version. Done stubs write a `-v1` archive only when none exists. Removed `safeDelete()`.
+- `src/application/RevisionQueueService.ts` — Cycle 2 is detected from any plan archive (`latestPlanArchive`), not `project-tasks-v1.md`. With an audit report, `loadPlan` refuses a live plan that matches the newest archived plan (`isArchivedPlan`, checkbox ticks ignored): that is still the first revision's plan. The error text names Forge instead of an "agent action".
+- `src/domain/constants.ts` — `FORGE_MULTI_CALL_STEPS` "Build Task List" prompt: the app has already archived any earlier plan; Forge must not rename, move or delete files.
+- `src/domain/interfaces.ts` — `IPipelineService.completeRevision` / `revertPhase` JSDoc describe versioned archives and the action-gated revision phase.
+- `agents/FORGE.md` — "Report Archival" (agent renames to `-v1`) replaced by "Earlier Plans": the app archives plan, prompts and handoffs to `-vN` before each pipeline run and on Complete Revision; Forge never renames, moves or deletes them. Session start, both workflows, partial-input rules, red lines, directory tree and owned-files table updated.
+- `agents/GHOSTLIGHT.md`, `agents/LUMEN.md`, `agents/SABLE.md` — Red line "archive the prior report yourself (e.g. `-v1`)" replaced by "never rename, move or delete reports; the app archives the previous one (`-vN`) before each pipeline run".
+- `agents/prompt-history.json` — Regenerated (`npm run agent-hashes`) for the four changed prompts.
+- `src/test/fakes.ts` — `makeFakeFs` gains `renameFile` (files and directories).
+- `src/application/MultiCallOrchestrator.test.ts` — Forge three times (all six steps run; plans, prompts and handoffs kept as v1, v2), resume from the run's own finished step, start over after a report or chapter change, report archive on a new read, no duplicate archive, synthesis that leaves the report unchanged fails. Replaces the "skip any existing output" test.
+- `src/application/PipelineService.test.ts` — Revision completed three times keeps reader/dev v1–v3 and plan v1–v2; unchanged reports add no archive; revert keeps archives and returns revision to `active`; newest-archive detection for second-read, revision-plan-1 and revision-plan-2 (including a task-list-only archive).
+- `src/application/RevisionQueueService.queue.test.ts` — Updated message; new test refusing the archived first-cycle plan as the mechanical fixes plan.
+- `TECHNICAL.md`, `docs/architecture/APPLICATION.md`, `docs/architecture/DOMAIN.md`, `docs/architecture/ARCHITECTURE.md` — Versioned archives, run record, detection rules, new file.
+
+### Fixed
+- `src/application/MultiCallOrchestrator.ts` — Forge's second pass skipped "Build Task List" and overwrote the earlier session prompts; interrupted reads resumed from stale scratch notes.
+- `src/application/PipelineService.ts` — A second Complete Revision replaced the first archived reports; reverting Revision deleted them. Fix Planning wasn't detected when only the task list had an archive.
+
+### Architecture Impact
+- New module: `src/application/archives.ts`, used by `PipelineService`, `MultiCallOrchestrator` and `RevisionQueueService`. No DI, IPC or store changes.
+- New on-disk file: `source/.scratch/<agent>-run.json` (exists only while a multi-call run is unfinished).
+- Archives are now `source/<name>-vN.md` and `source/session-handoffs-vN/`, written only by the app.
+
+### Migration Notes
+- None required. Existing `-v1` archives are read as version 1; the next archive becomes v2.
+- Scratch files from a run interrupted before this change have no run record, so the next run of that agent discards them and starts over.
+- The Reports tab still lists only the `-v1` files; later versions show in the file tree.
 
 ---
 

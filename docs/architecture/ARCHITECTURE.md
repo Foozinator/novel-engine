@@ -1,6 +1,6 @@
 # Architecture — Novel Engine Spur
 
-> Last updated: 2026-11-22 (#43)
+> Last updated: 2026-11-22 (#81)
 
 Electron + React 18 + TypeScript 5 + Tailwind v4 + Zustand + better-sqlite3 + Claude Code CLI + Codex CLI + Ollama CLI + Pandoc
 
@@ -94,6 +94,7 @@ src/
 │   ├── ChatService.ts                       # Full send→stream→save orchestration (via CLI)
 │   ├── ChapterValidator.ts                  # Validates/corrects chapter file placement
 │   ├── PipelineService.ts                   # Phase detection from file existence + book status
+│   ├── archives.ts                          # Versioned -vN archives of reports and plans (#81)
 │   ├── BuildService.ts                      # Pandoc execution for DOCX/EPUB/PDF
 │   ├── UsageService.ts                      # Token tracking, cost estimation
 │   ├── RevisionQueueService.ts              # Parses Forge output, executes revision sessions

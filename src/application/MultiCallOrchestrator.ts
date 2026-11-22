@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { nanoid } from 'nanoid';
 import type {
   Agent,
@@ -25,10 +26,29 @@ import {
   MULTI_CALL_SCRATCH_DIR,
   MULTI_CALL_TARGET_WORDS_PER_BATCH,
 } from '@domain/constants';
+import { PLAN_FILES, archiveGroup, archivePlan, type ArchiveResult } from './archives';
 import { ContextBuilder } from './ContextBuilder';
 import { chapterNotesRule, filterForReadStep, getReadGuidance, readAfterRules } from './context/readRules';
 import { StreamManager } from './StreamManager';
 import { resolveThinkingBudget } from './thinkingBudget';
+
+/**
+ * On-disk record of one multi-call run, kept at
+ * `source/.scratch/<agent>-run.json` until the run finishes.
+ *
+ * A later run reuses a step's output only when this record lists the step
+ * as finished AND the book still matches what the run last saw (#81).
+ */
+type MultiCallRunRecord = {
+  agent: AgentName;
+  startedAt: string;
+  /** Hash of the expanded step list (ids, prompts, files, chapter batches). */
+  stepsHash: string;
+  /** Fingerprint of the book's files after the last finished step. */
+  inputsHash: string;
+  /** Ids of the steps this run finished, in order. */
+  completedSteps: string[];
+};
 
 /**
  * MultiCallOrchestrator — Breaks heavy pipeline agent work into
@@ -40,6 +60,13 @@ import { resolveThinkingBudget } from './thinkingBudget';
  *   2. Intermediate results go to source/.scratch/<agent>-*.md
  *   3. The final synthesis call reads all scratch files and writes the real output
  *   4. Scratch files are cleaned up after successful synthesis
+ *
+ * Each run keeps a run record (see `MultiCallRunRecord`). A new run resumes
+ * an interrupted one only when the step list and the book's files are
+ * unchanged; otherwise it discards the old scratch files and starts over.
+ * A run that starts over first archives the agent's earlier output under the
+ * next version number (Forge's plan moves; reports are copied) — the app
+ * keeps earlier reports and plans, not the agent.
  *
  * Benefits:
  *   - Each sub-call has a manageable context window
@@ -106,7 +133,7 @@ export class MultiCallOrchestrator {
     // Load settings and agent metadata
     const appSettings = await this.settings.load();
     const agent = await this.agents.load(agentName);
-    const manifest = await this.fs.getProjectManifest(bookSlug);
+    let manifest = await this.fs.getProjectManifest(bookSlug);
     const seriesBiblePath = await this.series.getSeriesBiblePath(bookSlug);
     const authorProfileAbsPath = this.fs.getAuthorProfilePath();
 
@@ -144,27 +171,59 @@ export class MultiCallOrchestrator {
 
     const allChangedFiles: string[] = [];
 
-    // ── Resumption: detect which steps already have output on disk ──
-    // If a prior run was interrupted, scratch files from completed steps
-    // survive. We skip any step whose expected output file already exists,
-    // except the synthesis step — always re-run synthesis since the user
-    // explicitly triggered a new run (and cleanup only happens after
-    // successful synthesis, so existing scratch files prove synthesis
-    // hasn't completed yet).
+    // ── Run record: resume only the same run, on the same inputs (#81) ──
+    // A file on disk proves nothing about which run wrote it: Forge's task
+    // list survives from the last plan, and scratch notes survive edits to
+    // the chapters they describe. Resume only when the run record matches
+    // this step list and the book is unchanged since its last finished step.
+    // Otherwise start over: discard this agent's scratch files and archive
+    // its earlier output under the next version number.
+    const stepsHash = this.hashSteps(expandedSteps, chapterBatches);
+    const prior = await this.readRunRecord(bookSlug, agentName);
+    let record: MultiCallRunRecord;
+
+    if (
+      prior &&
+      prior.stepsHash === stepsHash &&
+      prior.inputsHash === (await this.fingerprintInputs(bookSlug))
+    ) {
+      record = prior;
+    } else {
+      if (prior) {
+        onEvent({
+          type: 'status',
+          message: 'The book changed since the interrupted run, so this run starts over.',
+        });
+      }
+      await this.discardScratchFiles(bookSlug, agentName);
+      const archived = await this.archiveEarlierOutput(bookSlug, expandedSteps);
+      if (archived) {
+        onEvent({ type: 'status', message: archived });
+        manifest = await this.fs.getProjectManifest(bookSlug);
+      }
+      record = {
+        agent: agentName,
+        startedAt: new Date().toISOString(),
+        stepsHash,
+        inputsHash: await this.fingerprintInputs(bookSlug),
+        completedSteps: [],
+      };
+      await this.writeRunRecord(bookSlug, record);
+    }
+
+    // Skip steps this run already finished whose file is still on disk.
+    // Synthesis is never skipped: the run record is removed once it succeeds.
     const skippedSteps = new Set<number>();
     for (let i = 0; i < expandedSteps.length; i++) {
       const step = expandedSteps[i];
-      if (step.isSynthesis) continue; // never skip synthesis
+      if (step.isSynthesis || !record.completedSteps.includes(step.id)) continue;
       const expectedFile = step.scratchFile ?? step.outputFile;
-      if (expectedFile) {
-        const exists = await this.fs.fileExists(bookSlug, expectedFile);
-        if (exists) {
-          skippedSteps.add(i);
-          console.log(
-            `[MultiCallOrchestrator] Resuming: skipping step ${i + 1} (${step.label}) — ` +
-            `${expectedFile} already exists`,
-          );
-        }
+      if (expectedFile && (await this.fs.fileExists(bookSlug, expectedFile))) {
+        skippedSteps.add(i);
+        console.log(
+          `[MultiCallOrchestrator] Resuming: skipping step ${i + 1} (${step.label}) — ` +
+          `finished earlier in this run`,
+        );
       }
     }
 
@@ -182,7 +241,7 @@ export class MultiCallOrchestrator {
       const stepNum = stepIdx + 1;
       const isFinalStep = stepIdx === expandedSteps.length - 1;
 
-      // Skip steps whose output already exists on disk (resumption)
+      // Skip steps this run already finished (resumption)
       if (skippedSteps.has(stepIdx)) {
         onEvent({
           type: 'multiCallProgress',
@@ -215,9 +274,21 @@ export class MultiCallOrchestrator {
       // failure is the model exhausting its turn limit before calling Write.
       let stepSucceeded = false;
 
+      // An output file that already exists (an earlier report) must be
+      // rewritten by this step, or the step didn't do its work.
+      const outputBefore = step.outputFile && !step.scratchFile
+        ? await this.readOrNull(bookSlug, step.outputFile)
+        : null;
+
       for (let attempt = 0; attempt <= MULTI_CALL_MAX_RETRIES; attempt++) {
         const isRetry = attempt > 0;
         const extraTurns = attempt * MULTI_CALL_RETRY_EXTRA_TURNS;
+
+        // A scratch file left by an interrupted or failed attempt must not
+        // pass for this attempt's output.
+        if (step.scratchFile) {
+          await this.fs.deleteFile(bookSlug, step.scratchFile).catch(() => undefined);
+        }
 
         // On retry, create a modified step with bumped maxTurns
         const effectiveStep = isRetry
@@ -281,6 +352,28 @@ export class MultiCallOrchestrator {
                 `${effectiveStep.maxTurns}-turn limit before calling the Write tool.`,
               );
             }
+            if (
+              outputBefore !== null &&
+              (await this.readOrNull(bookSlug, expectedFile)) === outputBefore
+            ) {
+              throw new Error(
+                `Step "${step.label}" completed but left ${expectedFile} unchanged. ` +
+                `The model may have exhausted its ${effectiveStep.maxTurns}-turn limit ` +
+                `before calling the Write tool.`,
+              );
+            }
+          }
+
+          // Record the finished step so an interrupted run can resume after it
+          if (!isFinalStep) {
+            record.completedSteps.push(step.id);
+            try {
+              record.inputsHash = await this.fingerprintInputs(bookSlug);
+              await this.writeRunRecord(bookSlug, record);
+            } catch (recordErr) {
+              // Bookkeeping only — a resume after this step will start over instead
+              console.warn('[MultiCallOrchestrator] Failed to update the run record:', recordErr);
+            }
           }
 
           // Step succeeded — break out of the retry loop
@@ -322,7 +415,7 @@ export class MultiCallOrchestrator {
     }
 
     // All steps completed and every expected file verified — clean up scratch files
-    await this.cleanupScratchFiles(bookSlug, expandedSteps);
+    await this.cleanupScratchFiles(bookSlug, agentName, expandedSteps);
 
     return { changedFiles: allChangedFiles };
   }
@@ -821,16 +914,141 @@ export class MultiCallOrchestrator {
     return result;
   }
 
+  // ── Run record & archives (#81) ─────────────────────────────────
+
+  /** `source/.scratch/<agent>-run.json` */
+  private static runRecordPath(agentName: AgentName): string {
+    return `${MULTI_CALL_SCRATCH_DIR}/${agentName.toLowerCase()}-run.json`;
+  }
+
+  private async readOrNull(bookSlug: string, relativePath: string): Promise<string | null> {
+    try {
+      return await this.fs.readFile(bookSlug, relativePath);
+    } catch {
+      return null;
+    }
+  }
+
+  /** The agent's run record, or null when absent, unreadable or another agent's. */
+  private async readRunRecord(bookSlug: string, agentName: AgentName): Promise<MultiCallRunRecord | null> {
+    const raw = await this.readOrNull(bookSlug, MultiCallOrchestrator.runRecordPath(agentName));
+    if (raw === null) return null;
+    try {
+      const parsed = JSON.parse(raw) as Partial<MultiCallRunRecord>;
+      if (
+        parsed.agent !== agentName ||
+        typeof parsed.stepsHash !== 'string' ||
+        typeof parsed.inputsHash !== 'string' ||
+        !Array.isArray(parsed.completedSteps)
+      ) {
+        return null;
+      }
+      return parsed as MultiCallRunRecord;
+    } catch {
+      return null;
+    }
+  }
+
+  private async writeRunRecord(bookSlug: string, record: MultiCallRunRecord): Promise<void> {
+    await this.fs.writeFile(
+      bookSlug,
+      MultiCallOrchestrator.runRecordPath(record.agent),
+      JSON.stringify(record, null, 2),
+    );
+  }
+
+  /** Identity of the expanded step list: a changed schema or chapter split means a new run. */
+  private hashSteps(steps: MultiCallStep[], chapterBatches: Map<string, string>): string {
+    const shape = steps.map((s) => [s.id, s.promptTemplate, s.scratchFile, s.outputFile ?? null]);
+    return createHash('sha256')
+      .update(JSON.stringify([shape, [...chapterBatches]]))
+      .digest('hex');
+  }
+
   /**
-   * Delete scratch files after a successful synthesis run.
+   * Fingerprint of every file the project manifest lists (chapters, source
+   * documents, about.json), by content. Scratch files are left out: they
+   * are this run's own notes. A file outside the book (the author profile)
+   * counts by its word count.
+   */
+  private async fingerprintInputs(bookSlug: string): Promise<string> {
+    const manifest = await this.fs.getProjectManifest(bookSlug);
+    const files = manifest.files
+      .filter((f) => !f.path.startsWith(`${MULTI_CALL_SCRATCH_DIR}/`))
+      .sort((a, b) => a.path.localeCompare(b.path));
+    const hash = createHash('sha256');
+    for (const file of files) {
+      const content = (await this.readOrNull(bookSlug, file.path)) ?? `words:${file.wordCount}`;
+      hash.update(file.path).update('\0').update(content).update('\0');
+    }
+    return hash.digest('hex');
+  }
+
+  /**
+   * Delete this agent's scratch files (`source/.scratch/<agent>-*`) and run
+   * record before a fresh run. Other agents' and services' files stay.
+   */
+  private async discardScratchFiles(bookSlug: string, agentName: AgentName): Promise<void> {
+    const prefix = `${agentName.toLowerCase()}-`;
+    let entries: { name: string; path: string; isDirectory: boolean }[];
+    try {
+      entries = await this.fs.listDirectory(bookSlug, MULTI_CALL_SCRATCH_DIR);
+    } catch {
+      return; // No scratch directory
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory || !entry.name.startsWith(prefix)) continue;
+      const path = `${MULTI_CALL_SCRATCH_DIR}/${entry.name}`;
+      try {
+        await this.fs.deleteFile(bookSlug, path);
+        console.log(`[MultiCallOrchestrator] Discarded stale ${path}`);
+      } catch (err) {
+        console.warn(`[MultiCallOrchestrator] Failed to discard ${path}:`, err);
+      }
+    }
+  }
+
+  /**
+   * Archive the agent's earlier output before a fresh run, under the next
+   * free version number. Forge's plan (task list, session prompts and
+   * session handoffs) moves, so the new plan starts clean; reports are
+   * copied, so later phases keep reading them until the new one is written.
+   *
+   * Returns a status line for the author, or null when there was nothing to archive.
+   */
+  private async archiveEarlierOutput(bookSlug: string, steps: MultiCallStep[]): Promise<string | null> {
+    const outputs = [...new Set(steps.map((s) => s.outputFile).filter((f): f is string => !!f))];
+    if (outputs.length === 0) return null;
+
+    const isPlan = PLAN_FILES.every((file) => outputs.includes(file));
+    const result: ArchiveResult | null = isPlan
+      ? await archivePlan(this.fs, bookSlug, 'move')
+      : await archiveGroup(this.fs, bookSlug, outputs, 'copy');
+    if (!result) return null;
+
+    const what = isPlan ? 'The earlier plan' : 'The earlier report';
+    return result.created
+      ? `${what} is kept as version ${result.version}.`
+      : `${what} is already kept as version ${result.version}.`;
+  }
+
+  /**
+   * Delete scratch files and the run record after a successful synthesis run.
    *
    * Only deletes files that belong to the completed step schema — never
-   * touches scratch files from other agents or interrupted runs.
+   * touches scratch files from other agents.
    */
   private async cleanupScratchFiles(
     bookSlug: string,
+    agentName: AgentName,
     steps: MultiCallStep[],
   ): Promise<void> {
+    try {
+      await this.fs.deleteFile(bookSlug, MultiCallOrchestrator.runRecordPath(agentName));
+    } catch (err) {
+      console.warn('[MultiCallOrchestrator] Failed to remove the run record:', err);
+    }
+
     for (const step of steps) {
       if (step.scratchFile) {
         try {
