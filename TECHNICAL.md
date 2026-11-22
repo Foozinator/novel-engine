@@ -56,12 +56,12 @@ Per-call context diagnostics (files listed, turns kept/dropped, manifest tokens)
 | 3 | First Draft | Verity | chapters exist, >1,000 total words, book status advanced |
 | 4 | First Read | Ghostlight | `source/reader-report.md` ≥50 words |
 | 5 | Structural Assessment | Lumen | `source/dev-report.md` ≥50 words |
-| 6 | Revision Plan | Forge | `project-tasks.md` + `revision-prompts.md` ≥50 words |
-| 7 | Revision | Verity | `reader-report-v1.md` archived |
-| 8 | Second Read | Ghostlight | fresh `reader-report.md` differs from v1 |
-| 9 | Second Assessment | Lumen | fresh `dev-report.md` differs from v1 |
+| 6 | Revision Plan | Forge | `project-tasks.md` + `revision-prompts.md` ≥50 words, or an archived plan |
+| 7 | Revision | Verity | Complete Revision archives the reports and plan (`-vN`) |
+| 8 | Second Read | Ghostlight | fresh `reader-report.md` differs from its newest archive |
+| 9 | Second Assessment | Lumen | fresh `dev-report.md` differs from its newest archive |
 | 10 | Copy Edit | Sable | `source/audit-report.md` ≥50 words |
-| 11 | Fix Planning | Forge | new tasks/prompts + archived v1 copies |
+| 11 | Fix Planning | Forge | new tasks/prompts that differ from the newest archived plan |
 | 12 | Mechanical Fixes | Verity | `audit-report.md` + status ≥ copy-edit |
 | 13 | Build | — | `dist/{slug}.md` generated |
 | 14 | Publish & Audit | Quill | `source/metadata.md` ≥50 words |
@@ -186,7 +186,7 @@ All user data lives outside the app bundle, in the **data folder**. The default 
     └── {slug}/
         ├── about.json · cover.* · pipeline-state.json
         ├── source/               # pitch, scene-outline, story-bible, voice-profile,
-        │                         #   reports (+v1 archives), tasks/prompts, metadata,
+        │                         #   reports (+vN archives), tasks/prompts, metadata,
         │                         #   style-sheet, motif-ledger.json,
         │                         #   revision-plan-cache.json, revision-queue-state.json,
         │                         #   .scratch/ (multi-call trackers)

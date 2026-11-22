@@ -1,6 +1,6 @@
 # Application — Services & Orchestration
 
-> Last updated: 2026-11-20 (#63)
+> Last updated: 2026-11-22 (#81)
 
 Everything in `src/application/`. Business logic that orchestrates infrastructure through injected interfaces.
 
@@ -213,20 +213,42 @@ Dependencies: `IFileSystemService`
 | `getAgentForPhase(phaseId)` | Looks up agent from `PIPELINE_PHASES` |
 | `markPhaseComplete(bookSlug, phaseId)` | Advances book status for status-dependent phases |
 | `confirmPhaseAdvancement(bookSlug, phaseId)` | Transitions 'pending-completion' → 'complete' via `pipeline-state.json` |
-| `completeRevision(bookSlug)` | Archives reader-report.md → reader-report-v1.md (and dev-report) |
-| `revertPhase(bookSlug, phaseId)` | Removes phase + all subsequent from confirmed list, undoes side-effects |
+| `completeRevision(bookSlug)` | Copies reader-report.md (required), dev-report.md and the plan (project-tasks.md + revision-prompts.md) to their next free archive version (`archives.ts`), then confirms `revision`. Unchanged files get no new archive. |
+| `revertPhase(bookSlug, phaseId)` | Removes phase + all subsequent from confirmed list, rolls back book status. Never deletes archives. |
 
 **Phase detection:**
 - File-existence phases: check if the gating file exists
 - Status-dependent phases (`first-draft`, `mechanical-fixes`): check book status in `about.json`
-- Archive-dependent phases (`revision`): check for versioned archive files
+- Archive-dependent phases compare against the **newest** archive (`latestArchive` / `latestPlanArchive`):
+  - `revision-plan-1`: live plan pair exists, or any plan archive exists (a Forge run moves the live plan aside first)
+  - `revision`: a reader-report archive exists
+  - `second-read` / `second-assessment`: live report's word count differs from its newest archive
+  - `revision-plan-2`: live plan, audit report and a plan archive exist; the live task list and prompts differ from the newest archived plan (a missing prompts archive at that version is not required)
 - `pending-completion`: detection files exist but not yet confirmed in `pipeline-state.json`
+- `ACTION_GATED` (`revision`): never `pending-completion`. Until Complete Revision confirms it, it stays `active`, because earlier archives stay on disk.
 - Confirmed phases stored in `{bookDir}/pipeline-state.json`
+- Done stubs for `second-read`, `second-assessment` and `revision-plan-2` write a `-v1` archive stub only when no archive exists.
 
 **Revert side-effects:**
 - `first-draft`: reverts book status to 'first-draft'
 - `mechanical-fixes`: reverts book status to 'copy-edit'
-- `revision`: removes archived v1 report files
+- Archives are never deleted (#81).
+
+### archives (versioned output archives)
+
+File: `src/application/archives.ts` — functions over `IFileSystemService`, used by `PipelineService`, `MultiCallOrchestrator` and `RevisionQueueService` (#81).
+
+An archive sits next to its live file with a version suffix: `source/reader-report.md` → `source/reader-report-v3.md`, `source/session-handoffs/` → `source/session-handoffs-v3/`. New archives take the next free number. Nothing overwrites or deletes an archive.
+
+| Export | What It Does |
+|--------|-------------|
+| `PLAN_FILES`, `SESSION_HANDOFFS_DIR`, `READER_REPORT`, `DEV_REPORT` | Paths |
+| `archivePath(livePath, version)` | Builds the `-vN` path |
+| `archiveVersions(fs, slug, livePath)` | Versions on disk, ascending (from `listDirectory`) |
+| `latestArchive(fs, slug, livePath)` | Newest archive path or null |
+| `latestPlanArchive(fs, slug)` | `{ version, tasks, prompts }` for the newest version across both plan files |
+| `archiveGroup(fs, slug, paths, 'copy' \| 'move')` | Archives the existing live files under one shared version. If each already matches its newest archive, writes nothing (`move` then only removes the live files). Returns `{ version, created }` or null. |
+| `archivePlan(fs, slug, mode)` | `archiveGroup(PLAN_FILES)`; a `move` also renames a non-empty `session-handoffs/` to `session-handoffs-vN/` |
 
 ### BuildService
 
@@ -331,6 +353,8 @@ Dependencies: `IFileSystemService`, `IProviderRegistry`, `IAgentService`, `IData
 
 **Plan parsing:**
 Uses Wrangler model (Sonnet) with `WRANGLER-PARSE.md` (loaded via `AgentService.loadRaw()`) to parse Forge's markdown output into structured JSON. Caches the parsed result on disk.
+
+**Cycle detection:** `audit-report.md` plus any plan archive (`latestPlanArchive`) means cycle 2 (mechanical fixes). With an audit report and a live plan, `loadPlan` refuses when there is no plan archive, or when the live plan matches the newest archived plan (`isArchivedPlan`, checkbox ticks ignored). Either way, the live plan is still the one the first revision ran.
 
 **Gates** (`src/application/revisionGate.ts`, #17):
 - After each Verity reply, `isSessionComplete()` checks for `REVISION_SESSION_COMPLETE_MARKER` on the last non-empty line with no `?` in the paragraph before it. Only then is the session approved. Any other ending (including a turn-limit cutoff) is a gate.
@@ -584,6 +608,15 @@ File: `src/application/context/readRules.ts` — `matchesReadRule(path, rule)` (
 Ghostlight's synthesis task reads the batch trackers, settles the reader verdict, then reads `source/voice-profile.md` if it exists and ends the report with a short "Intent vs. experience" section (#25).
 
 `lightweightPrompt` is for read steps only; `src/domain/constants.test.ts` enforces that no synthesis step sets it.
+
+### Multi-Call Runs: Resume and Archive
+
+`MultiCallOrchestrator.runMultiCall()` keeps a run record at `source/.scratch/<agent>-run.json` (`MultiCallRunRecord`: agent, `stepsHash`, `inputsHash`, `completedSteps`) (#81).
+
+- **Resume** only when the record's `stepsHash` (expanded steps + chapter batches) and `inputsHash` match. `fingerprintInputs()` hashes the content of every file `getProjectManifest()` lists, minus `source/.scratch/`. It is re-taken after each finished step, so the run's own writes don't count as changes. Steps in `completedSteps` whose file still exists are skipped (`(cached)`); synthesis is never skipped.
+- **Start over** otherwise: delete this agent's `source/.scratch/<agent>-*` files, archive its earlier output, write a new record. Forge's outputs are the plan, so `archivePlan(..., 'move')` runs. Other agents' outputs (reports) go through `archiveGroup(..., 'copy')`.
+- Before each attempt the step's scratch file is deleted. A step whose output file existed before it ran must change that file, or the attempt fails ("left … unchanged").
+- After synthesis, the record and the run's scratch files are deleted.
 
 ### Conversation Compaction
 

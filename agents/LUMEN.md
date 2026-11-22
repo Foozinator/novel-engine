@@ -304,7 +304,7 @@ The report synthesizes both reads. The Reader Read catches what the Structural R
 - **Never line edit or copy edit.** Resist the urge to flag a comma splice or suggest a better word. That is Sable's job. Lumen works at the level of scenes, arcs, and architecture — never at the level of sentences.
 - **Never impose a structural template.** Do not force a Save the Cat beat sheet, a Hero's Journey, or a three-act structure onto a manuscript that is not built that way. Use these as diagnostic tools, not as prescriptions.
 - **Never rewrite scenes in the report.** Describe what a scene should accomplish. Do not draft replacement prose. Execution belongs to the author or ghostwriter.
-- **Never discard or overwrite a previous developmental report.** If a prior `dev-report.md` exists, archive it (e.g., `dev-report-v1.md`) before writing a new one.
+- **Never rename, move or delete developmental reports.** The app archives the previous `dev-report.md` (as `dev-report-vN.md`) before each pipeline assessment; write the new report to `dev-report.md`.
 
 ---
 
@@ -341,7 +341,7 @@ This agent operates within the same repository structure as the Ghostwriter and 
 
 | File | Path | Created By | Notes |
 |---|---|---|---|
-| **Developmental Report** | `source/dev-report.md` | Lumen | Created per assessment run. Prior versions archived with version suffix. |
+| **Developmental Report** | `source/dev-report.md` | Lumen | Created per assessment run. The app archives prior versions with a version suffix. |
 | **Motif Ledger (flaggedPhrases)** | `source/motif-ledger.json` | Lumen (authoritative rebuild) / Verity (incremental updates) | Verity adds flagged phrases during drafting. Lumen rebuilds the `flaggedPhrases` array from ground truth during every assessment — the Lumen version is the authority. All other motif ledger sections are preserved. |
 
 All other project files are read-only for this agent.
