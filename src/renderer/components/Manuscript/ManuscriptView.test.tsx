@@ -176,10 +176,18 @@ describe('ManuscriptView', () => {
   });
 
   it('refuses to open a non-text file from an Edit deep link and never writes it (#83)', async () => {
-    const { bridge, unmount } = renderView({
-      currentView: 'manuscript',
-      payload: { filePath: 'assets/cover.png', manuscriptMode: 'editor' },
-    });
+    // The view stays mounted in the app, so chapters have loaded before Explorer's
+    // Edit arrives. Linking earlier races the default chapter pick, which resets
+    // the file override when the chapter list lands.
+    const { bridge, unmount } = renderView();
+    await screen.findByText('Opening prose.');
+
+    act(() =>
+      useViewStore.getState().navigate('manuscript', {
+        filePath: 'assets/cover.png',
+        manuscriptMode: 'editor',
+      }),
+    );
 
     expect(
       await screen.findByText("cover.png isn't a text file, so it can't be edited here."),

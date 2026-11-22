@@ -94,6 +94,8 @@ describe('listDirectory file sizes', () => {
     const assets = tree.find((e) => e.name === 'assets');
     expect(assets?.isDirectory).toBe(true);
     expect(assets?.size).toBeUndefined();
-    expect(assets?.children?.find((e) => e.path === png.path)?.size).toBe(png.bytes.length);
+    // Match by name: entry paths use the platform separator (`assets\cover.png` on Windows).
+    const cover = assets?.children?.find((e) => e.name === path.basename(png.path));
+    expect(cover?.size).toBe(png.bytes.length);
   });
 });
