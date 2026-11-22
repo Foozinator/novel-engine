@@ -94,8 +94,10 @@ Key behavior:
 Key behavior:
 - `FileSystemService` constructor takes `booksDir` and `userDataPath`
 - `createBook` generates slug from title, creates directory structure with `about.json`
+- `getBookMeta` throws when `about.json` is missing, isn't valid JSON, or isn't a JSON object
+- `updateBookMeta` writes the five `BookMeta` fields (`title`, `author`, `status`, `created`, `coverImage`) over the parsed `about.json`. Other keys (genre, subgenre, audience, comp titles written by agents) keep their values and their position. Unknown keys in the `partial` are ignored. A title that changes the slug renames the folder first
 - `reconcileBookSlugs` renames folders whose name no longer matches the slugified title
-- `saveCoverImage` copies image into book directory, updates `about.json`
+- `saveCoverImage` copies image into book directory, updates `about.json` through `updateBookMeta`
 - `archiveBook`/`unarchiveBook` moves books to/from `_archived/` subdirectory; `unarchiveBook` removes the book's `.claude/` folder
 - Every book-relative path goes through `resolveBookPath()` (read/write/delete/rename/exists/list, covers, word counts, manifest). Pitch slugs and draft IDs go through `safeSegment()`. A `coverImage` outside the book reads as no cover
 - Shelved pitches stored in `{userData}/shelved-pitches/{slug}.md` with YAML front matter
