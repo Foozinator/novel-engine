@@ -4,6 +4,29 @@ All notable changes to Novel Engine Spur are documented here.
 
 ---
 
+## [2026-11-22] — Entry-page check compares file paths; DOMPurify 3.4.18
+
+### Summary
+
+The packaged app recognizes its own page by URL, and the window lock and the IPC sender check both depend on it. The check compared escaped URL text, but `BrowserWindow.loadFile` and Node's `pathToFileURL` escape some characters differently. An install path with `^` or `|` fails on Electron 33, and one with `~`, `[` or `]` (for example a Windows short name like `RUNNER~1`) fails on Electron 45 (#43). In both cases the app loads and every IPC call is refused. The check now compares decoded file paths. DOMPurify moves up one patch release.
+
+### Changed
+- `package.json`, `package-lock.json` — `dompurify` 3.4.17 → 3.4.18 (exact pin). DOMPurify's fixes to the sanitizer's clobbering check and SVG allow-list.
+- `docs/architecture/ARCHITECTURE.md` — DOMPurify version; entry-page check description.
+- `docs/architecture/IPC.md` — Sender check compares file paths.
+
+### Fixed
+- `src/main/appUrl.ts` — `createAppUrlMatcher()` compares `fileURLToPath` results, with the drive letter's case normalized.
+- `src/main/appUrl.test.ts` — Cases for both spellings of `~ [ ] ^ |`, and a Windows-only drive-letter case.
+
+### Architecture Impact
+- None — no wiring changes.
+
+### Migration Notes
+None
+
+---
+
 ## [2026-11-21] — Release workflow ready for the first Spur release (#57)
 
 ### Summary

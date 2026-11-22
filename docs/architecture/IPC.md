@@ -1,10 +1,10 @@
 # IPC — Channels, Preload Bridge, Handler Registry
 
-> Last updated: 2026-11-20 (#63)
+> Last updated: 2026-11-22 (#43)
 
 Everything in `src/main/ipc/` and `src/preload/`. Thin adapter layer between application services and the renderer.
 
-**Sender check:** `registerIpcHandlers(services, paths, hooks)` takes `paths.isAppUrl` (from `createAppUrlMatcher`, `src/main/appUrl.ts`). Every channel below is registered through a local `handle()` wrapper that throws `Refused <channel>: the call did not come from the app window` unless `event.senderFrame.url` is the app's entry page (packaged: the exact `index.html` file URL; dev: the Vite server origin).
+**Sender check:** `registerIpcHandlers(services, paths, hooks)` takes `paths.isAppUrl` (from `createAppUrlMatcher`, `src/main/appUrl.ts`). Every channel below is registered through a local `handle()` wrapper that throws `Refused <channel>: the call did not come from the app window` unless `event.senderFrame.url` is the app's entry page (packaged: the exact `index.html`, compared as a decoded file path; dev: the Vite server origin).
 
 ---
 
