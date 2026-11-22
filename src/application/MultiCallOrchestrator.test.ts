@@ -149,18 +149,71 @@ describe('static step schemas (Forge)', () => {
     expect(events.filter((e) => e.type === 'error').length).toBe(0); // recovered — no terminal error
   });
 
-  it('resumes by skipping non-synthesis steps whose output already exists', async () => {
-    fs.files.set('book/source/project-tasks.md', 'already produced');
-    wireProviderWrites(['source/revision-prompts.md']);
+  it('runs Forge three times: every step runs and every earlier plan is kept (#81)', async () => {
+    let call = 0;
+    provider.setImpl(async (params) => {
+      call++;
+      const file = params.messages[0].content.includes('Build the Session Map table')
+        ? 'source/revision-prompts.md'
+        : 'source/project-tasks.md';
+      await fs.writeFile('book', file, `${file} from call ${call}`);
+      params.onEvent({ type: 'done', inputTokens: 1, outputTokens: 1, thinkingTokens: 0, filesTouched: { [file]: 1 } });
+    });
 
+    for (let pass = 1; pass <= 3; pass++) {
+      await run('Forge');
+      // Verity runs the plan and leaves a handoff
+      fs.files.set('book/source/session-handoffs/session-01.md', `handoff from pass ${pass}`);
+    }
+
+    expect(provider.calls.length).toBe(6); // both steps, every pass
+    expect(events.some((e) => e.type === 'multiCallProgress' && e.label.includes('(cached)'))).toBe(false);
+    expect(fs.files.get('book/source/project-tasks-v1.md')).toBe('source/project-tasks.md from call 1');
+    expect(fs.files.get('book/source/revision-prompts-v1.md')).toBe('source/revision-prompts.md from call 2');
+    expect(fs.files.get('book/source/session-handoffs-v1/session-01.md')).toBe('handoff from pass 1');
+    expect(fs.files.get('book/source/project-tasks-v2.md')).toBe('source/project-tasks.md from call 3');
+    expect(fs.files.get('book/source/revision-prompts-v2.md')).toBe('source/revision-prompts.md from call 4');
+    expect(fs.files.get('book/source/session-handoffs-v2/session-01.md')).toBe('handoff from pass 2');
+    expect(fs.files.get('book/source/project-tasks.md')).toBe('source/project-tasks.md from call 5');
+    expect(fs.files.get('book/source/revision-prompts.md')).toBe('source/revision-prompts.md from call 6');
+    expect(events.some((e) => e.type === 'status' && e.message === 'The earlier plan is kept as version 2.')).toBe(true);
+    expect([...fs.files.keys()].filter((k) => k.includes('.scratch'))).toEqual([]);
+  });
+
+  it('resumes an interrupted run only from steps that run finished (#81)', async () => {
+    // Pass 1: the task list is written, then session prompts fail every attempt
+    wireProviderWrites(['source/project-tasks.md', null, null, null]);
+    await run('Forge');
+    expect(fs.files.has('book/source/.scratch/forge-run.json')).toBe(true);
+
+    // Pass 2, nothing changed: only the session prompts run
+    events = [];
+    const before = provider.calls.length;
+    wireProviderWrites(['source/revision-prompts.md']);
     await run('Forge');
 
-    expect(provider.calls.length).toBe(1); // only the synthesis step ran
-    expect(provider.calls[0].messages[0].content).toContain('Session Map');
+    expect(provider.calls.length - before).toBe(1);
+    expect(provider.calls.at(-1)!.messages[0].content).toContain('Session Map');
     expect(events.some((e) => e.type === 'status' && e.message.startsWith('Resuming: 1 of 2'))).toBe(true);
-    expect(
-      events.some((e) => e.type === 'multiCallProgress' && e.label.includes('(cached)'))
-    ).toBe(true);
+    expect(events.some((e) => e.type === 'multiCallProgress' && e.label.includes('(cached)'))).toBe(true);
+    expect(fs.files.has('book/source/project-tasks-v1.md')).toBe(false); // the run's own task list stays live
+    expect(fs.files.has('book/source/.scratch/forge-run.json')).toBe(false); // record removed after success
+  });
+
+  it('starts over when a report changed since the interrupted run (#81)', async () => {
+    wireProviderWrites(['source/project-tasks.md', null, null, null]);
+    await run('Forge');
+
+    fs.files.set('book/source/dev-report.md', 'a newer assessment'); // Lumen ran again
+    events = [];
+    const before = provider.calls.length;
+    wireProviderWrites(['source/project-tasks.md', 'source/revision-prompts.md']);
+    await run('Forge');
+
+    expect(provider.calls.length - before).toBe(2); // the task list is rebuilt from the new report
+    expect(events.some((e) => e.type === 'status' && e.message.includes('starts over'))).toBe(true);
+    // The interrupted run's task list is kept, not silently reused
+    expect(fs.files.get('book/source/project-tasks-v1.md')).toBe('content of source/project-tasks.md');
   });
 
   it('throws for agents without step schemas', async () => {
@@ -232,6 +285,57 @@ describe('dynamic step expansion (Ghostlight)', () => {
 
     expect(fs.files.has('book/source/.scratch/ghostlight-read-1.md')).toBe(true); // survives for retry
     expect(events.find((e) => e.type === 'error')?.message).toContain('Prior results saved in source/.scratch/');
+  });
+
+  it('re-reads every batch when a chapter changed since the interrupted read (#81)', async () => {
+    wireProviderWrites(['source/.scratch/ghostlight-read-1.md', null, null, null]);
+    await run('Ghostlight');
+
+    // Same word count, different text: the old batch notes describe a chapter that no longer exists
+    fs.files.set('book/chapters/01-ch/draft.md', `x ${'w '.repeat(9_999).trim()}`);
+    events = [];
+    const before = provider.calls.length;
+    wireProviderWrites([
+      'source/.scratch/ghostlight-read-1.md',
+      'source/.scratch/ghostlight-read-2.md',
+      'source/.scratch/ghostlight-read-3.md',
+      'source/reader-report.md',
+    ]);
+    await run('Ghostlight');
+
+    expect(provider.calls.length - before).toBe(4);
+    expect(events.some((e) => e.type === 'status' && e.message.includes('starts over'))).toBe(true);
+  });
+
+  it('keeps the earlier reader report as the next version before a new read (#81)', async () => {
+    fs.files.set('book/source/reader-report.md', 'first read');
+    wireProviderWrites([
+      'source/.scratch/ghostlight-read-1.md',
+      'source/.scratch/ghostlight-read-2.md',
+      'source/.scratch/ghostlight-read-3.md',
+      'source/reader-report.md',
+    ]);
+
+    await run('Ghostlight');
+
+    expect(fs.files.get('book/source/reader-report-v1.md')).toBe('first read');
+    expect(fs.files.get('book/source/reader-report.md')).toBe('content of source/reader-report.md');
+  });
+
+  it('adds no archive when Complete Revision already kept the report, and fails a synthesis that leaves it unchanged (#81)', async () => {
+    fs.files.set('book/source/reader-report.md', 'first read');
+    fs.files.set('book/source/reader-report-v1.md', 'first read');
+    wireProviderWrites([
+      'source/.scratch/ghostlight-read-1.md',
+      'source/.scratch/ghostlight-read-2.md',
+      'source/.scratch/ghostlight-read-3.md',
+      null, null, null, // synthesis never writes
+    ]);
+
+    await run('Ghostlight');
+
+    expect(fs.files.has('book/source/reader-report-v2.md')).toBe(false);
+    expect(events.find((e) => e.type === 'error')?.message).toContain('left source/reader-report.md unchanged');
   });
 });
 

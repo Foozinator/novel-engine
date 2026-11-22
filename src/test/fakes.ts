@@ -274,6 +274,18 @@ export function makeFakeFs(
         if (key === prefix || key.startsWith(`${prefix}/`)) files.delete(key);
       }
     },
+    renameFile: async (slug: string, oldPath: string, newPath: string) => {
+      const from = `${slug}/${oldPath}`;
+      const to = `${slug}/${newPath}`;
+      const moves = [...files.keys()].filter((key) => key === from || key.startsWith(`${from}/`));
+      if (moves.length === 0) {
+        throw new Error(`Cannot rename: source file "${oldPath}" does not exist in book "${slug}"`);
+      }
+      for (const key of moves) {
+        files.set(`${to}${key.slice(from.length)}`, files.get(key)!);
+        files.delete(key);
+      }
+    },
     listDirectory: async (slug: string, relativePath?: string) => {
       const prefix = `${slug}/${relativePath ? `${relativePath}/` : ''}`;
       const names = new Set<string>();

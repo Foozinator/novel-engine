@@ -163,7 +163,7 @@ describe('loadPlan', () => {
   it('blocks the second cycle until first-cycle files are archived, then clears stale state on transition', async () => {
     // Audit exists but no archive → hard stop
     fs.files.set('book/source/audit-report.md', 'sable output');
-    await expect(service.loadPlan('book')).rejects.toThrow(/have not been archived/);
+    await expect(service.loadPlan('book')).rejects.toThrow(/has not been archived/);
 
     // Archive appears → second cycle loads; stale cycle-1 state is cleared first
     fs.files.set('book/source/project-tasks-v1.md', 'archived');
@@ -176,6 +176,25 @@ describe('loadPlan', () => {
     const plan = await service.loadPlan('book');
 
     expect(plan.sessions.every((s) => s.status === 'pending')).toBe(true); // stale approvals dropped
+  });
+
+  it('refuses to run the archived first-cycle plan as the mechanical fixes plan (#81)', async () => {
+    // Complete Revision copied the live plan to v2 (ticked boxes and all);
+    // Sable has run, but Forge hasn't written a fix plan yet.
+    const tasks = fs.files.get('book/source/project-tasks.md')!;
+    const prompts = fs.files.get('book/source/revision-prompts.md')!;
+    fs.files.set('book/source/project-tasks-v1.md', 'an older plan');
+    fs.files.set('book/source/project-tasks-v2.md', tasks.replace('- [ ]', '- [x]'));
+    fs.files.set('book/source/revision-prompts-v2.md', prompts);
+    fs.files.set('book/source/audit-report.md', 'sable output');
+
+    await expect(service.loadPlan('book')).rejects.toThrow(/already archived as version 2.*Run Forge/);
+    expect(provider.calls.length).toBe(0); // never sent to the Wrangler
+
+    // Forge writes the fix plan → the second cycle loads
+    fs.files.set('book/source/project-tasks.md', `${tasks}\n- [ ] **4. Fix commas`);
+    provider.scriptNext(wranglerReply(WRANGLER_JSON));
+    await expect(service.loadPlan('book')).resolves.toBeTruthy();
   });
 
   it('clearCache removes disk artifacts and in-memory plan state', async () => {

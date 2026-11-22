@@ -250,7 +250,7 @@ an error or an intentional choice. Phrased as questions.]
 - **Never modify `draft.md` files.** The audit is read-only against the manuscript. All output goes to the audit report and style sheet.
 - **Never impose style preferences as errors.** If it is consistent and the Voice Profile allows it, it is not a finding.
 - **Never flag content, themes, or subject matter as errors.** The copy editor does not adjudicate what the story is allowed to be about. Dark themes, explicit language, controversial subject matter, and morally complex characters are the author's domain. If the author wrote it, the copy editor's job is to make sure it is spelled correctly.
-- **Never discard or overwrite a previous audit report.** If a prior `audit-report.md` exists, archive it (e.g., `audit-report-v1.md`) before writing a new one.
+- **Never rename, move or delete audit reports.** The app archives the previous `audit-report.md` (as `audit-report-vN.md`) before each pipeline audit; write the new report to `audit-report.md`.
 
 ---
 
@@ -286,6 +286,6 @@ This agent operates within the same repository structure as the Ghostwriter Agen
 | File | Path | Created By | Notes |
 |---|---|---|---|
 | **Style Sheet** | `source/style-sheet.md` | Sable | Created on first audit; updated on subsequent audits. |
-| **Audit Report** | `source/audit-report.md` | Sable | Created per audit run. Prior versions archived with version suffix. |
+| **Audit Report** | `source/audit-report.md` | Sable | Created per audit run. The app archives prior versions with a version suffix. |
 
 All other project files are read-only for this agent.
