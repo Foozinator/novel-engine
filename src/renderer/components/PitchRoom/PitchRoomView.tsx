@@ -10,6 +10,7 @@ import { PitchRail } from './PitchRail';
 import { MessageBubble } from '../Chat/MessageBubble';
 import { ThinkingBlock } from '../Chat/ThinkingBlock';
 import { ChatInput } from '../Chat/ChatInput';
+import { BookTitleModal } from '../common/BookTitleModal';
 import { useRotatingStatus } from '../../hooks/useRotatingStatus';
 
 /**
@@ -180,13 +181,33 @@ export function PitchRoomView(): React.ReactElement {
     [sendMessage, thinkingBudget, defaultThinkingBudget],
   );
 
+  /** Set while the pitch's title is taken (#79): the title and why, for the retitle modal. */
+  const [retitle, setRetitle] = useState<{ title: string; message: string } | null>(null);
+
+  const openPromotedBook = useCallback(async (slug: string) => {
+    await useBookStore.getState().loadBooks();
+    await useBookStore.getState().setActiveBook(slug); // navigates to workspace
+  }, []);
+
   const handlePromote = useCallback(async () => {
-    const slug = await promoteActivePitch();
-    if (slug) {
-      await useBookStore.getState().loadBooks();
-      await useBookStore.getState().setActiveBook(slug); // navigates to workspace
+    const result = await promoteActivePitch();
+    if (result.ok) {
+      await openPromotedBook(result.slug);
+    } else if (result.takenTitle !== undefined) {
+      setRetitle({ title: result.takenTitle, message: result.message });
     }
-  }, [promoteActivePitch]);
+  }, [promoteActivePitch, openPromotedBook]);
+
+  const handleRetitle = useCallback(
+    async (title: string): Promise<string | null> => {
+      const result = await promoteActivePitch(title);
+      if (!result.ok) return result.message;
+      setRetitle(null);
+      await openPromotedBook(result.slug);
+      return null;
+    },
+    [promoteActivePitch, openPromotedBook],
+  );
 
   // Auto-create or load pitch room conversations on mount
   useEffect(() => {
@@ -308,6 +329,17 @@ export function PitchRoomView(): React.ReactElement {
         onThinkingBudgetChange={setThinkingBudget}
       />
       </div>
+
+      {retitle && (
+        <BookTitleModal
+          heading="Choose another title"
+          submitLabel="Create Book"
+          initialTitle={retitle.title}
+          initialError={retitle.message}
+          onClose={() => setRetitle(null)}
+          onSubmit={handleRetitle}
+        />
+      )}
     </div>
   );
 }

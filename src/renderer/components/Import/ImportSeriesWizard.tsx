@@ -12,6 +12,7 @@ export function ImportSeriesWizard() {
   const author = useSeriesImportStore((s) => s.author);
   const volumes = useSeriesImportStore((s) => s.volumes);
   const existingSeriesSlug = useSeriesImportStore((s) => s.existingSeriesSlug);
+  const titleProblems = useSeriesImportStore((s) => s.titleProblems);
   const updateSeriesName = useSeriesImportStore((s) => s.updateSeriesName);
   const updateAuthor = useSeriesImportStore((s) => s.updateAuthor);
   const updateVolumeTitle = useSeriesImportStore((s) => s.updateVolumeTitle);
@@ -42,7 +43,8 @@ export function ImportSeriesWizard() {
   const canCommit =
     (useExisting ? existingSeriesSlug : seriesName.trim().length > 0)
     && activeVolumes.length > 0
-    && activeVolumes.every((v) => v.preview.detectedTitle.trim().length > 0);
+    && activeVolumes.every((v) => v.preview.detectedTitle.trim().length > 0)
+    && !activeVolumes.some((v) => titleProblems[v.index]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -153,6 +155,7 @@ export function ImportSeriesWizard() {
                 </div>
                 <VolumePreviewList
                   volumes={volumes}
+                  titleProblems={titleProblems}
                   onUpdateTitle={updateVolumeTitle}
                   onToggleSkip={toggleVolumeSkip}
                   onMoveUp={moveVolumeUp}

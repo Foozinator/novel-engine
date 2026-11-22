@@ -333,6 +333,34 @@ describe('thin adapters', () => {
     expect(svc.fs.deletePitchDraft).toHaveBeenCalledWith('conv-1');
     expect(svc.db.deleteConversation).toHaveBeenCalledWith('conv-1');
   });
+
+  it('books:findTitleConflict and import:seriesCheckTitles delegate the title checks (#79)', async () => {
+    const conflict = { slug: 'twin', title: 'Twin', archived: false };
+    svc.fs.findTitleConflict.mockResolvedValue(conflict);
+    expect(await invoke('books:findTitleConflict', 'Twin')).toEqual(conflict);
+    expect(svc.fs.findTitleConflict).toHaveBeenCalledWith('Twin');
+
+    const volumes = [{ volumeNumber: 1, title: 'Twin' }];
+    svc.seriesImport.checkTitles.mockResolvedValue([{ volumeNumber: 1, message: 'taken' }]);
+    expect(await invoke('import:seriesCheckTitles', volumes)).toEqual([{ volumeNumber: 1, message: 'taken' }]);
+    expect(svc.seriesImport.checkTitles).toHaveBeenCalledWith(volumes);
+  });
+
+  it('pitchRoom:promote and pitches:restore pass a replacement title through, dropping non-strings', async () => {
+    svc.fs.promotePitchToBook.mockResolvedValue({ slug: 'new-title' });
+    svc.fs.restorePitch.mockResolvedValue({ slug: 'other-title' });
+
+    await invoke('pitchRoom:promote', 'conv-1', 'New Title');
+    expect(svc.fs.promotePitchToBook).toHaveBeenCalledWith('conv-1', 'New Title');
+    await invoke('pitchRoom:promote', 'conv-1', { not: 'a string' });
+    expect(svc.fs.promotePitchToBook).toHaveBeenLastCalledWith('conv-1', undefined);
+
+    await invoke('pitches:restore', 'pitch-a', 'Other Title');
+    expect(svc.fs.restorePitch).toHaveBeenCalledWith('pitch-a', 'Other Title');
+    await invoke('pitches:restore', 'pitch-a');
+    expect(svc.fs.restorePitch).toHaveBeenLastCalledWith('pitch-a', undefined);
+    expect(hooks.onActiveBookChanged).toHaveBeenCalledWith('other-title');
+  });
 });
 
 describe('chat:send orchestration', () => {

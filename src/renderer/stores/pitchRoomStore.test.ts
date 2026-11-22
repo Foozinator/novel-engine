@@ -224,24 +224,51 @@ describe('pitchRoomStore', () => {
   describe('promoteActivePitch', () => {
     it('promotes the active draft and returns the new book slug', async () => {
       usePitchRoomStore.setState({ activeConversation: pitch1, hasPitch: true });
+      mock.pitchRoom.readContent.mockResolvedValue('# Storm Book\n\nA keeper vs the sea.');
       mock.pitchRoom.promote.mockResolvedValue(makeBookMeta({ slug: 'storm-book' }));
 
-      const slug = await usePitchRoomStore.getState().promoteActivePitch();
+      const result = await usePitchRoomStore.getState().promoteActivePitch();
 
-      expect(slug).toBe('storm-book');
+      expect(result).toEqual({ ok: true, slug: 'storm-book' });
+      expect(mock.books.findTitleConflict).toHaveBeenCalledWith('Storm Book');
       expect(mock.pitchRoom.promote).toHaveBeenCalledWith('pitch-1');
       expect(usePitchRoomStore.getState().isPromoting).toBe(false);
       expect(usePitchRoomStore.getState().hasPitch).toBe(false);
     });
 
-    it('returns null without an active conversation or on bridge failure', async () => {
-      expect(await usePitchRoomStore.getState().promoteActivePitch()).toBeNull();
+    it('fails without an active conversation or on bridge failure', async () => {
+      expect(await usePitchRoomStore.getState().promoteActivePitch()).toEqual({ ok: false, message: 'No pitch is open' });
 
       usePitchRoomStore.setState({ activeConversation: pitch1 });
-      mock.pitchRoom.promote.mockRejectedValue(new Error('no pitch.md'));
+      mock.pitchRoom.promote.mockRejectedValue(
+        new Error("Error invoking remote method 'pitchRoom:promote': Error: no pitch.md"),
+      );
 
-      expect(await usePitchRoomStore.getState().promoteActivePitch()).toBeNull();
+      expect(await usePitchRoomStore.getState().promoteActivePitch()).toEqual({ ok: false, message: 'no pitch.md' });
       expect(usePitchRoomStore.getState().isPromoting).toBe(false);
+
+      usePitchRoomStore.setState({ isPromoting: true });
+      expect(await usePitchRoomStore.getState().promoteActivePitch()).toMatchObject({ ok: false });
+    });
+
+    it('reports a taken title without promoting, then promotes under a new title (#79)', async () => {
+      usePitchRoomStore.setState({ activeConversation: pitch1, hasPitch: true });
+      mock.pitchRoom.readContent.mockResolvedValue('No heading here.');
+      mock.books.findTitleConflict.mockImplementation(async (title: string) =>
+        title === 'Untitled Book' ? { slug: 'untitled-book', title: 'Untitled Book', archived: false } : null,
+      );
+
+      expect(await usePitchRoomStore.getState().promoteActivePitch()).toEqual({
+        ok: false,
+        message: 'A book titled "Untitled Book" already exists. Choose another title.',
+        takenTitle: 'Untitled Book',
+      });
+      expect(mock.pitchRoom.promote).not.toHaveBeenCalled();
+      expect(usePitchRoomStore.getState().hasPitch).toBe(true);
+
+      mock.pitchRoom.promote.mockResolvedValue(makeBookMeta({ slug: 'second-try' }));
+      expect(await usePitchRoomStore.getState().promoteActivePitch('Second Try ')).toEqual({ ok: true, slug: 'second-try' });
+      expect(mock.pitchRoom.promote).toHaveBeenCalledWith('pitch-1', 'Second Try');
     });
   });
 

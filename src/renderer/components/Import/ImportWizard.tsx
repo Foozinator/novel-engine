@@ -8,6 +8,7 @@ export function ImportWizard() {
   const result = useImportStore((s) => s.result);
   const error = useImportStore((s) => s.error);
   const title = useImportStore((s) => s.title);
+  const titleConflict = useImportStore((s) => s.titleConflict);
   const author = useImportStore((s) => s.author);
   const chapters = useImportStore((s) => s.chapters);
   const generationSteps = useImportStore((s) => s.generationSteps);
@@ -30,7 +31,7 @@ export function ImportWizard() {
     startGeneration();
   };
 
-  const canCommit = title.trim().length > 0 && chapters.length > 0;
+  const canCommit = title.trim().length > 0 && chapters.length > 0 && !titleConflict;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -76,8 +77,17 @@ export function ImportWizard() {
                     type="text"
                     value={title}
                     onChange={(e) => updateTitle(e.target.value)}
-                    className="w-full px-3 py-1.5 text-sm rounded border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 outline-none focus:border-blue-500"
+                    aria-invalid={titleConflict ? true : undefined}
+                    aria-describedby={titleConflict ? 'import-title-conflict' : undefined}
+                    className={`w-full px-3 py-1.5 text-sm rounded border bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 outline-none focus:border-blue-500 ${
+                      titleConflict ? 'border-red-400 dark:border-red-600' : 'border-zinc-300 dark:border-zinc-700'
+                    }`}
                   />
+                  {titleConflict && (
+                    <p id="import-title-conflict" role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">
+                      {titleConflict}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">

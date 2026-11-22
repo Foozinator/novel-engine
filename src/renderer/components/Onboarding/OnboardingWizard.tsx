@@ -3,6 +3,7 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useBookStore } from '../../stores/bookStore';
 import { useViewStore } from '../../stores/viewStore';
 import { useTourStore } from '../../stores/tourStore';
+import { findTitleConflictMessage } from '../../utils/bookTitle';
 
 type Step = 'welcome' | 'claude-setup' | 'model-select' | 'author-profile' | 'ready';
 
@@ -305,10 +306,22 @@ function ReadyStep({
   hasProfile: boolean;
   hasClaudeCli: boolean;
   hasCodexCli: boolean;
-  onLaunch: (bookTitle: string) => void;
+  /** Resolves to a message when the title can't be used (#79); the step stays open. */
+  onLaunch: (bookTitle: string) => Promise<string | null>;
 }): React.ReactElement {
   const [bookTitle, setBookTitle] = useState('');
+  const [titleError, setTitleError] = useState('');
+  const [launching, setLaunching] = useState(false);
   const [models, setModels] = useState<ModelOption[]>([]);
+
+  const handleLaunchClick = async (): Promise<void> => {
+    setLaunching(true);
+    const message = await onLaunch(bookTitle);
+    if (message) {
+      setTitleError(message);
+      setLaunching(false);
+    }
+  };
 
   useEffect(() => {
     window.novelEngine.models.getAvailable().then(setModels).catch(console.error);
@@ -381,15 +394,28 @@ function ReadyStep({
         <input
           type="text"
           value={bookTitle}
-          onChange={(e) => setBookTitle(e.target.value)}
+          onChange={(e) => {
+            setBookTitle(e.target.value);
+            setTitleError('');
+          }}
           placeholder="My First Novel"
-          className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 px-4 py-3 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+          aria-invalid={titleError ? true : undefined}
+          aria-describedby={titleError ? 'onboarding-title-error' : undefined}
+          className={`w-full rounded-lg border bg-zinc-100 dark:bg-zinc-800 px-4 py-3 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none ${
+            titleError ? 'border-red-400 dark:border-red-600' : 'border-zinc-300 dark:border-zinc-700'
+          }`}
         />
+        {titleError && (
+          <p id="onboarding-title-error" role="alert" className="mt-1.5 text-xs text-red-600 dark:text-red-400">
+            {titleError}
+          </p>
+        )}
       </div>
 
       <button
-        onClick={() => onLaunch(bookTitle)}
-        className="rounded-lg bg-blue-600 px-8 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-500"
+        onClick={() => void handleLaunchClick()}
+        disabled={launching || !!titleError}
+        className="rounded-lg bg-blue-600 px-8 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
       >
         Launch Novel Engine Spur
       </button>
@@ -437,7 +463,14 @@ export function OnboardingWizard(): React.ReactElement {
   );
 
   const handleLaunch = useCallback(
-    async (bookTitle: string) => {
+    async (bookTitle: string): Promise<string | null> => {
+      // A data folder can already hold books; refuse a taken title before
+      // finishing onboarding so the user can choose another (#79).
+      if (bookTitle.trim()) {
+        const conflict = await findTitleConflictMessage(bookTitle.trim());
+        if (conflict) return conflict;
+      }
+
       await update({ initialized: true });
       let created = false;
       if (bookTitle.trim()) {
@@ -459,6 +492,7 @@ export function OnboardingWizard(): React.ReactElement {
           tourStore.startTour('welcome');
         }
       }, 500);
+      return null;
     },
     [update, createBook, setActiveBook, navigate],
   );

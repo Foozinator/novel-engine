@@ -1,6 +1,6 @@
 # IPC — Channels, Preload Bridge, Handler Registry
 
-> Last updated: 2026-11-22 (#43)
+> Last updated: 2026-11-22 (#79)
 
 Everything in `src/main/ipc/` and `src/preload/`. Thin adapter layer between application services and the renderer.
 
@@ -66,7 +66,8 @@ Everything in `src/main/ipc/` and `src/preload/`. Thin adapter layer between app
 | `books:list` | invoke | `fs.listBooks()` | `BookSummary[]` |
 | `books:getActiveSlug` | invoke | `fs.getActiveBookSlug()` | `string` |
 | `books:setActive` | invoke | `fs.setActiveBook(slug)` + triggers watcher switch | `void` |
-| `books:create` | invoke | `fs.createBook(title, authorName)` + triggers watcher switch | `BookMeta` |
+| `books:create` | invoke | `fs.createBook(title, authorName)` + triggers watcher switch. Rejects a taken title (#79) | `BookMeta` |
+| `books:findTitleConflict` | invoke | `fs.findTitleConflict(title)` | `BookTitleConflict \| null` |
 | `books:getMeta` | invoke | `fs.getBookMeta(slug)` | `BookMeta` |
 | `books:updateMeta` | invoke | `fs.updateBookMeta(slug, partial)` + handles slug migration | `BookMeta` |
 | `books:wordCount` | invoke | `fs.countWordsPerChapter(slug)` | `{slug, wordCount}[]` |
@@ -87,7 +88,8 @@ Everything in `src/main/ipc/` and `src/preload/`. Thin adapter layer between app
 | `import:generateSources` | invoke | `sourceGeneration.generate()` — broadcasts progress via `import:generationProgress` | `void` |
 | `import:selectFiles` | invoke | `dialog.showOpenDialog()` — multi-select file picker for .md/.markdown/.docx | `string[] \| null` |
 | `import:seriesPreview` | invoke | `seriesImport.preview(filePaths)` | `SeriesImportPreview` |
-| `import:seriesCommit` | invoke | `seriesImport.commit(config)` + triggers `onActiveBookChanged` for first volume | `SeriesImportResult` |
+| `import:seriesCheckTitles` | invoke | `seriesImport.checkTitles(volumes)` | `SeriesImportTitleProblem[]` |
+| `import:seriesCommit` | invoke | `seriesImport.commit(config)` + triggers `onActiveBookChanged` for first volume. Rejects the batch when a title is taken (#79) | `SeriesImportResult` |
 | `import:selectDataFolder` | invoke | `dialog.showOpenDialog({ properties: ['openDirectory'] })` | `string \| null` |
 | `import:dataFolderPreview` | invoke | `dataFolderImport.preview(sourcePath)` | `DataFolderPreview` |
 | `import:dataFolderCommit` | invoke | `dataFolderImport.commit(config)` | `DataFolderImportResult` |
@@ -195,7 +197,7 @@ Everything in `src/main/ipc/` and `src/preload/`. Thin adapter layer between app
 | `pitches:read` | invoke | `fs.readShelvedPitch(slug)` | `ShelvedPitch` |
 | `pitches:delete` | invoke | `fs.deleteShelvedPitch(slug)` | `void` |
 | `pitches:shelve` | invoke | `fs.shelvePitch(bookSlug, logline?)` | `ShelvedPitchMeta` |
-| `pitches:restore` | invoke | `fs.restorePitch(pitchSlug)` + triggers watcher switch | `BookMeta` |
+| `pitches:restore` | invoke | `fs.restorePitch(pitchSlug, title?)` + triggers watcher switch. A non-string `title` is dropped | `BookMeta` |
 
 ### pitchRoom:*
 
@@ -204,7 +206,7 @@ Everything in `src/main/ipc/` and `src/preload/`. Thin adapter layer between app
 | `pitchRoom:listDrafts` | invoke | `fs.listPitchDrafts()` | `PitchDraft[]` |
 | `pitchRoom:getDraft` | invoke | `fs.getPitchDraft(convId)` | `PitchDraft \| null` |
 | `pitchRoom:readContent` | invoke | `fs.readPitchDraftContent(convId)` | `string` |
-| `pitchRoom:promote` | invoke | `fs.promotePitchToBook(convId)` + triggers watcher switch | `BookMeta` |
+| `pitchRoom:promote` | invoke | `fs.promotePitchToBook(convId, title?)` + triggers watcher switch. A non-string `title` is dropped | `BookMeta` |
 | `pitchRoom:shelve` | invoke | `fs.shelvePitchDraft(convId, logline?)` | `ShelvedPitchMeta` |
 | `pitchRoom:discard` | invoke | `fs.deletePitchDraft(convId)` + `db.deleteConversation(convId)` | `void` |
 
@@ -359,6 +361,7 @@ window.novelEngine: {
     getActiveSlug(): Promise<string>
     setActive(slug: string): Promise<void>
     create(title: string): Promise<BookMeta>
+    findTitleConflict(title: string): Promise<BookTitleConflict | null>
     getMeta(slug: string): Promise<BookMeta>
     updateMeta(slug: string, partial: Partial<BookMeta>): Promise<BookMeta>
     wordCount(slug: string): Promise<{slug: string, wordCount: number}[]>
@@ -388,6 +391,7 @@ window.novelEngine: {
   seriesImport: {
     selectFiles(): Promise<string[] | null>
     preview(filePaths: string[]): Promise<SeriesImportPreview>
+    checkTitles(volumes: { volumeNumber: number; title: string }[]): Promise<SeriesImportTitleProblem[]>
     commit(config: SeriesImportCommitConfig): Promise<SeriesImportResult>
   }
 
@@ -448,14 +452,14 @@ window.novelEngine: {
     read(slug: string): Promise<ShelvedPitch>
     delete(slug: string): Promise<void>
     shelve(bookSlug: string, logline?: string): Promise<ShelvedPitchMeta>
-    restore(pitchSlug: string): Promise<BookMeta>
+    restore(pitchSlug: string, title?: string): Promise<BookMeta>
   }
 
   pitchRoom: {
     listDrafts(): Promise<PitchDraft[]>
     getDraft(conversationId: string): Promise<PitchDraft | null>
     readContent(conversationId: string): Promise<string>
-    promote(conversationId: string): Promise<BookMeta>
+    promote(conversationId: string, title?: string): Promise<BookMeta>
     shelve(conversationId: string, logline?: string): Promise<ShelvedPitchMeta>
     discard(conversationId: string): Promise<void>
   }

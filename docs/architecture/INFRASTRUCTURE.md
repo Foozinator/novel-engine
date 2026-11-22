@@ -1,6 +1,6 @@
 # Infrastructure — Implementations
 
-> Last updated: 2026-11-20 (#58)
+> Last updated: 2026-11-22 (#79)
 
 Everything in `src/infrastructure/`. Implements domain interfaces using Node.js builtins and npm packages.
 
@@ -93,13 +93,16 @@ Key behavior:
 
 Key behavior:
 - `FileSystemService` constructor takes `booksDir` and `userDataPath`
-- `createBook` generates slug from title, creates directory structure with `about.json`
+- `createBook` generates slug from title (`slugifyBookTitle`), creates directory structure with `about.json`. It never writes into an existing book (#79): it throws `describeBookTitleConflict()` when `findTitleConflict(title)` finds one, then claims the folder with a non-recursive `mkdir` so a folder that appears after the check fails with `EEXIST`
+- `findTitleConflict(title)` scans `books/` and `books/_archived/`: an entry whose name lowercases to the slug, or whose `about.json` title slugifies to it. Reserved `_`/`.` folders are skipped. It reads every `about.json`, so it is O(books)
+- `updateBookMeta` renames use the same check (live and archived, any case), skipping the book's own folder
+- `restorePitch(pitchSlug, title?)` and `promotePitchToBook(conversationId, title?)` take an optional replacement title for when the pitch's own title is taken
 - `reconcileBookSlugs` renames folders whose name no longer matches the slugified title
 - `saveCoverImage` copies image into book directory, updates `about.json`
 - `archiveBook`/`unarchiveBook` moves books to/from `_archived/` subdirectory; `unarchiveBook` removes the book's `.claude/` folder
 - Every book-relative path goes through `resolveBookPath()` (read/write/delete/rename/exists/list, covers, word counts, manifest). Pitch slugs and draft IDs go through `safeSegment()`. A `coverImage` outside the book reads as no cover
-- Shelved pitches stored in `{userData}/shelved-pitches/{slug}.md` with YAML front matter
-- Pitch Room drafts stored in `{userData}/pitch-drafts/{conversationId}/`
+- Shelved pitches stored in `books/_pitches/{slug}.md` with YAML front matter
+- Pitch Room drafts stored in `books/__pitch-room__/drafts/{conversationId}/`
 - `BookWatcher.watch(slug)` switches which book directory is being monitored
 - `BooksDirWatcher.start()` watches for folder-level changes in `books/`
 

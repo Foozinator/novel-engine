@@ -291,6 +291,7 @@ export function makeFakeFs(
       Object.assign(meta, { slug, title, author: author ?? '', status: 'scaffolded' });
       return { ...meta };
     },
+    findTitleConflict: async () => null,
     getBookMeta: async () => ({ ...meta }),
     updateBookMeta: async (_slug: string, partial: Partial<typeof meta>) => {
       Object.assign(meta, partial);

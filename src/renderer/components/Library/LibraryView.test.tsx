@@ -102,6 +102,55 @@ describe('LibraryView', () => {
     expect(useViewStore.getState().currentView).toBe('workspace');
   });
 
+  it('keeps the New Book modal open on a taken title and lets the user choose another (#79)', async () => {
+    const findTitleConflict = vi.fn(async (title: string) =>
+      title === 'alpha!' ? { slug: 'alpha', title: 'Alpha', archived: false } : null,
+    );
+    const { bridge } = renderLibrary({
+      bridge: { books: { list: vi.fn(async () => BOOKS), findTitleConflict } },
+    });
+    await screen.findByText('Alpha');
+
+    fireEvent.click(screen.getByRole('button', { name: /New Book/ }));
+    const input = screen.getByPlaceholderText('Book Title');
+    fireEvent.change(input, { target: { value: 'alpha!' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'A book titled "Alpha" already exists. Titles that differ only in case or punctuation count as the same.',
+    );
+    expect(bridge.books.create).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled();
+
+    // Editing clears the message; a free title creates the book
+    fireEvent.change(input, { target: { value: 'Alpha Two' } });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(bridge.books.create).toHaveBeenCalledWith('Alpha Two'));
+    await waitFor(() => expect(screen.queryByPlaceholderText('Book Title')).not.toBeInTheDocument());
+  });
+
+  it('shows a create failure in the New Book modal without the IPC prefix', async () => {
+    const { bridge } = renderLibrary({
+      bridge: {
+        books: {
+          list: vi.fn(async () => BOOKS),
+          create: vi.fn(async () => {
+            throw new Error("Error invoking remote method 'books:create': Error: A book in folder \"x\" already exists.");
+          }),
+        },
+      },
+    });
+    await screen.findByText('Alpha');
+
+    fireEvent.click(screen.getByRole('button', { name: /New Book/ }));
+    fireEvent.change(screen.getByPlaceholderText('Book Title'), { target: { value: 'X' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/^A book in folder "x" already exists\.$/);
+    expect(bridge.books.setActive).not.toHaveBeenCalled();
+  });
+
   it('archives a book after confirmation and refreshes the archived list', async () => {
     const { bridge } = renderLibrary();
     await screen.findByText('Alpha');

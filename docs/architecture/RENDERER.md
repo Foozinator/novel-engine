@@ -1,6 +1,6 @@
 # Renderer — Stores, Components, Views
 
-> Last updated: 2026-11-20 (#63)
+> Last updated: 2026-11-22 (#79)
 
 Everything in `src/renderer/`. React + Zustand UI layer. Talks to backend only through `window.novelEngine`.
 
@@ -220,11 +220,15 @@ File: `stores/pitchRoomStore.ts`
 
 State and actions for the Pitch Room brainstorming view. Stream listener lifecycle managed via `initStreamListener()` / `destroyStreamListener()` (called from AppLayout's StreamManager component, not from PitchRoomView). Double-registration guard: `if (_cleanupListener) return`.
 
+`promoteActivePitch(title?)` returns `PitchToBookResult`. It checks the title the book would get (`title`, else `bookTitleFromPitch(readContent())`) before calling `pitchRoom:promote`. A taken title (#79) returns `{ ok: false, message, takenTitle }`; `PitchRoomView` then opens `BookTitleModal` and retries with the chosen title.
+
 ### pitchShelfStore
 
 File: `stores/pitchShelfStore.ts`
 
 Manages shelved pitches listing, reading, deleting, restoring.
+
+`restorePitch(slug, title?)` returns `PitchToBookResult` (`utils/bookTitle.ts`). It first checks the title the book would get (`title`, else the shelf entry's title, else `pitches.read`) with `findTitleConflictMessage()`. A taken title (#79) returns `{ ok: false, message, takenTitle }` without calling `pitches:restore`; `PitchRail` then opens `BookTitleModal`. Failures return `{ ok: false, message }` instead of throwing.
 
 ### revisionQueueStore
 
@@ -292,17 +296,18 @@ File: `stores/importStore.ts`
 | `preview` | `ImportPreview \| null` | Parsed chapter breakdown from file |
 | `result` | `ImportResult \| null` | Committed book result |
 | `error` | `string \| null` | Error message |
+| `titleConflict` | `string` | Why `title` can't be used (#79); `''` when free. Shown under the Title field; Import is disabled while set |
 | `generationSteps` | `SourceGenerationStep[]` | Per-step progress for source generation |
 
 | Action | What It Does |
 |--------|-------------|
-| `startImport()` | Opens file dialog, calls preview, transitions to `preview` |
-| `updateTitle(title)` | Updates preview title |
+| `startImport()` | Opens file dialog, calls preview, checks the detected title, transitions to `preview` |
+| `updateTitle(title)` | Updates preview title, clears `titleConflict` |
 | `updateAuthor(author)` | Updates preview author |
 | `renameChapter(index, title)` | Renames a detected chapter |
 | `mergeWithNext(index)` | Merges chapter with the following one |
 | `removeChapter(index)` | Removes a detected chapter |
-| `commitImport()` | Commits import via bridge, transitions to `success` |
+| `commitImport()` | Ignored while `importing`. Sets `importing`, re-checks the title (back to `preview` with `titleConflict` when taken), commits via bridge, transitions to `success` |
 | `startGeneration()` | Starts source doc generation, subscribes to progress events |
 | `reset()` | Cleans up generation listener, resets to idle |
 
@@ -341,10 +346,12 @@ File: `stores/seriesImportStore.ts`
 | `author` | `string` | Author applied to all volumes |
 | `volumes` | `SeriesImportVolume[]` | Editable volume list with skip/reorder |
 | `existingSeriesSlug` | `string \| null` | If adding to existing series |
+| `titleProblems` | `Record<number, string>` | Why a volume's title can't be used (#79), keyed by `SeriesImportVolume.index`. Import is disabled while an included volume has one |
 
 | Action | What It Does |
 |--------|-------------|
-| `startImport()` | Opens multi-select file dialog, previews all files, detects series name |
+| `startImport()` | Opens multi-select file dialog, previews all files, detects series name, checks titles |
+| `refreshTitleProblems()` | `seriesImport.checkTitles` on the included volumes. A sequence counter drops answers older than the latest check; a failed check counts as no problems. Runs after every title edit, skip and move |
 | `updateSeriesName(name)` | Updates the series name |
 | `updateAuthor(author)` | Updates the author |
 | `updateVolumeTitle(index, title)` | Edits a volume's title |
@@ -352,7 +359,7 @@ File: `stores/seriesImportStore.ts`
 | `moveVolumeUp(index)` | Moves volume up and renumbers |
 | `moveVolumeDown(index)` | Moves volume down and renumbers |
 | `selectExistingSeries(slug)` | Selects existing series to add to |
-| `commitImport()` | Commits all non-skipped volumes via bridge |
+| `commitImport()` | Ignored while `importing`. Sets `importing`, re-checks titles (back to `preview` on a problem), commits all non-skipped volumes via bridge |
 | `reset()` | Resets to idle state |
 
 ### motifLedgerStore
@@ -435,12 +442,21 @@ Gate: `App.tsx` checks `settings.initialized` — if false, renders `OnboardingW
 
 Importing the module sets marked's options once: `gfm`, `breaks`, `async: false`. Components no longer call `marked.setOptions`.
 
+### utils/bookTitle.ts
+
+| Export | Purpose |
+|--------|---------|
+| `findTitleConflictMessage(title)` | `books.findTitleConflict` → `describeBookTitleConflict()` message, or null when free. A failed lookup returns null (logged); `createBook` refuses a taken title anyway (#79) |
+| `ipcErrorMessage(err, fallback?)` | Error message without Electron's `Error invoking remote method '…': Error:` prefix |
+| `PitchToBookResult` | `{ ok: true, slug } \| { ok: false, message, takenTitle? }`. Returned by `promoteActivePitch` and `restorePitch` |
+
 ## Components
 
 ### common/
 
 | File | Purpose |
 |------|---------|
+| `BookTitleModal.tsx` | Title prompt that stays open with the reason when the title can't be used (#79). Props: `heading`, `submitLabel`, `initialTitle`, `initialError`, `onSubmit(title) → Promise<message \| null>`, `onClose`. Editing clears the message; submit is disabled while one shows. Used for New Book (`LibraryView`) and "Choose another title" (`PitchRoomView`, `PitchRail`) |
 | `ProseViewer.tsx` | Shared typeset markdown renderer (companion tabs, Manuscript reader) plus `useBookFile()` live file read. Font size from `settings.proseFontSize`; font family from `resolveProseFontStack(settings.proseFont, settings.proseFontCustom)`. `lineNumbers` prop renders via `renderWithLineNumbers()`: each top-level block is tagged `data-line` with its source line, and `.ne-prose-lines` in `globals.css` draws the gutter. ChapterTab and the Manuscript chapter reader pass `settings.showChapterLineNumbers`. |
 | `Tooltip.tsx` | Reusable tooltip with portal rendering, configurable placement/delay, arrow, multi-line support. Suppressed during active tours via `useTourStore`. `aria-describedby` for accessibility. |
 | `GuidedTourOverlay.tsx` | Spotlight-based tour overlay with CSS clip-path cutout, keyboard navigation, step popovers. Handles window resize + `ResizeObserver`. Auto-focuses Next button. `aria-modal`, `aria-live="polite"`. |
@@ -466,7 +482,7 @@ Importing the module sets marked's options once: `gfm`, `breaks`, `async: false`
 
 | File | Purpose |
 |------|---------|
-| `OnboardingWizard.tsx` | First-run wizard: detects Claude CLI/Codex CLI, model selection, author name/profile, initial setup |
+| `OnboardingWizard.tsx` | First-run wizard: detects Claude CLI/Codex CLI, model selection, author name/profile, initial setup. A taken first-book title (#79) keeps the ready step open with the reason; onboarding is not marked complete until the title is free |
 
 ### Settings/
 
@@ -556,7 +572,7 @@ Importing the module sets marked's options once: `gfm`, `breaks`, `async: false`
 
 | File | Purpose |
 |------|---------|
-| `PitchRoomView.tsx` | Free brainstorming with Spark, draft management, promote/shelve/discard |
+| `PitchRoomView.tsx` | Free brainstorming with Spark, draft management, promote/shelve/discard. A taken pitch title (#79) opens `BookTitleModal` ("Choose another title") |
 
 ### RevisionQueue/
 
@@ -597,11 +613,11 @@ Importing the module sets marked's options once: `gfm`, `breaks`, `async: false`
 
 | File | Purpose |
 |------|---------|
-| `ImportWizard.tsx` | Modal wizard for manuscript import. Renders per-step UI: loading spinner, preview (title/author inputs + chapter list), importing spinner, success (stats + "Open Book" / "Generate Source Documents"), generating (step checklist with progress), generated (summary), error (with retry). |
+| `ImportWizard.tsx` | Modal wizard for manuscript import. Renders per-step UI: loading spinner, preview (title/author inputs + chapter list), importing spinner, success (stats + "Open Book" / "Generate Source Documents"), generating (step checklist with progress), generated (summary), error (with retry). A taken title (#79) shows under the Title field and disables Import until edited. |
 | `ChapterPreviewList.tsx` | Editable chapter list with inline title rename, word count badges, content preview snippets, "Merge ↓" and "×" actions, summary bar. Reads directly from `importStore`. |
-| `ImportSeriesWizard.tsx` | Modal wizard for batch series import. Steps: loading, preview (series name/author/existing toggle + volume list), importing, success (per-volume breakdown), error. |
+| `ImportSeriesWizard.tsx` | Modal wizard for batch series import. Steps: loading, preview (series name/author/existing toggle + volume list), importing, success (per-volume breakdown), error. Import is disabled while an included volume has a title problem (#79). |
 | `DataFolderImportWizard.tsx` | Modal wizard for importing books from another Novel Engine data folder (#37). Steps: loading, preview (book checklist with words/chapters/chats/history size, inline rename for clashes, series and author-profile toggles), importing, success (imported/not imported/warnings; Done opens the first imported book), error (with retry). Mounted in `AppLayout` `GlobalBookModals`. |
-| `VolumePreviewList.tsx` | Editable volume list with inline title editing, reorder up/down arrows, skip toggles, chapter/word count badges, ambiguity warnings. |
+| `VolumePreviewList.tsx` | Editable volume list with inline title editing, reorder up/down arrows, skip toggles, chapter/word count badges, ambiguity warnings. `titleProblems` prop shows a per-volume reason (#79) under the title, hidden while the volume is skipped. |
 
 ### CliActivity/
 

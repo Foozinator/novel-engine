@@ -57,16 +57,85 @@ describe('createBook', () => {
     expect(meta.slug).toBe(slug);
   });
 
-  it('a duplicate title silently reuses the same directory (no collision error)', async () => {
+  it('refuses a duplicate title and leaves the existing book untouched (#79)', async () => {
     await lib.service.createBook('Twin', 'First Author');
     await lib.service.writeFile('twin', 'chapters/01-one/draft.md', 'existing prose');
+    const aboutBefore = await readFile(path.join(lib.booksDir, 'twin', 'about.json'), 'utf-8');
 
-    const second = await lib.service.createBook('Twin', 'Second Author');
+    await expect(lib.service.createBook('Twin', 'Second Author')).rejects.toThrow(
+      'A book titled "Twin" already exists. Choose another title.'
+    );
 
-    expect(second.slug).toBe('twin');
-    // about.json overwritten, prior content untouched
-    expect((await lib.service.getBookMeta('twin')).author).toBe('Second Author');
+    expect(await readFile(path.join(lib.booksDir, 'twin', 'about.json'), 'utf-8')).toBe(aboutBefore);
     expect(await lib.service.readFile('twin', 'chapters/01-one/draft.md')).toBe('existing prose');
+  });
+
+  it('refuses a folder that appeared after the title check (EEXIST backstop)', async () => {
+    const spy = vi.spyOn(lib.service, 'findTitleConflict').mockResolvedValue(null);
+    await seedBook(lib, 'late', { title: 'Late', chapters: { '01-one': 'kept' } });
+
+    await expect(lib.service.createBook('Late')).rejects.toThrow('A book in folder "late" already exists.');
+    expect(await lib.service.readFile('late', 'chapters/01-one/draft.md')).toBe('kept');
+    spy.mockRestore();
+  });
+
+  it('creates the books folder when it does not exist yet', async () => {
+    const fresh = new FileSystemService(path.join(lib.userDataDir, 'no-books-yet'), lib.userDataDir);
+    const meta = await fresh.createBook('First Book');
+    expect(meta.slug).toBe('first-book');
+  });
+});
+
+describe('findTitleConflict', () => {
+  it('returns null for a free title, an empty library, or a title with no letters or digits', async () => {
+    expect(await lib.service.findTitleConflict('Anything')).toBeNull();
+    await seedBook(lib, 'alpha', { title: 'Alpha' });
+    expect(await lib.service.findTitleConflict('Beta')).toBeNull();
+    expect(await lib.service.findTitleConflict('!!!')).toBeNull();
+  });
+
+  it('matches a live book by title in any case or punctuation', async () => {
+    await seedBook(lib, 'the-hollow-crown', { title: 'The Hollow Crown' });
+    for (const title of ['The Hollow Crown', 'the hollow crown', 'The Hollow-Crown!', '  THE  HOLLOW  CROWN  ']) {
+      expect(await lib.service.findTitleConflict(title)).toEqual({
+        slug: 'the-hollow-crown',
+        title: 'The Hollow Crown',
+        archived: false,
+      });
+    }
+  });
+
+  it('matches a folder whose name differs in case, and a title whose folder name drifted', async () => {
+    await seedBook(lib, 'Odd-Folder', { title: 'Something Else' });
+    await seedBook(lib, 'old-name', { title: 'Renamed By Hand' });
+
+    expect(await lib.service.findTitleConflict('Odd Folder')).toEqual({
+      slug: 'Odd-Folder',
+      title: 'Something Else',
+      archived: false,
+    });
+    expect(await lib.service.findTitleConflict('renamed by hand')).toEqual({
+      slug: 'old-name',
+      title: 'Renamed By Hand',
+      archived: false,
+    });
+  });
+
+  it('matches a folder without a readable about.json by its name', async () => {
+    await seedBook(lib, 'no-about', { omitAbout: true });
+    await seedBook(lib, 'bad-about', { rawAbout: '{not json' });
+
+    expect(await lib.service.findTitleConflict('No About')).toEqual({ slug: 'no-about', title: '', archived: false });
+    expect(await lib.service.findTitleConflict('Bad About')).toEqual({ slug: 'bad-about', title: '', archived: false });
+  });
+
+  it('matches archived books, and ignores reserved folders', async () => {
+    await seedBook(lib, 'ghost', { title: 'Ghost' });
+    await lib.service.archiveBook('ghost');
+    await seedBook(lib, '_pitches', { title: 'Pitches' });
+
+    expect(await lib.service.findTitleConflict('GHOST')).toEqual({ slug: 'ghost', title: 'Ghost', archived: true });
+    expect(await lib.service.findTitleConflict('Pitches')).toBeNull();
   });
 });
 
@@ -175,6 +244,26 @@ describe('updateBookMeta', () => {
     await expect(lib.service.updateBookMeta('beta', { title: 'Alpha' })).rejects.toThrow(
       /already exists/
     );
+  });
+
+  it('refuses to rename onto an archived book and leaves both books in place (#79)', async () => {
+    await seedBook(lib, 'ghost', { title: 'Ghost' });
+    await lib.service.archiveBook('ghost');
+    await seedBook(lib, 'beta', { title: 'Beta' });
+
+    await expect(lib.service.updateBookMeta('beta', { title: 'ghost!' })).rejects.toThrow(
+      'Cannot rename book: An archived book titled "Ghost" already exists.'
+    );
+    expect((await lib.service.getBookMeta('beta')).title).toBe('Beta');
+  });
+
+  it('renames a folder whose name differs from its slug only in case', async () => {
+    await seedBook(lib, 'Mixed-Case', { title: 'Mixed Case' });
+
+    const updated = await lib.service.updateBookMeta('Mixed-Case', { title: 'Mixed Case' });
+
+    expect(updated.slug).toBe('mixed-case');
+    expect((await lib.service.getBookMeta('mixed-case')).title).toBe('Mixed Case');
   });
 });
 

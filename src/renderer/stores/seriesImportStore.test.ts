@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { ImportPreview, SeriesImportPreview, SeriesImportResult, SeriesImportVolume } from '@domain/types';
 import { useSeriesImportStore } from './seriesImportStore';
 import { installNovelEngineMock, makeAppSettings, type NovelEngineMock } from '../../test/novelEngineMock';
@@ -184,6 +184,78 @@ describe('seriesImportStore', () => {
 
       expect(useSeriesImportStore.getState().step).toBe('error');
       expect(useSeriesImportStore.getState().error).toBe('volume 2 failed: bad chapters');
+    });
+  });
+
+  describe('title problems (#79)', () => {
+    it('flags taken titles per volume on preview and keeps the wizard open on commit', async () => {
+      mock.seriesImport.checkTitles.mockImplementation(async (volumes) =>
+        volumes
+          .filter((v) => v.title === 'Book 2')
+          .map((v) => ({ volumeNumber: v.volumeNumber, message: 'A book titled "Book 2" already exists. Choose another title.' })),
+      );
+
+      await toPreviewStep();
+
+      expect(mock.seriesImport.checkTitles).toHaveBeenCalledWith([
+        { volumeNumber: 1, title: 'Book 1' },
+        { volumeNumber: 2, title: 'Book 2' },
+        { volumeNumber: 3, title: 'Book 3' },
+      ]);
+      // Keyed by the volume's stable index, not its number
+      expect(useSeriesImportStore.getState().titleProblems).toEqual({
+        1: 'A book titled "Book 2" already exists. Choose another title.',
+      });
+
+      await useSeriesImportStore.getState().commitImport();
+      expect(mock.seriesImport.commit).not.toHaveBeenCalled();
+      expect(useSeriesImportStore.getState().step).toBe('preview');
+
+      // Retitling re-checks and clears the problem
+      useSeriesImportStore.getState().updateVolumeTitle(1, 'Book 2, Revised');
+      await vi.waitFor(() => expect(useSeriesImportStore.getState().titleProblems).toEqual({}));
+
+      mock.seriesImport.commit.mockResolvedValue(seriesResult);
+      await useSeriesImportStore.getState().commitImport();
+      expect(useSeriesImportStore.getState().step).toBe('success');
+    });
+
+    it('re-checks after skips and moves, ignoring an older answer that arrives late', async () => {
+      await toPreviewStep();
+      let releaseSlow: (value: { volumeNumber: number; message: string }[]) => void = () => undefined;
+      mock.seriesImport.checkTitles
+        .mockImplementationOnce(() => new Promise((resolve) => { releaseSlow = resolve; }))
+        .mockResolvedValueOnce([]);
+
+      useSeriesImportStore.getState().toggleVolumeSkip(0); // slow check
+      useSeriesImportStore.getState().moveVolumeDown(1); // fast check, answers first
+      await vi.waitFor(() => expect(mock.seriesImport.checkTitles).toHaveBeenCalledTimes(3));
+
+      releaseSlow([{ volumeNumber: 1, message: 'stale' }]);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(useSeriesImportStore.getState().titleProblems).toEqual({});
+    });
+
+    it('a second click while importing does not start a second commit', async () => {
+      await toPreviewStep();
+      mock.seriesImport.commit.mockResolvedValue(seriesResult);
+
+      await Promise.all([
+        useSeriesImportStore.getState().commitImport(),
+        useSeriesImportStore.getState().commitImport(),
+      ]);
+
+      expect(mock.seriesImport.commit).toHaveBeenCalledTimes(1);
+      expect(useSeriesImportStore.getState().step).toBe('success');
+    });
+
+    it('treats a failed title check as no problems (the main process re-checks on commit)', async () => {
+      mock.seriesImport.checkTitles.mockRejectedValue(new Error('ipc down'));
+
+      await toPreviewStep();
+
+      expect(useSeriesImportStore.getState().titleProblems).toEqual({});
+      expect(useSeriesImportStore.getState().step).toBe('preview');
     });
   });
 
