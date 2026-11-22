@@ -27,6 +27,29 @@ describe('createAppUrlMatcher — packaged', () => {
     }
   });
 
+  it.each([
+    ['~', '%7E'],
+    ['[', '%5B'],
+    [']', '%5D'],
+    ['^', '%5E'],
+    ['|', '%7C'],
+  ])('accepts the entry page with %j in its path, escaped or not', (char, escaped) => {
+    const file = path.join(path.sep, 'opt', `app${char}1`, 'index.html');
+    const matches = createAppUrlMatcher({ indexHtmlPath: file });
+    const base = pathToFileURL(file).href.replace(/app.*1/, 'app@1');
+    expect(matches(base.replace('@', char))).toBe(true);
+    expect(matches(base.replace('@', escaped))).toBe(true);
+    expect(matches(base.replace('@', '_'))).toBe(false);
+  });
+
+  it.runIf(process.platform === 'win32')('ignores the case of the drive letter only', () => {
+    const matches = createAppUrlMatcher({ indexHtmlPath: 'C:\\App\\index.html' });
+    expect(matches('file:///c:/App/index.html')).toBe(true);
+    expect(matches('file:///C:/App/index.html')).toBe(true);
+    expect(matches('file:///D:/App/index.html')).toBe(false);
+    expect(matches('file:///C:/App/other.html')).toBe(false);
+  });
+
   it('refuses garbage', () => {
     expect(isAppUrl('')).toBe(false);
     expect(isAppUrl('not a url')).toBe(false);

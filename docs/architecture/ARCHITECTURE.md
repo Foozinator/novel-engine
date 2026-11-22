@@ -1,6 +1,6 @@
 # Architecture — Novel Engine Spur
 
-> Last updated: 2026-11-20 (#58)
+> Last updated: 2026-11-22 (#43)
 
 Electron + React 18 + TypeScript 5 + Tailwind v4 + Zustand + better-sqlite3 + Claude Code CLI + Codex CLI + Ollama CLI + Pandoc
 
@@ -343,7 +343,7 @@ The renderer layer normally uses `import type` only from domain. However, **pure
 - `contextIsolation: true` — always
 - `nodeIntegration: false` — always
 - `sandbox: true` — set explicitly on the main window
-- Window lock: `will-navigate`/`will-redirect` keep the main window on the app's entry page (`createAppUrlMatcher`, `src/main/appUrl.ts`); `https:` links open in the system browser, other targets are dropped, and `setWindowOpenHandler` denies new windows
+- Window lock: `will-navigate`/`will-redirect` keep the main window on the app's entry page (`createAppUrlMatcher`, `src/main/appUrl.ts`; file URLs are compared as decoded paths); `https:` links open in the system browser, other targets are dropped, and `setWindowOpenHandler` denies new windows
 - IPC sender check: every `ipcMain.handle` channel in `handlers.ts` serves only calls whose `senderFrame.url` is the app's entry page
 - Rendered markdown: every `dangerouslySetInnerHTML` sink goes through `renderMarkdown()`/`sanitizeHtml()` (`src/renderer/utils/markdown.ts`, DOMPurify)
 - CSP (`index.html`): `script-src 'self'`, plus `form-action 'none'`, `base-uri 'none'`, `object-src 'none'`
@@ -422,7 +422,7 @@ The fork ships as **Novel Engine Spur** (`APP_NAME` in `src/domain/constants.ts`
 | Build | Pandoc | (bundled binary) |
 | IDs | nanoid | 3 |
 | Markdown | marked | ^15.0.0 |
-| HTML sanitizer | dompurify | 3.4.17 |
+| HTML sanitizer | dompurify | 3.4.18 |
 | Archive | archiver | ^7.0.1 |
 | Build Tool | Electron Forge | ^7.11.1 |
 | Unit tests | Vitest | ^4.1.10 |
