@@ -4,6 +4,26 @@ All notable changes to Novel Engine Spur are documented here.
 
 ---
 
+## [2026-11-22] — Book status, title and cover changes keep the rest of about.json (#80)
+
+### Summary
+
+`FileSystemService.updateBookMeta()` rebuilt `about.json` from the five `BookMeta` fields and dropped every other key. Spark writes genre, subgenre, audience and comp titles there, so a status change (for example, finishing First Draft), a rename or a new cover erased them. Ghostlight picks its reader persona from the genre, and Quill builds positioning and metadata from these fields. `updateBookMeta()` now writes the known fields over the parsed file. Other keys keep their values and their position, so the file's diff shows only the change.
+
+### Changed
+- `src/infrastructure/filesystem/FileSystemService.ts` — New private `readAboutJson(slug)` and `toBookMeta(slug, about)`, shared by `getBookMeta()` and `updateBookMeta()`. `getBookMeta()` now also throws "malformed about.json" when the file parses to something other than an object (`null`, an array, a string or a number). Before, `null` threw a `TypeError` and the others returned empty fields.
+- `docs/architecture/INFRASTRUCTURE.md` — `getBookMeta` and `updateBookMeta` behavior under the filesystem module.
+- `docs/architecture/DOMAIN.md` — `updateBookMeta` row says it keeps other keys.
+
+### Fixed
+- `src/infrastructure/filesystem/FileSystemService.ts` — `updateBookMeta()` spreads the parsed `about.json` before the known fields instead of writing only those fields. Unknown keys in the `partial` are still ignored.
+- `src/infrastructure/filesystem/FileSystemService.books.test.ts` — Top-level and nested agent keys survive a status change, a rename and a cover change, in their original order. Known fields missing from the file get added. Non-object `about.json` is reported as malformed.
+
+### Architecture Impact
+- None — no wiring changes.
+
+### Migration Notes
+- None. Keys already dropped from a book's `about.json` don't come back; the agent that wrote them (Spark for genre and comp titles) has to write them again.
 ## [2026-11-22] — Repeat passes run every step and keep earlier reports (#81)
 
 ### Summary

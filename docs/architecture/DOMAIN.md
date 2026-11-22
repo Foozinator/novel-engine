@@ -378,7 +378,7 @@ Implemented by: `FileSystemService` (`src/infrastructure/filesystem/`)
 | `setActiveBook` | `(slug) => Promise<void>` | Writes active-book.json |
 | `createBook` | `(title, author?) => Promise<BookMeta>` | Creates book directory |
 | `getBookMeta` | `(slug) => Promise<BookMeta>` | Reads about.json |
-| `updateBookMeta` | `(slug, partial) => Promise<BookMeta>` | Updates about.json |
+| `updateBookMeta` | `(slug, partial) => Promise<BookMeta>` | Merges known fields into about.json; keeps all other keys |
 | `getProjectManifest` | `(slug) => Promise<ProjectManifest>` | File listing with word counts |
 | `readFile` | `(bookSlug, relativePath) => Promise<string>` | File contents |
 | `writeFile` | `(bookSlug, relativePath, content) => Promise<void>` | — |
