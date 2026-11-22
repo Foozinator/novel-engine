@@ -293,6 +293,15 @@ describe('files + versions namespaces', () => {
     expect(warn).toHaveBeenCalled();
   });
 
+  it('files:write takes no snapshot when the write is refused (#83)', async () => {
+    svc.fs.writeFile.mockRejectedValue(new Error('Not a text file: assets/cover.png in book "book-a" was left unchanged'));
+
+    await expect(Promise.resolve(invoke('files:write', 'book-a', 'assets/cover.png', 'text'))).rejects.toThrow(
+      'Not a text file',
+    );
+    expect(svc.version.snapshotContent).not.toHaveBeenCalled();
+  });
+
   it('service errors propagate to the caller as rejections', async () => {
     svc.fs.readFile.mockRejectedValue(new Error('File not found: notes.md in book "book-a"'));
     await expect(Promise.resolve(invoke('files:read', 'book-a', 'notes.md'))).rejects.toThrow(

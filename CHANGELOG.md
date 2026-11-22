@@ -4,6 +4,39 @@ All notable changes to Novel Engine Spur are documented here.
 
 ---
 
+## [2026-11-22] — Opening or editing a binary file no longer corrupts it (#83)
+
+### Summary
+
+The Explorer offered Edit on every file but Verity's drafts, images included. The editor decoded the file as UTF-8, and a save (or leaving after a change) wrote that text back, which destroyed the file. Text handling is now an allowlist: `isTextFilePath()` in the domain names the extensions the app opens as text. The Explorer preview, its Edit and History buttons and the manuscript editor apply it; any other file shows its name, type and size and is never read. As a backstop, `FileSystemService.writeFile` refuses to overwrite an existing file that isn't a known text type and whose first bytes look binary, which covers every caller of the write path. Find and replace skips non-text paths. Version history already kept only `.md` and `.json` files, so the issue's report of garbled snapshots did not reproduce; a refused write now also takes no snapshot.
+
+### Added
+- `src/test/fixtures/binaryFiles.ts` — PNG, JPEG (JFIF header) and GLB byte fixtures.
+- `src/infrastructure/filesystem/FileSystemService.binary.test.ts` — Each fixture survives a read, edit and write round trip byte for byte, with both writes refused; binary detection by bytes for unlisted extensions; unlisted text files, new files and `.md` files still write; `listDirectory` sizes.
+
+### Changed
+- `src/domain/constants.ts` — `TEXT_FILE_EXTENSIONS` and `isTextFilePath()`.
+- `src/domain/types.ts` — `FileEntry.size?` (bytes, files only).
+- `src/infrastructure/filesystem/FileSystemService.ts` — `buildFileTree` sets `size` on file entries.
+- `src/renderer/components/Files/FileBrowser.tsx` — `onFileSelect(path, entry?)` passes the clicked entry.
+- `src/renderer/components/Workbench/companion/ExplorerTab.tsx` — Non-text files are not read; the preview shows name, type and size, and History and Edit are hidden.
+- `src/renderer/components/Manuscript/ManuscriptView.tsx` — A non-text editor path (Explorer Edit deep link) is not read or opened in `FileEditor`, and file-change signals don't read it.
+- `src/application/FindReplaceService.ts` — `apply` skips paths that fail `isTextFilePath()`.
+- `src/domain/constants.test.ts`, `src/application/FindReplaceService.test.ts`, `src/main/ipc/handlers.test.ts`, `src/renderer/components/Workbench/companion/ExplorerTab.test.tsx`, `src/renderer/components/Manuscript/ManuscriptView.test.tsx`, `src/renderer/components/Files/FileBrowser.test.tsx` — Cases for the above.
+- `docs/architecture/DOMAIN.md`, `docs/architecture/INFRASTRUCTURE.md`, `docs/architecture/APPLICATION.md`, `docs/architecture/IPC.md` — New constant and helper, `FileEntry.size`, the write guard, the find-and-replace skip.
+- `docs/architecture/RENDERER.md` — Rows for `companion/ExplorerTab.tsx` and a `Manuscript/` section, which were missing.
+
+### Fixed
+- `src/infrastructure/filesystem/FileSystemService.ts` — `writeFile` refused nothing, so text from the editor, find and replace or any other caller could overwrite an image or model file. It now throws `Not a text file: … was left unchanged` when the existing target isn't a known text type and its first 8192 bytes hold a NUL or invalid UTF-8.
+
+### Architecture Impact
+- None — no wiring changes. `files:write` can now reject; `files:listDir` entries carry `size`.
+
+### Migration Notes
+- None
+
+---
+
 ## [2026-11-22] — Entry-page check compares file paths; DOMPurify 3.4.18
 
 ### Summary

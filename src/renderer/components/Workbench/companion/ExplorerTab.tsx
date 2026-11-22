@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { isTextFilePath } from '@domain/constants';
+import type { FileEntry } from '@domain/types';
 import { useBookStore } from '../../../stores/bookStore';
 import { useViewStore } from '../../../stores/viewStore';
 import { FileBrowser } from '../../Files/FileBrowser';
@@ -10,6 +12,39 @@ import { VersionHistoryModal } from '../../common/VersionHistoryModal';
 function isVerityDraft(path: string): boolean {
   const match = path.match(/^chapters\/(\d+)-[^/]+\/draft\.md$/);
   return match !== null && parseInt(match[1], 10) >= 2;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** "PNG file", or "File" when the name has no extension. */
+function describeFileType(fileName: string): string {
+  const dot = fileName.lastIndexOf('.');
+  return dot > 0 ? `${fileName.slice(dot + 1).toUpperCase()} file` : 'File';
+}
+
+/**
+ * Stand-in for the preview of an image or other non-text file. Reading it as
+ * text shows garbage, and saving that text back destroys the file (#83).
+ */
+function NonTextFileInfo({ fileName, size }: { fileName: string; size: number | null }): React.ReactElement {
+  return (
+    <div className="mx-auto max-w-sm pt-8 text-center">
+      <div className="truncate text-sm text-ne-ink" title={fileName}>
+        {fileName}
+      </div>
+      <div className="mt-1 text-xs text-ne-ink-dim">
+        {describeFileType(fileName)}
+        {size !== null && ` · ${formatBytes(size)}`}
+      </div>
+      <p className="mt-4 text-xs text-ne-ink-faint">
+        This isn't a text file, so it can't be previewed or edited here.
+      </p>
+    </div>
+  );
 }
 
 function formatJson(raw: string): string {
@@ -30,6 +65,8 @@ export function ExplorerTab(): React.ReactElement {
   const { navigate } = useViewStore();
   const [dirPath, setDirPath] = useState('');
   const [previewPath, setPreviewPath] = useState<string | null>(null);
+  /** Size of the previewed file, from its listing entry (null when unknown). */
+  const [previewSize, setPreviewSize] = useState<number | null>(null);
   const [historyPath, setHistoryPath] = useState<string | null>(null);
 
   // Book switch → back to the root listing.
@@ -39,7 +76,14 @@ export function ExplorerTab(): React.ReactElement {
     setHistoryPath(null);
   }, [activeSlug]);
 
-  const { content, loading, error } = useBookFile(activeSlug, previewPath);
+  const isTextPreview = previewPath !== null && isTextFilePath(previewPath);
+  // Non-text files are never read: the bridge decodes everything as UTF-8.
+  const { content, loading, error } = useBookFile(activeSlug, isTextPreview ? previewPath : null);
+
+  const handleFileSelect = (path: string, entry?: FileEntry): void => {
+    setPreviewPath(path);
+    setPreviewSize(entry?.size ?? null);
+  };
 
   // ── File preview ──────────────────────────────────────────────────────────
   if (previewPath) {
@@ -63,15 +107,17 @@ export function ExplorerTab(): React.ReactElement {
           >
             {previewPath}
           </span>
-          <button
-            onClick={() => setHistoryPath(previewPath)}
-            title="Version history"
-            className="flex items-center gap-1 rounded-md border border-ne-line bg-ne-bg2 px-2 py-1 text-[11px] text-ne-ink-dim transition-colors hover:border-ne-brass/50 hover:text-ne-ink"
-          >
-            <Icon name="history" size={10} strokeWidth={2} />
-            History
-          </button>
-          {!isVerityDraft(previewPath) && (
+          {isTextPreview && (
+            <button
+              onClick={() => setHistoryPath(previewPath)}
+              title="Version history"
+              className="flex items-center gap-1 rounded-md border border-ne-line bg-ne-bg2 px-2 py-1 text-[11px] text-ne-ink-dim transition-colors hover:border-ne-brass/50 hover:text-ne-ink"
+            >
+              <Icon name="history" size={10} strokeWidth={2} />
+              History
+            </button>
+          )}
+          {isTextPreview && !isVerityDraft(previewPath) && (
             <button
               onClick={() => navigate('manuscript', { filePath: previewPath, manuscriptMode: 'editor' })}
               title={`Edit ${fileName} in the manuscript editor`}
@@ -83,7 +129,9 @@ export function ExplorerTab(): React.ReactElement {
           )}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-8 py-6 pb-14">
-          {error ? (
+          {!isTextPreview ? (
+            <NonTextFileInfo fileName={fileName} size={previewSize} />
+          ) : error ? (
             <div className="pt-8 text-center text-sm text-ne-ink-faint">{error}</div>
           ) : loading ? (
             <div className="pt-8 text-center text-sm text-ne-ink-faint">Loading…</div>
@@ -131,7 +179,7 @@ export function ExplorerTab(): React.ReactElement {
         ))}
       </div>
       <div className="min-h-0 flex-1">
-        <FileBrowser currentPath={dirPath} onNavigate={setDirPath} onFileSelect={setPreviewPath} />
+        <FileBrowser currentPath={dirPath} onNavigate={setDirPath} onFileSelect={handleFileSelect} />
       </div>
     </div>
   );

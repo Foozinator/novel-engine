@@ -175,6 +175,44 @@ describe('ManuscriptView', () => {
     expect(await screen.findByText('Burger prose.')).toBeInTheDocument();
   });
 
+  it('refuses to open a non-text file from an Edit deep link and never writes it (#83)', async () => {
+    const { bridge, unmount } = renderView({
+      currentView: 'manuscript',
+      payload: { filePath: 'assets/cover.png', manuscriptMode: 'editor' },
+    });
+
+    expect(
+      await screen.findByText("cover.png isn't a text file, so it can't be edited here."),
+    ).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Start writing...')).toBeNull();
+    unmount();
+
+    expect(bridge.files.read).not.toHaveBeenCalledWith('book-a', 'assets/cover.png');
+    expect(bridge.files.write).not.toHaveBeenCalled();
+  });
+
+  it('does not read a non-text file on file-change signals after switching from a text file', async () => {
+    const { bridge } = renderView();
+    await screen.findByText('Opening prose.');
+    fireEvent.click(screen.getByRole('button', { name: 'Editor' }));
+    await screen.findByPlaceholderText('Start writing...');
+
+    act(() =>
+      useViewStore.getState().navigate('manuscript', {
+        filePath: 'assets/cover.png',
+        manuscriptMode: 'editor',
+      }),
+    );
+    await screen.findByText("cover.png isn't a text file, so it can't be edited here.");
+
+    act(() => useFileChangeStore.getState().notifyChange());
+    await act(async () => undefined);
+
+    expect(bridge.files.read).not.toHaveBeenCalledWith('book-a', 'assets/cover.png');
+    expect(bridge.files.write).not.toHaveBeenCalled();
+    expect(screen.queryByText('This file changed outside the editor.')).toBeNull();
+  });
+
   it('assembles the full book in Full book scope', async () => {
     const { bridge } = renderView();
     await screen.findByText('Opening prose.');

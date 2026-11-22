@@ -112,6 +112,24 @@ describe('apply', () => {
     ]);
   });
 
+  it('never reads or rewrites a non-text file passed in the path list (#83)', async () => {
+    fs.files.set('book/assets/cover.png', 'grey\0grey');
+    const read = vi.spyOn(fs, 'readFile');
+
+    const result = await service.apply({
+      bookSlug: 'book',
+      searchTerm: 'grey',
+      replacement: 'silver',
+      filePaths: ['assets/cover.png', 'chapters/02-two/draft.md'],
+      options: LITERAL,
+    });
+
+    expect(result.details).toEqual([{ filePath: 'chapters/02-two/draft.md', replacements: 1 }]);
+    expect(fs.files.get('book/assets/cover.png')).toBe('grey\0grey');
+    expect(read).not.toHaveBeenCalledWith('book', 'assets/cover.png');
+    expect(snapshots.map((s) => s.path)).toEqual(['chapters/02-two/draft.md']);
+  });
+
   it('skips zero-match and missing files without snapshots', async () => {
     const result = await service.apply({
       bookSlug: 'book',

@@ -255,6 +255,40 @@ export function isSafePathSegment(slug: unknown): slug is string {
     && !/[/\\:\0]/.test(slug);
 }
 
+// === Text Files ===
+
+/**
+ * Extensions the app opens as text. The Files preview, the editor and
+ * version history offer only these; any other file shows its name, type
+ * and size. Lower case, with the leading dot.
+ */
+export const TEXT_FILE_EXTENSIONS: ReadonlySet<string> = new Set([
+  '.md',
+  '.markdown',
+  '.txt',
+  '.json',
+  '.yaml',
+  '.yml',
+  '.csv',
+  '.tsv',
+  '.html',
+  '.htm',
+  '.xml',
+  '.css',
+]);
+
+/**
+ * True when the path's extension is in TEXT_FILE_EXTENSIONS (any case).
+ * A name with no extension, or a dotfile like `.gitignore`, is not text.
+ * Accepts `/` or `\` separators.
+ */
+export function isTextFilePath(filePath: string): boolean {
+  const name = filePath.split(/[/\\]/).pop() ?? '';
+  const dot = name.lastIndexOf('.');
+  if (dot <= 0) return false;
+  return TEXT_FILE_EXTENSIONS.has(name.slice(dot).toLowerCase());
+}
+
 /** Reserved provider ID for OpenCode CLI (future implementation). */
 export const OPENCODE_CLI_PROVIDER_ID: ProviderId = 'opencode-cli';
 

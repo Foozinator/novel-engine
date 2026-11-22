@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { isTextFilePath } from '@domain/constants';
 import type { ManuscriptAssembly } from '@domain/types';
 import { useBookStore } from '../../stores/bookStore';
 import { useCliActivityStore } from '../../stores/cliActivityStore';
@@ -252,6 +253,11 @@ export function ManuscriptView(): React.ReactElement {
   const [editorReloadKey, setEditorReloadKey] = useState(0);
   /** Tracked-edit UI for Verity drafts — editable, with every change versioned. */
   const isTrackedDraft = editorPath !== null && isVerityDraft(editorPath);
+  /**
+   * Images and other binaries never reach the editor: it decodes them as
+   * UTF-8, and saving that text back destroys the file (#83).
+   */
+  const isNonTextEditorPath = editorPath !== null && !isTextFilePath(editorPath);
 
   // Agent-activity guard: while any CLI call is active for this book, tracked
   // drafts fall back to read-only so user saves can't race agent writes.
@@ -263,7 +269,7 @@ export function ManuscriptView(): React.ReactElement {
   const lastDiskContentRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (mode !== 'editor' || !editorPath || !activeSlug) {
+    if (mode !== 'editor' || !editorPath || !activeSlug || !isTextFilePath(editorPath)) {
       setEditorContent(null);
       return;
     }
@@ -300,6 +306,7 @@ export function ManuscriptView(): React.ReactElement {
 
   useEffect(() => {
     if (mode !== 'editor' || !editorPath || !activeSlug || lastDiskContentRef.current === null) return;
+    if (!isTextFilePath(editorPath)) return;
     let cancelled = false;
     window.novelEngine.files
       .read(activeSlug, editorPath)
@@ -486,7 +493,11 @@ export function ManuscriptView(): React.ReactElement {
                 </button>
               </div>
             )}
-            {editorPath && editorContent !== null ? (
+            {isNonTextEditorPath && editorPath ? (
+              <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-ne-ink-faint">
+                {editorPath.split('/').pop()} isn't a text file, so it can't be edited here.
+              </div>
+            ) : editorPath && editorContent !== null ? (
               <FileEditor
                 key={`${editorPath}:${editorReloadKey}`}
                 filePath={editorPath}

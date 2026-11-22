@@ -7,7 +7,8 @@ import { DeleteConfirmModal, useDeleteFile } from './DeleteConfirmModal';
 type FileBrowserProps = {
   currentPath: string;
   onNavigate: (path: string) => void;
-  onFileSelect: (path: string) => void;
+  /** `entry` is passed when a listed file is clicked (absent for chapter quick links). */
+  onFileSelect: (path: string, entry?: FileEntry) => void;
 };
 
 type BrowserLayout = 'grid' | 'list';
@@ -77,7 +78,7 @@ function FileCardGrid({
   metadata: Map<string, FileMetadata>;
   isChaptersDir: boolean;
   onNavigate: (path: string) => void;
-  onFileSelect: (path: string) => void;
+  onFileSelect: (path: string, entry?: FileEntry) => void;
   onDelete: (entry: FileEntry, e: React.MouseEvent) => void;
 }): React.ReactElement {
   return (
@@ -89,7 +90,7 @@ function FileCardGrid({
           metadata={metadata.get(entry.path) ?? null}
           isChaptersDir={isChaptersDir}
           onClick={() =>
-            entry.isDirectory ? onNavigate(entry.path) : onFileSelect(entry.path)
+            entry.isDirectory ? onNavigate(entry.path) : onFileSelect(entry.path, entry)
           }
           onFileSelect={onFileSelect}
           onDelete={onDelete}
@@ -111,7 +112,7 @@ function FileCard({
   metadata: FileMetadata | null;
   isChaptersDir: boolean;
   onClick: () => void;
-  onFileSelect: (path: string) => void;
+  onFileSelect: (path: string, entry?: FileEntry) => void;
   onDelete: (entry: FileEntry, e: React.MouseEvent) => void;
 }): React.ReactElement {
   const icon = getFileIcon(entry.name, entry.isDirectory);
@@ -236,7 +237,7 @@ function FileListView({
   metadata: Map<string, FileMetadata>;
   isChaptersDir: boolean;
   onNavigate: (path: string) => void;
-  onFileSelect: (path: string) => void;
+  onFileSelect: (path: string, entry?: FileEntry) => void;
   onDelete: (entry: FileEntry, e: React.MouseEvent) => void;
 }): React.ReactElement {
   return (
@@ -261,7 +262,7 @@ function FileListView({
           <div
             key={entry.path}
             onClick={() =>
-              entry.isDirectory ? onNavigate(entry.path) : onFileSelect(entry.path)
+              entry.isDirectory ? onNavigate(entry.path) : onFileSelect(entry.path, entry)
             }
             className="group flex items-center gap-4 border-b border-zinc-200 dark:border-zinc-800/50 px-4 py-2 cursor-pointer hover:bg-zinc-200/50 dark:hover:bg-zinc-800/50 transition-colors"
           >

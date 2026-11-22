@@ -1,6 +1,6 @@
 # Infrastructure — Implementations
 
-> Last updated: 2026-11-20 (#58)
+> Last updated: 2026-11-22 (#83)
 
 Everything in `src/infrastructure/`. Implements domain interfaces using Node.js builtins and npm packages.
 
@@ -98,6 +98,8 @@ Key behavior:
 - `saveCoverImage` copies image into book directory, updates `about.json`
 - `archiveBook`/`unarchiveBook` moves books to/from `_archived/` subdirectory; `unarchiveBook` removes the book's `.claude/` folder
 - Every book-relative path goes through `resolveBookPath()` (read/write/delete/rename/exists/list, covers, word counts, manifest). Pitch slugs and draft IDs go through `safeSegment()`. A `coverImage` outside the book reads as no cover
+- `writeFile` refuses to overwrite a binary file (#83). Paths that pass `isTextFilePath()` skip the check. For any other path it reads the first 8192 bytes of the existing file; a NUL or invalid UTF-8 throws `Not a text file: … was left unchanged`. Missing files are created as before
+- `listDirectory` file entries carry `size` (bytes) from the `stat` the tree walk already makes
 - Shelved pitches stored in `{userData}/shelved-pitches/{slug}.md` with YAML front matter
 - Pitch Room drafts stored in `{userData}/pitch-drafts/{conversationId}/`
 - `BookWatcher.watch(slug)` switches which book directory is being monitored
