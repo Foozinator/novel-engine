@@ -1,6 +1,6 @@
 # Application — Services & Orchestration
 
-> Last updated: 2026-11-22 (#83)
+> Last updated: 2026-11-22 (#79)
 
 Everything in `src/application/`. Business logic that orchestrates infrastructure through injected interfaces.
 
@@ -419,7 +419,7 @@ Dependencies: `IFileSystemService`, `pandocPath: string`
 | Method | What It Does |
 |--------|-------------|
 | `preview(filePath)` | Reads file, converts DOCX via Pandoc if needed, runs chapter detection, returns `ImportPreview` |
-| `commit(config)` | Creates book via `IFileSystemService.createBook()`, writes each chapter as `chapters/{slug}/draft.md`, updates status to `first-draft` |
+| `commit(config)` | Creates book via `IFileSystemService.createBook()`, writes each chapter as `chapters/{slug}/draft.md`, updates status to `first-draft`. A taken title (#79) makes `createBook` throw before any chapter is written |
 
 **Key behaviors:**
 - Accepts `.md`, `.markdown`, `.txt` (as markdown) and `.docx` files
@@ -455,17 +455,19 @@ Pure utility — no class, no dependencies. Exports three functions.
 
 File: `src/application/SeriesImportService.ts`
 
-Dependencies: `IManuscriptImportService`, `ISeriesService`
+Dependencies: `IManuscriptImportService`, `ISeriesService`, `IFileSystemService`
 
 | Method | What It Does |
 |--------|-------------|
 | `preview(filePaths)` | Previews each file via `IManuscriptImportService.preview()`, wraps as `SeriesImportVolume[]`, detects common series name |
-| `commit(config)` | Creates/resolves series, imports each volume sequentially via `IManuscriptImportService.commit()`, links to series via `ISeriesService.addVolume()` |
+| `checkTitles(volumes)` | For each volume in order: a problem when its slug repeats an earlier volume's, else when `IFileSystemService.findTitleConflict()` finds a book. Messages come from `describeBookTitleConflict()` (#79) |
+| `commit(config)` | Runs `checkTitles` and throws (`Volume N: …` per line) before creating anything. Then creates/resolves series, imports each volume sequentially via `IManuscriptImportService.commit()`, links to series via `ISeriesService.addVolume()` |
 
 **Key behaviors:**
 - Series name detection: longest-common-prefix of detected titles → strip trailing noise (Book/Vol/numbers) → fallback to common parent directory → "Imported Series"
 - Sequential import: books created one at a time to avoid filesystem contention
-- No rollback on partial failure: previously imported books remain if a later one fails
+- No rollback on partial failure: previously imported books remain if a later one fails. Title conflicts are caught up front, so they never cause a partial import
+- Bypassing `checkTitles`, a taken title still can't overwrite a book: `createBook` refuses it
 - Volumes sorted by `volumeNumber` before import to ensure correct series ordering
 
 ### DataFolderImportService

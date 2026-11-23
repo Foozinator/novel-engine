@@ -8,6 +8,7 @@ import type {
   AuditResult,
   BookMeta,
   BookSummary,
+  BookTitleConflict,
   BuildResult,
   ChapterEditStatus,
   ContextDiagnostics,
@@ -56,6 +57,7 @@ import type {
   SeriesImportCommitConfig,
   SeriesImportPreview,
   SeriesImportResult,
+  SeriesImportTitleProblem,
   SeriesMeta,
   SeriesSummary,
   SourceGenerationEvent,
@@ -111,6 +113,8 @@ const api = {
     getActiveSlug: (): Promise<string> => ipcRenderer.invoke('books:getActiveSlug'),
     setActive: (slug: string): Promise<void> => ipcRenderer.invoke('books:setActive', slug),
     create: (title: string): Promise<BookMeta> => ipcRenderer.invoke('books:create', title),
+    findTitleConflict: (title: string): Promise<BookTitleConflict | null> =>
+      ipcRenderer.invoke('books:findTitleConflict', title),
     getMeta: (slug: string): Promise<BookMeta> => ipcRenderer.invoke('books:getMeta', slug),
     updateMeta: (slug: string, partial: Partial<BookMeta>): Promise<BookMeta> =>
       ipcRenderer.invoke('books:updateMeta', slug, partial),
@@ -177,6 +181,8 @@ const api = {
       ipcRenderer.invoke('import:selectFiles'),
     preview: (filePaths: string[]): Promise<SeriesImportPreview> =>
       ipcRenderer.invoke('import:seriesPreview', filePaths),
+    checkTitles: (volumes: Array<{ volumeNumber: number; title: string }>): Promise<SeriesImportTitleProblem[]> =>
+      ipcRenderer.invoke('import:seriesCheckTitles', volumes),
     commit: (config: SeriesImportCommitConfig): Promise<SeriesImportResult> =>
       ipcRenderer.invoke('import:seriesCommit', config),
   },
@@ -310,8 +316,8 @@ const api = {
     delete: (slug: string): Promise<void> => ipcRenderer.invoke('pitches:delete', slug),
     shelve: (bookSlug: string, logline?: string): Promise<ShelvedPitchMeta> =>
       ipcRenderer.invoke('pitches:shelve', bookSlug, logline),
-    restore: (pitchSlug: string): Promise<BookMeta> =>
-      ipcRenderer.invoke('pitches:restore', pitchSlug),
+    restore: (pitchSlug: string, title?: string): Promise<BookMeta> =>
+      ipcRenderer.invoke('pitches:restore', pitchSlug, title),
   },
 
   // Pitch Room
@@ -322,8 +328,8 @@ const api = {
       ipcRenderer.invoke('pitchRoom:getDraft', conversationId),
     readContent: (conversationId: string): Promise<string> =>
       ipcRenderer.invoke('pitchRoom:readContent', conversationId),
-    promote: (conversationId: string): Promise<BookMeta> =>
-      ipcRenderer.invoke('pitchRoom:promote', conversationId),
+    promote: (conversationId: string, title?: string): Promise<BookMeta> =>
+      ipcRenderer.invoke('pitchRoom:promote', conversationId, title),
     shelve: (conversationId: string, logline?: string): Promise<ShelvedPitchMeta> =>
       ipcRenderer.invoke('pitchRoom:shelve', conversationId, logline),
     discard: (conversationId: string): Promise<void> =>

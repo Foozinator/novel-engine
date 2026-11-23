@@ -36,6 +36,19 @@ export type BookSummary = BookMeta & {
   isActive: boolean;
 };
 
+/**
+ * An existing book that a new title would collide with (#79): its folder is
+ * the new book's folder, or its title differs only in case or punctuation.
+ */
+export type BookTitleConflict = {
+  /** Folder name of the existing book. */
+  slug: string;
+  /** Title from the existing book's about.json; '' when it can't be read. */
+  title: string;
+  /** True when the existing book is in `_archived/`. */
+  archived: boolean;
+};
+
 // === Series ===
 
 /** A single volume entry within a series — links a book to its position. */
@@ -951,6 +964,13 @@ export type SeriesImportCommitConfig = {
     title: string;
     chapters: DetectedChapter[];
   }>;
+};
+
+/** A volume whose title can't be used (#79): it matches an existing book or another volume. */
+export type SeriesImportTitleProblem = {
+  volumeNumber: number;
+  /** User-facing reason, ending with what to do. */
+  message: string;
 };
 
 /** Result of committing a series import. */

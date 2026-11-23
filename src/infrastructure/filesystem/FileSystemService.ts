@@ -5,6 +5,7 @@ import type {
   BookMeta,
   BookStatus,
   BookSummary,
+  BookTitleConflict,
   FileEntry,
   FileManifestItem,
   ManuscriptAssembly,
@@ -14,7 +15,14 @@ import type {
   ShelvedPitch,
   ShelvedPitchMeta,
 } from '@domain/types';
-import { CLAUDE_PROJECT_CONFIG_DIR, PITCH_ROOM_SLUG, isTextFilePath } from '@domain/constants';
+import {
+  CLAUDE_PROJECT_CONFIG_DIR,
+  PITCH_ROOM_SLUG,
+  bookTitleFromPitch,
+  describeBookTitleConflict,
+  isTextFilePath,
+  slugifyBookTitle,
+} from '@domain/constants';
 import { resolveBookPath, safeSegment } from './bookPaths';
 
 const VALID_COVER_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
@@ -159,6 +167,22 @@ export class FileSystemService implements IFileSystemService {
     const slug = this.slugify(title);
     const bookRoot = resolveBookPath(this.booksDir, slug);
 
+    // Never write into an existing book, live or archived (#79).
+    const conflict = await this.findTitleConflict(title);
+    if (conflict) throw new Error(describeBookTitleConflict(title, conflict));
+
+    // Claim the folder with a non-recursive mkdir, so a folder that appeared
+    // after the check above fails with EEXIST instead of being reused.
+    await fs.mkdir(this.booksDir, { recursive: true });
+    try {
+      await fs.mkdir(bookRoot);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+        throw new Error(describeBookTitleConflict(title, { slug, title: '', archived: false }));
+      }
+      throw err;
+    }
+
     // Create directory tree
     await fs.mkdir(path.join(bookRoot, 'source'), { recursive: true });
     await fs.mkdir(path.join(bookRoot, 'chapters'), { recursive: true });
@@ -208,6 +232,57 @@ export class FileSystemService implements IFileSystemService {
     await this.setActiveBook(slug);
 
     return meta;
+  }
+
+  async findTitleConflict(title: string): Promise<BookTitleConflict | null> {
+    return this.findSlugConflict(this.slugify(title));
+  }
+
+  /**
+   * The live or archived book whose folder is `slug` in any case, or whose
+   * about.json title slugifies to `slug`. `exceptLiveSlug` is a book being
+   * renamed, which must not conflict with itself.
+   */
+  private async findSlugConflict(slug: string, exceptLiveSlug?: string): Promise<BookTitleConflict | null> {
+    if (!slug) return null;
+    const scopes: Array<{ dir: string; archived: boolean }> = [
+      { dir: this.booksDir, archived: false },
+      { dir: path.join(this.booksDir, '_archived'), archived: true },
+    ];
+
+    for (const { dir, archived } of scopes) {
+      let entries: string[];
+      try {
+        entries = await fs.readdir(dir);
+      } catch {
+        continue; // ENOENT: no books, or no archive, yet
+      }
+
+      for (const entry of entries) {
+        if (!archived && entry === exceptLiveSlug) continue;
+        const sameFolder = entry.toLowerCase() === slug;
+        // Reserved folders (_archived, _pitches, __pitch-room__, dotfiles) hold
+        // no books, and a slug never starts with either character.
+        if (!sameFolder && (entry.startsWith('_') || entry.startsWith('.'))) continue;
+
+        const existingTitle = await this.readTitle(path.join(dir, entry));
+        if (sameFolder || (existingTitle && this.slugify(existingTitle) === slug)) {
+          return { slug: entry, title: existingTitle ?? '', archived };
+        }
+      }
+    }
+    return null;
+  }
+
+  /** Title in `<bookDir>/about.json`, or null when it is missing or unreadable. */
+  private async readTitle(bookDir: string): Promise<string | null> {
+    try {
+      const raw = await fs.readFile(path.join(bookDir, 'about.json'), 'utf-8');
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      return typeof parsed.title === 'string' ? parsed.title : null;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -269,11 +344,10 @@ export class FileSystemService implements IFileSystemService {
       const oldDir = resolveBookPath(this.booksDir, slug);
       const newDir = path.join(this.booksDir, newSlug);
 
-      try {
-        await fs.access(newDir);
-        throw new Error(`Cannot rename book: a book with slug "${newSlug}" already exists`);
-      } catch (err) {
-        if (err instanceof Error && err.message.startsWith('Cannot rename book')) throw err;
+      // Same rule as createBook: live and archived books, any case (#79).
+      const conflict = await this.findSlugConflict(newSlug, slug);
+      if (conflict) {
+        throw new Error(`Cannot rename book: ${describeBookTitleConflict(partial.title ?? '', conflict)}`);
       }
 
       await fs.rename(oldDir, newDir);
@@ -947,11 +1021,12 @@ export class FileSystemService implements IFileSystemService {
     };
   }
 
-  async restorePitch(pitchSlug: string): Promise<BookMeta> {
+  async restorePitch(pitchSlug: string, title?: string): Promise<BookMeta> {
     const pitch = await this.readShelvedPitch(pitchSlug);
 
-    // Create a new book with the pitch title
-    const bookMeta = await this.createBook(pitch.title);
+    // Create a new book with the pitch title, or the title the user chose
+    // after a conflict. createBook refuses an existing book.
+    const bookMeta = await this.createBook(title?.trim() || pitch.title);
 
     // Write the pitch content to the new book's source/pitch.md
     await this.writeFile(bookMeta.slug, 'source/pitch.md', pitch.content);
@@ -1021,12 +1096,12 @@ export class FileSystemService implements IFileSystemService {
     }
   }
 
-  async promotePitchToBook(conversationId: string): Promise<BookMeta> {
+  async promotePitchToBook(conversationId: string, titleOverride?: string): Promise<BookMeta> {
     const pitchContent = await this.readPitchDraftContent(conversationId);
 
-    // Extract title from first heading
-    const titleMatch = pitchContent.match(/^#\s+(.+)$/m);
-    const title = titleMatch?.[1]?.trim() || 'Untitled Book';
+    // Title from the first heading, unless the user chose another title
+    // after a conflict. createBook refuses an existing book.
+    const title = titleOverride?.trim() || bookTitleFromPitch(pitchContent);
 
     // Create a real book
     const bookMeta = await this.createBook(title);
@@ -1279,10 +1354,7 @@ export class FileSystemService implements IFileSystemService {
   }
 
   private slugify(title: string): string {
-    return title
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
+    return slugifyBookTitle(title);
   }
 
   private countWordsInText(text: string): number {

@@ -13,6 +13,7 @@ import type {
   BookMeta,
   BookStatistics,
   BookSummary,
+  BookTitleConflict,
   BuildResult,
   ChapterEditStatus,
   ContextDiagnostics,
@@ -64,6 +65,7 @@ import type {
   SeriesImportCommitConfig,
   SeriesImportPreview,
   SeriesImportResult,
+  SeriesImportTitleProblem,
   SeriesMeta,
   SeriesSummary,
   ShelvedPitch,
@@ -250,7 +252,17 @@ export interface IFileSystemService {
   listBooks(): Promise<BookSummary[]>;
   getActiveBookSlug(): Promise<string>;
   setActiveBook(slug: string): Promise<void>;
+  /**
+   * Create a book folder for `title`. Throws without writing anything when
+   * `findTitleConflict(title)` finds a live or archived book (#79).
+   */
   createBook(title: string, author?: string): Promise<BookMeta>;
+  /**
+   * The live or archived book that `title` would collide with: same folder
+   * (in any case) or a title that differs only in case or punctuation.
+   * Null when the title is free or yields no folder name.
+   */
+  findTitleConflict(title: string): Promise<BookTitleConflict | null>;
   getBookMeta(slug: string): Promise<BookMeta>;
   updateBookMeta(slug: string, partial: Partial<BookMeta>): Promise<BookMeta>;
 
@@ -303,14 +315,16 @@ export interface IFileSystemService {
   readShelvedPitch(slug: string): Promise<ShelvedPitch>;
   deleteShelvedPitch(slug: string): Promise<void>;
   shelvePitch(bookSlug: string, logline?: string): Promise<ShelvedPitchMeta>;
-  restorePitch(pitchSlug: string): Promise<BookMeta>;
+  /** Create a book from a shelved pitch; `title` overrides the pitch's own title. */
+  restorePitch(pitchSlug: string, title?: string): Promise<BookMeta>;
 
   // Pitch Room drafts
   listPitchDrafts(): Promise<PitchDraft[]>;
   getPitchDraft(conversationId: string): Promise<PitchDraft | null>;
   readPitchDraftContent(conversationId: string): Promise<string>;
   deletePitchDraft(conversationId: string): Promise<void>;
-  promotePitchToBook(conversationId: string): Promise<BookMeta>;
+  /** Create a book from a Pitch Room draft; `title` overrides the pitch's first heading. */
+  promotePitchToBook(conversationId: string, title?: string): Promise<BookMeta>;
   shelvePitchDraft(conversationId: string, logline?: string): Promise<ShelvedPitchMeta>;
 
   /**
@@ -924,9 +938,17 @@ export interface ISeriesImportService {
   preview(filePaths: string[]): Promise<SeriesImportPreview>;
 
   /**
+   * Volume titles that can't be imported: each one that matches a live or
+   * archived book, or an earlier volume in `volumes` (#79). Empty when all
+   * titles are free.
+   */
+  checkTitles(volumes: Array<{ volumeNumber: number; title: string }>): Promise<SeriesImportTitleProblem[]>;
+
+  /**
    * Commit the series import: create each book, create or attach to a
    * series, and link all books as volumes.
    *
+   * Throws before creating anything when `checkTitles` reports a problem.
    * Books are created in volume order. If any individual book import
    * fails, previously imported books remain (no rollback) and the error
    * is reported in the result.

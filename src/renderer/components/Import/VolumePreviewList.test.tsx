@@ -84,4 +84,25 @@ describe('VolumePreviewList', () => {
     expect(screen.getAllByTitle('Move down')[0]).toBeEnabled();
     expect(screen.getAllByTitle('Move down')[1]).toBeDisabled();
   });
+
+  it('shows a title problem under its volume, and hides it while the volume is skipped (#79)', () => {
+    const handlers = { onUpdateTitle: vi.fn(), onToggleSkip: vi.fn(), onMoveUp: vi.fn(), onMoveDown: vi.fn() };
+    const problems = { 1: 'A book titled "Book B" already exists. Choose another title.' };
+    const { rerender } = render(
+      <VolumePreviewList volumes={[volume(0, 'Book A'), volume(1, 'Book B')]} titleProblems={problems} {...handlers} />,
+    );
+
+    expect(screen.getByRole('alert')).toHaveTextContent('A book titled "Book B" already exists.');
+    expect(screen.getByDisplayValue('Book B')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByDisplayValue('Book A')).not.toHaveAttribute('aria-invalid');
+
+    rerender(
+      <VolumePreviewList
+        volumes={[volume(0, 'Book A'), volume(1, 'Book B', { skipped: true })]}
+        titleProblems={problems}
+        {...handlers}
+      />,
+    );
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
 });

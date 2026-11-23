@@ -3,7 +3,7 @@
  * (value imports, not type-only). Permitted for pure data constants
  * with zero Node.js dependencies. See docs/architecture/ARCHITECTURE.md.
  */
-import type { AgentName, AgentMeta, AuditSeverity, CreativeAgentName, PipelinePhaseId, AppSettings, ProseFontId, ProviderId, ProviderConfig, ModelInfo } from './types';
+import type { AgentName, AgentMeta, AuditSeverity, BookTitleConflict, CreativeAgentName, PipelinePhaseId, AppSettings, ProseFontId, ProviderId, ProviderConfig, ModelInfo } from './types';
 
 // === Product Identity ===
 
@@ -253,6 +253,35 @@ export function isSafePathSegment(slug: unknown): slug is string {
     && slug !== '.'
     && slug !== '..'
     && !/[/\\:\0]/.test(slug);
+}
+
+/**
+ * Folder name for a book title: lowercase ASCII letters and digits, with each
+ * run of anything else turned into one `-`. Titles that differ only in case or
+ * punctuation share a folder, so they count as the same title (#79).
+ */
+export function slugifyBookTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+/** Title of the book a Pitch Room draft becomes: its first `# ` heading, else "Untitled Book". */
+export function bookTitleFromPitch(content: string): string {
+  return content.match(/^#\s+(.+)$/m)?.[1]?.trim() || 'Untitled Book';
+}
+
+/**
+ * User-facing message for a refused title (#79). Shared by the main process
+ * and the renderer so every caller words the conflict the same way.
+ */
+export function describeBookTitleConflict(newTitle: string, conflict: BookTitleConflict): string {
+  const who = conflict.archived ? 'An archived book' : 'A book';
+  const name = conflict.title ? `titled "${conflict.title}"` : `in folder "${conflict.slug}"`;
+  const sameText = conflict.title !== '' && conflict.title.trim() === newTitle.trim();
+  const note = sameText ? '' : ' Titles that differ only in case or punctuation count as the same.';
+  return `${who} ${name} already exists.${note} Choose another title.`;
 }
 
 // === Text Files ===

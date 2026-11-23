@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { DetectedChapter, ImportPreview, ImportResult, SourceGenerationStep } from '@domain/types';
+import { findTitleConflictMessage, ipcErrorMessage } from '../utils/bookTitle';
 
 type ImportStep = 'idle' | 'loading' | 'preview' | 'importing' | 'success' | 'generating' | 'generated' | 'error';
 
@@ -9,6 +10,8 @@ type ImportState = {
   result: ImportResult | null;
   error: string;
   title: string;
+  /** Why `title` can't be used: it matches an existing book (#79). '' when free. */
+  titleConflict: string;
   author: string;
   chapters: DetectedChapter[];
   generationSteps: SourceGenerationStep[];
@@ -31,6 +34,7 @@ const initialState = {
   result: null as ImportResult | null,
   error: '',
   title: '',
+  titleConflict: '',
   author: '',
   chapters: [] as DetectedChapter[],
   generationSteps: [] as SourceGenerationStep[],
@@ -52,10 +56,16 @@ export const useImportStore = create<ImportState>((set, get) => ({
       // Fall back to settings author name if no author detected in manuscript
       const settingsAuthor = (await window.novelEngine.settings.load()).authorName;
 
+      // A newer draft of a story in the library is the likely collision, so
+      // say so before the user reviews the chapters (#79).
+      const title = data.detectedTitle || 'Untitled';
+      const titleConflict = (await findTitleConflictMessage(title)) ?? '';
+
       set({
         step: 'preview',
         preview: data,
-        title: data.detectedTitle || 'Untitled',
+        title,
+        titleConflict,
         author: data.detectedAuthor || settingsAuthor || '',
         chapters: [...data.chapters],
       });
@@ -65,7 +75,7 @@ export const useImportStore = create<ImportState>((set, get) => ({
     }
   },
 
-  updateTitle: (title: string) => set({ title }),
+  updateTitle: (title: string) => set({ title, titleConflict: '' }),
 
   updateAuthor: (author: string) => set({ author }),
 
@@ -126,16 +136,24 @@ export const useImportStore = create<ImportState>((set, get) => ({
   },
 
   commitImport: async () => {
-    const { title, author, chapters } = get();
+    const { title, author, chapters, step } = get();
+    if (step === 'importing') return;
 
+    // 'importing' first, so a second click can't start a second commit
     set({ step: 'importing', error: '' });
+
+    // Back to the preview so the user can choose another title (#79)
+    const titleConflict = await findTitleConflictMessage(title);
+    if (titleConflict) {
+      set({ step: 'preview', titleConflict });
+      return;
+    }
 
     try {
       const result = await window.novelEngine.import.commit({ title, author, chapters });
       set({ step: 'success', result });
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      set({ step: 'error', error: message });
+      set({ step: 'error', error: ipcErrorMessage(err, 'Import failed') });
     }
   },
 

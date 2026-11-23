@@ -5,6 +5,7 @@ import { usePitchRoomStore } from '../../stores/pitchRoomStore';
 import { usePitchShelfStore } from '../../stores/pitchShelfStore';
 import { useViewStore } from '../../stores/viewStore';
 import { Icon } from '../common/Icon';
+import { BookTitleModal } from '../common/BookTitleModal';
 
 function formatRelativeTime(isoDate: string): string {
   const diffMs = Date.now() - new Date(isoDate).getTime();
@@ -26,20 +27,34 @@ function ShelvedPitchRow({ pitch }: { pitch: ShelvedPitchMeta }): React.ReactEle
   const setActiveBook = useBookStore((s) => s.setActiveBook);
   const { navigate } = useViewStore();
   const [confirm, setConfirm] = useState<'delete' | 'restore' | null>(null);
+  /** Set while the pitch's title is taken (#79): the title and why, for the retitle modal. */
+  const [retitle, setRetitle] = useState<{ title: string; message: string } | null>(null);
 
   const shelvedDate = pitch.shelvedAt
     ? new Date(pitch.shelvedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
     : '';
 
+  const openRestoredBook = async (bookSlug: string): Promise<void> => {
+    await setActiveBook(bookSlug);
+    navigate('workspace');
+  };
+
   const handleRestore = async (): Promise<void> => {
-    try {
-      const bookSlug = await restorePitch(pitch.slug);
-      setConfirm(null);
-      await setActiveBook(bookSlug);
-      navigate('workspace');
-    } catch (err) {
-      console.error('Failed to restore pitch:', err);
+    const result = await restorePitch(pitch.slug);
+    setConfirm(null);
+    if (result.ok) {
+      await openRestoredBook(result.slug);
+    } else if (result.takenTitle !== undefined) {
+      setRetitle({ title: result.takenTitle, message: result.message });
     }
+  };
+
+  const handleRetitle = async (title: string): Promise<string | null> => {
+    const result = await restorePitch(pitch.slug, title);
+    if (!result.ok) return result.message;
+    setRetitle(null);
+    await openRestoredBook(result.slug);
+    return null;
   };
 
   const handleDelete = async (): Promise<void> => {
@@ -104,6 +119,17 @@ function ShelvedPitchRow({ pitch }: { pitch: ShelvedPitchMeta }): React.ReactEle
             Delete
           </button>
         </div>
+      )}
+
+      {retitle && (
+        <BookTitleModal
+          heading="Choose another title"
+          submitLabel="Create Book"
+          initialTitle={retitle.title}
+          initialError={retitle.message}
+          onClose={() => setRetitle(null)}
+          onSubmit={handleRetitle}
+        />
       )}
     </div>
   );

@@ -642,7 +642,7 @@ async function initializeApp(): Promise<void> {
   });
   const findReplace = new FindReplaceService(fs, version);
   const manuscriptImport = new ManuscriptImportService(fs, pandocPath);
-  const seriesImport = new SeriesImportService(manuscriptImport, series);
+  const seriesImport = new SeriesImportService(manuscriptImport, series, fs);
   const dataFolderImport = new DataFolderImportService(
     db,
     series,

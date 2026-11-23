@@ -1,6 +1,6 @@
 # Architecture — Novel Engine Spur
 
-> Last updated: 2026-11-22 (#81)
+> Last updated: 2026-11-22 (#79)
 
 Electron + React 18 + TypeScript 5 + Tailwind v4 + Zustand + better-sqlite3 + Claude Code CLI + Codex CLI + Ollama CLI + Pandoc
 
@@ -137,6 +137,7 @@ src/
     ├── App.tsx                              # Root component, onboarding gate
     ├── main.tsx                             # React 18 createRoot entry
     ├── utils/
+    │   ├── bookTitle.ts                     # findTitleConflictMessage(), ipcErrorMessage(), PitchToBookResult (#79)
     │   └── markdown.ts                      # renderMarkdown()/sanitizeHtml(): marked + DOMPurify for every HTML sink
     ├── stores/
     │   ├── settingsStore.ts
@@ -162,7 +163,7 @@ src/
     ├── tours/
     │   └── tourDefinitions.ts            # Step arrays for welcome, first-book, pipeline-intro tours
     ├── components/
-    │   ├── common/                          # Tooltip, GuidedTourOverlay
+    │   ├── common/                          # Tooltip, GuidedTourOverlay, BookTitleModal
     │   ├── Layout/                          # AppLayout, Sidebar, TitleBar, ResizeHandle
     │   ├── Onboarding/                      # OnboardingWizard
     │   ├── Settings/                        # SettingsView
@@ -253,7 +254,8 @@ ManuscriptImportService
 
 SeriesImportService
 ├── IManuscriptImportService (ManuscriptImportService)
-└── ISeriesService (SeriesService)
+├── ISeriesService (SeriesService)
+└── IFileSystemService (FileSystemService)
 
 DataFolderImportService
 ├── IDatabaseService (DatabaseService)
@@ -371,6 +373,8 @@ Chromium `sessionData` follows `userData`, so renderer localStorage is per data 
 The fork ships as **Novel Engine Spur** (`APP_NAME` in `src/domain/constants.ts`, `productName` in `package.json`). Packaging IDs all differ from upstream so both install side by side: executable `novel-engine-spur`, bundle ID `io.github.foozinator.novel-engine-spur`, Squirrel `NovelEngineSpur`, deb/rpm `novel-engine-spur`, artifacts `Novel-Engine-Spur-{version}-{platform}-{arch}.{ext}`. Code identifiers and on-disk names keep the original name so data folders stay compatible with upstream: `window.novelEngine`, `novel-engine.db`, `novel-asset://`, `novel-engine:*` localStorage keys, `NOVEL_ENGINE_DATA_DIR`.
 
 ### Book Directory Structure
+
+`{slug}` is `slugifyBookTitle(title)`. One slug is one book: creating, importing or promoting a book whose title matches a live or archived book (same folder in any case, or a title differing only in case or punctuation) is refused, never merged (#79).
 
 ```
 {userData}/

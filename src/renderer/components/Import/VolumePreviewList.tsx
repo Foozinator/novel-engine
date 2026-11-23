@@ -2,6 +2,8 @@ import type { SeriesImportVolume } from '@domain/types';
 
 type Props = {
   volumes: SeriesImportVolume[];
+  /** Why a volume's title can't be used, keyed by `SeriesImportVolume.index` (#79). */
+  titleProblems?: Record<number, string>;
   onUpdateTitle: (index: number, title: string) => void;
   onToggleSkip: (index: number) => void;
   onMoveUp: (index: number) => void;
@@ -10,6 +12,7 @@ type Props = {
 
 export function VolumePreviewList({
   volumes,
+  titleProblems = {},
   onUpdateTitle,
   onToggleSkip,
   onMoveUp,
@@ -42,9 +45,22 @@ export function VolumePreviewList({
               value={vol.preview.detectedTitle || ''}
               onChange={(e) => onUpdateTitle(vol.index, e.target.value)}
               disabled={vol.skipped}
-              className="w-full bg-transparent text-sm font-medium text-zinc-900 dark:text-zinc-100 border-b border-transparent hover:border-zinc-300 dark:hover:border-zinc-700 focus:border-blue-500 outline-none py-0.5 disabled:opacity-50"
+              aria-invalid={titleProblems[vol.index] ? true : undefined}
+              aria-describedby={titleProblems[vol.index] ? `volume-title-problem-${vol.index}` : undefined}
+              className={`w-full bg-transparent text-sm font-medium text-zinc-900 dark:text-zinc-100 border-b hover:border-zinc-300 dark:hover:border-zinc-700 focus:border-blue-500 outline-none py-0.5 disabled:opacity-50 ${
+                titleProblems[vol.index] ? 'border-red-400 dark:border-red-600' : 'border-transparent'
+              }`}
               placeholder="Volume title"
             />
+            {!vol.skipped && titleProblems[vol.index] && (
+              <p
+                id={`volume-title-problem-${vol.index}`}
+                role="alert"
+                className="mt-1 text-xs text-red-600 dark:text-red-400"
+              >
+                {titleProblems[vol.index]}
+              </p>
+            )}
             <div className="mt-1 flex items-center gap-3 text-xs text-zinc-500">
               <span>{vol.preview.chapters.length} ch.</span>
               <span>{vol.preview.totalWordCount.toLocaleString()} words</span>

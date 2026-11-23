@@ -1,4 +1,5 @@
 import type {
+  IFileSystemService,
   ISeriesImportService,
   IManuscriptImportService,
   ISeriesService,
@@ -7,9 +8,11 @@ import type {
   SeriesImportPreview,
   SeriesImportCommitConfig,
   SeriesImportResult,
+  SeriesImportTitleProblem,
   SeriesImportVolume,
   ImportResult,
 } from '@domain/types';
+import { describeBookTitleConflict, slugifyBookTitle } from '@domain/constants';
 
 /**
  * SeriesImportService — Orchestrates importing multiple manuscripts as a series.
@@ -24,6 +27,7 @@ export class SeriesImportService implements ISeriesImportService {
   constructor(
     private manuscriptImport: IManuscriptImportService,
     private series: ISeriesService,
+    private fileSystem: IFileSystemService,
   ) {}
 
   async preview(filePaths: string[]): Promise<SeriesImportPreview> {
@@ -70,9 +74,47 @@ export class SeriesImportService implements ISeriesImportService {
     };
   }
 
+  async checkTitles(
+    volumes: Array<{ volumeNumber: number; title: string }>,
+  ): Promise<SeriesImportTitleProblem[]> {
+    const problems: SeriesImportTitleProblem[] = [];
+    /** slug → number of the first volume that uses it */
+    const seen = new Map<string, number>();
+
+    for (const { volumeNumber, title } of volumes) {
+      const slug = slugifyBookTitle(title);
+      const earlier = seen.get(slug);
+      if (slug && earlier !== undefined) {
+        problems.push({
+          volumeNumber,
+          message:
+            `Volume ${earlier} has the same title. Titles that differ only in case or punctuation ` +
+            'count as the same. Choose another title.',
+        });
+        continue;
+      }
+      seen.set(slug, volumeNumber);
+
+      const conflict = await this.fileSystem.findTitleConflict(title);
+      if (conflict) {
+        problems.push({ volumeNumber, message: describeBookTitleConflict(title, conflict) });
+      }
+    }
+    return problems;
+  }
+
   async commit(config: SeriesImportCommitConfig): Promise<SeriesImportResult> {
     if (config.volumes.length === 0) {
       throw new Error('No volumes to import');
+    }
+
+    // 0. Refuse the whole batch before creating the series or any book when a
+    //    title matches an existing book or another volume (#79).
+    const problems = await this.checkTitles(config.volumes);
+    if (problems.length > 0) {
+      throw new Error(
+        problems.map((p) => `Volume ${p.volumeNumber}: ${p.message}`).join('\n'),
+      );
     }
 
     // 1. Create or resolve the series

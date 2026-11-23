@@ -287,6 +287,10 @@ export function registerIpcHandlers(services: {
     return meta;
   });
 
+  handle('books:findTitleConflict', (_, title: string) =>
+    services.fs.findTitleConflict(String(title ?? '')),
+  );
+
   handle('books:getMeta', (_, slug: string) => services.fs.getBookMeta(slug));
 
   handle('books:updateMeta', async (_, slug: string, partial: Partial<BookMeta>) => {
@@ -443,6 +447,10 @@ export function registerIpcHandlers(services: {
 
   handle('import:seriesPreview', (_, filePaths: string[]) =>
     services.seriesImport.preview(filePaths),
+  );
+
+  handle('import:seriesCheckTitles', (_, volumes: Array<{ volumeNumber: number; title: string }>) =>
+    services.seriesImport.checkTitles(volumes),
   );
 
   handle('import:seriesCommit', async (_, config: SeriesImportCommitConfig) => {
@@ -845,8 +853,8 @@ export function registerIpcHandlers(services: {
     services.fs.shelvePitch(bookSlug, logline),
   );
 
-  handle('pitches:restore', async (_, pitchSlug: string) => {
-    const meta = await services.fs.restorePitch(pitchSlug);
+  handle('pitches:restore', async (_, pitchSlug: string, title?: string) => {
+    const meta = await services.fs.restorePitch(pitchSlug, typeof title === 'string' ? title : undefined);
     hooks?.onActiveBookChanged?.(meta.slug);
     return meta;
   });
@@ -863,8 +871,8 @@ export function registerIpcHandlers(services: {
     services.fs.readPitchDraftContent(convId),
   );
 
-  handle('pitchRoom:promote', async (_, convId: string) => {
-    const meta = await services.fs.promotePitchToBook(convId);
+  handle('pitchRoom:promote', async (_, convId: string, title?: string) => {
+    const meta = await services.fs.promotePitchToBook(convId, typeof title === 'string' ? title : undefined);
     hooks?.onActiveBookChanged?.(meta.slug);
     return meta;
   });

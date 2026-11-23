@@ -131,4 +131,31 @@ describe('OnboardingWizard', () => {
     expect(bridge.books.create).not.toHaveBeenCalled();
     await waitFor(() => expect(useViewStore.getState().currentView).toBe('library'));
   });
+
+  it('a taken first-book title stays on the ready step with the reason (#79)', async () => {
+    const findTitleConflict = vi.fn(async (title: string) =>
+      title === 'Debut' ? { slug: 'debut', title: 'Debut', archived: false } : null,
+    );
+    const { bridge } = renderWizard({ books: { findTitleConflict } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Get Started' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Skip for now' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Next' })); // model
+    fireEvent.click(await screen.findByRole('button', { name: "Skip — I'll set this up later" }));
+
+    const input = await screen.findByPlaceholderText('My First Novel');
+    fireEvent.change(input, { target: { value: 'Debut' } });
+    const launch = screen.getByRole('button', { name: 'Launch Novel Engine Spur' });
+    fireEvent.click(launch);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('A book titled "Debut" already exists.');
+    expect(launch).toBeDisabled();
+    expect(bridge.books.create).not.toHaveBeenCalled();
+    expect(bridge.settings.update).not.toHaveBeenCalledWith({ initialized: true });
+
+    fireEvent.change(input, { target: { value: 'Debut Again' } });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.click(launch);
+    await waitFor(() => expect(bridge.books.create).toHaveBeenCalledWith('Debut Again'));
+  });
 });

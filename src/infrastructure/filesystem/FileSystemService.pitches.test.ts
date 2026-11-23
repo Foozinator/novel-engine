@@ -101,11 +101,13 @@ describe('shelved pitches', () => {
     await lib.service.createBook('Restore Me');
     await lib.service.writeFile('restore-me', 'source/pitch.md', PITCH);
     await lib.service.shelvePitch('restore-me');
-    await lib.service.archiveBook('restore-me'); // make room for re-creation
+    await lib.service.archiveBook('restore-me');
 
-    const meta = await lib.service.restorePitch('restore-me');
+    // The archived book still owns the title (#79), so the pitch needs a new one
+    await expect(lib.service.restorePitch('restore-me')).rejects.toThrow(/An archived book titled "Restore Me"/);
+    const meta = await lib.service.restorePitch('restore-me', 'Restore Me Again');
 
-    expect(meta.title).toBe('Restore Me');
+    expect(meta.title).toBe('Restore Me Again');
     expect(await lib.service.readFile(meta.slug, 'source/pitch.md')).toContain('haunted throne');
     expect(await lib.service.listShelvedPitches()).toEqual([]);
   });
