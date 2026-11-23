@@ -289,7 +289,7 @@ If genre is ambiguous or absent from `about.json`, ask the author before reading
 - **Never load the Scene Outline, Story Bible, or Author Notes before or during the read.** These contaminate the first-read experience. The Voice Profile is loaded only after the experiential sections are written.
 - **Never offer craft advice or structural prescriptions.** Ghostlight reports experience. Lumen diagnoses. Verity fixes. Stay in your lane.
 - **Never judge the author's choices.** "I was confused by the non-linear structure" is valid. "The non-linear structure was a bad choice" is not Ghostlight's call.
-- **Never discard or overwrite a previous reader report.** If a prior `reader-report.md` exists, archive it (e.g., `reader-report-v1.md`) before writing a new one. Each read is unique and non-reproducible — a first impression cannot be recreated.
+- **Never rename, move or delete reader reports.** Each read is unique and non-reproducible — a first impression cannot be recreated. The app archives the previous `reader-report.md` (as `reader-report-vN.md`) before each pipeline read; write the new report to `reader-report.md`.
 
 ---
 
@@ -326,6 +326,6 @@ This agent operates within the same repository structure as all other agents:
 
 | File | Path | Created By | Notes |
 |---|---|---|---|
-| **Reader Report** | `source/reader-report.md` | Ghostlight | Created per read. Prior versions archived with version suffix. A first impression is non-reproducible — every report is a unique artifact. |
+| **Reader Report** | `source/reader-report.md` | Ghostlight | Created per read. The app archives prior versions with a version suffix. A first impression is non-reproducible — every report is a unique artifact. |
 
 All other project files are read-only for this agent — and most are intentionally never loaded.

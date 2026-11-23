@@ -138,6 +138,11 @@ describe('getBookMeta', () => {
     await seedBook(lib, 'bad', { rawAbout: 'not json at all' });
     await expect(lib.service.getBookMeta('bad')).rejects.toThrow(/malformed about\.json/);
   });
+
+  it.each(['null', '[]', '"text"', '42'])('treats about.json holding %s as malformed', async (rawAbout) => {
+    await seedBook(lib, 'not-an-object', { rawAbout });
+    await expect(lib.service.getBookMeta('not-an-object')).rejects.toThrow(/malformed about\.json/);
+  });
 });
 
 describe('updateBookMeta', () => {
@@ -175,6 +180,80 @@ describe('updateBookMeta', () => {
     await expect(lib.service.updateBookMeta('beta', { title: 'Alpha' })).rejects.toThrow(
       /already exists/
     );
+  });
+
+  describe('keeps keys that BookMeta does not model', () => {
+    // Shaped like what Spark writes; later agents read these keys.
+    const agentKeys = {
+      genre: 'Fantasy',
+      subgenre: 'Cozy fantasy',
+      audience: { age: 'adult', readers: ['cozy', 'found family'] },
+      compTitles: [{ title: 'Comp One', author: 'A. Writer', year: 2022 }],
+    };
+    const known = {
+      title: 'Kept',
+      author: 'Jo Author',
+      status: 'first-draft',
+      created: '2026-01-01T00:00:00.000Z',
+      coverImage: '',
+    };
+
+    beforeEach(async () => {
+      // One agent key ahead of the known fields, the rest after them.
+      const { genre, ...laterKeys } = agentKeys;
+      await seedBook(lib, 'kept', { rawAbout: JSON.stringify({ genre, ...known, ...laterKeys }) });
+    });
+
+    async function readAbout(slug: string): Promise<Record<string, unknown>> {
+      return JSON.parse(await readFile(path.join(lib.booksDir, slug, 'about.json'), 'utf-8'));
+    }
+
+    it.each([
+      {
+        change: 'a status change',
+        run: () => lib.service.updateBookMeta('kept', { status: 'revision-1' }),
+        slug: 'kept',
+        expected: { status: 'revision-1' },
+      },
+      {
+        change: 'a rename',
+        run: () => lib.service.updateBookMeta('kept', { title: 'Kept Renamed' }),
+        slug: 'kept-renamed',
+        expected: { title: 'Kept Renamed' },
+      },
+      {
+        change: 'a cover change',
+        run: async () => {
+          const art = path.join(lib.userDataDir, 'art.png');
+          await writeFile(art, 'fake-image-bytes', 'utf-8');
+          await lib.service.saveCoverImage('kept', art);
+        },
+        slug: 'kept',
+        expected: { coverImage: 'cover.png' },
+      },
+    ])('through $change', async ({ run, slug, expected }) => {
+      await run();
+
+      const about = await readAbout(slug);
+      expect(about).toEqual({ ...known, ...agentKeys, ...expected });
+      // Keys stay where they were, so a diff of about.json shows only the change.
+      expect(Object.keys(about)).toEqual(['genre', 'title', 'author', 'status', 'created', 'coverImage', 'subgenre', 'audience', 'compTitles']);
+    });
+
+    it('adds known fields missing from the file', async () => {
+      await seedBook(lib, 'sparse', { rawAbout: JSON.stringify({ title: 'Sparse', genre: 'Horror' }) });
+
+      await lib.service.updateBookMeta('sparse', { status: 'outlining' });
+
+      expect(await readAbout('sparse')).toEqual({
+        title: 'Sparse',
+        genre: 'Horror',
+        author: '',
+        status: 'outlining',
+        created: '',
+        coverImage: '',
+      });
+    });
   });
 });
 

@@ -378,7 +378,7 @@ Implemented by: `FileSystemService` (`src/infrastructure/filesystem/`)
 | `setActiveBook` | `(slug) => Promise<void>` | Writes active-book.json |
 | `createBook` | `(title, author?) => Promise<BookMeta>` | Creates book directory |
 | `getBookMeta` | `(slug) => Promise<BookMeta>` | Reads about.json |
-| `updateBookMeta` | `(slug, partial) => Promise<BookMeta>` | Updates about.json |
+| `updateBookMeta` | `(slug, partial) => Promise<BookMeta>` | Merges known fields into about.json; keeps all other keys |
 | `getProjectManifest` | `(slug) => Promise<ProjectManifest>` | File listing with word counts |
 | `readFile` | `(bookSlug, relativePath) => Promise<string>` | File contents |
 | `writeFile` | `(bookSlug, relativePath, content) => Promise<void>` | Throws when an existing file that isn't a known text type looks binary; the file is left unchanged |
@@ -473,7 +473,7 @@ Implemented by: `PipelineService` (`src/application/`)
 | `getAgentForPhase` | `(phaseId) => AgentName \| null` | Agent assignment |
 | `markPhaseComplete` | `(bookSlug, phaseId) => Promise<void>` | Advances book status |
 | `confirmPhaseAdvancement` | `(bookSlug, phaseId) => Promise<void>` | Confirms pending-completion |
-| `completeRevision` | `(bookSlug) => Promise<void>` | Archives revision reports |
+| `completeRevision` | `(bookSlug) => Promise<void>` | Archives the reports and plan under their next version; confirms `revision` |
 | `revertPhase` | `(bookSlug, phaseId) => Promise<void>` | Rolls back phase + subsequent |
 
 ### IBuildService
@@ -830,12 +830,14 @@ Extracted to a separate file. Zero imports — pure functions over static arrays
 | `first-draft` | First Draft | Verity | Chapters exist with >1000 total words + book status advanced |
 | `first-read` | First Read | Ghostlight | `source/reader-report.md` exists |
 | `first-assessment` | Structural Assessment | Lumen | `source/dev-report.md` exists |
-| `revision-plan-1` | Revision Plan | Forge | `source/project-tasks.md` exists |
-| `revision` | Revision | Verity | `source/reader-report-v1.md` exists (archived) |
-| `second-read` | Second Read | Ghostlight | Both `reader-report.md` AND `reader-report-v1.md` exist |
-| `second-assessment` | Second Assessment | Lumen | `source/dev-report-v1.md` exists |
+| `revision-plan-1` | Revision Plan | Forge | `project-tasks.md` + `revision-prompts.md` exist, or a plan archive (`project-tasks-vN.md` / `revision-prompts-vN.md`) exists |
+| `revision` | Revision | Verity | A `reader-report-vN.md` archive exists. Action-gated: never `pending-completion`; completed by Complete Revision |
+| `second-read` | Second Read | Ghostlight | `reader-report.md` differs (word count) from the newest `reader-report-vN.md` |
+| `second-assessment` | Second Assessment | Lumen | `dev-report.md` differs (word count) from the newest `dev-report-vN.md` |
 | `copy-edit` | Copy Edit | Sable | `source/audit-report.md` exists |
-| `revision-plan-2` | Fix Planning | Forge | `source/revision-prompts.md` AND `source/audit-report.md` exist |
+| `revision-plan-2` | Fix Planning | Forge | Live plan + `audit-report.md` + a plan archive exist, and the live plan differs from the newest archived plan |
+
+Archives (`-vN`) are written by the app (`src/application/archives.ts`), never by agents, and are never overwritten or deleted (#81).
 | `mechanical-fixes` | Mechanical Fixes | Verity | `audit-report.md` exists AND book status >= 'copy-edit' |
 | `build` | Build | (none) | `dist/output.md` exists |
 | `publish` | Publish & Audit | Quill | `source/metadata.md` exists |

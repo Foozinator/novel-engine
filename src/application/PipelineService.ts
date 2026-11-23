@@ -1,6 +1,16 @@
 import type { IFileSystemService, IPipelineService } from '@domain/interfaces';
 import type { AgentName, BookStatus, PipelinePhase, PipelinePhaseId } from '@domain/types';
 import { PIPELINE_PHASES } from '@domain/constants';
+import {
+  DEV_REPORT,
+  PLAN_FILES,
+  READER_REPORT,
+  archiveGroup,
+  archivePath,
+  archivePlan,
+  latestArchive,
+  latestPlanArchive,
+} from './archives';
 
 /**
  * Minimum word count for a file to be considered "substantive" content
@@ -70,6 +80,14 @@ export class PipelineService implements IPipelineService {
     'first-draft',
   ]);
 
+  /**
+   * Phases completed only by an explicit author action (Complete Revision).
+   * Their files never put them in 'pending-completion': until the author
+   * confirms, they stay 'active' with their usual controls (#81). Archives
+   * from earlier passes stay on disk, so files alone can't tell.
+   */
+  private static readonly ACTION_GATED: ReadonlySet<PipelinePhaseId> = new Set(['revision']);
+
   constructor(private fs: IFileSystemService) {}
 
   // ── Public API ────────────────────────────────────────────────────────────
@@ -125,7 +143,11 @@ export class PipelineService implements IPipelineService {
       } else if (index === firstIncompleteIndex) {
         // Files exist but user hasn't confirmed → pending-completion
         // Files don't exist yet → active (still working)
-        if (completionResults[index] && !confirmedPhases.has(phase.id)) {
+        if (
+          completionResults[index] &&
+          !confirmedPhases.has(phase.id) &&
+          !PipelineService.ACTION_GATED.has(phase.id)
+        ) {
           status = 'pending-completion';
         } else {
           status = 'active';
@@ -184,7 +206,7 @@ export class PipelineService implements IPipelineService {
    * - **Status-based phases** (`first-draft`, `mechanical-fixes`): advances
    *   `about.json` to the next book status.
    * - **Archive-based phase** (`revision`): delegates to `completeRevision()`
-   *   which copies the reader/dev reports to their `v1` counterparts.
+   *   which archives the reports and the plan under their next version.
    * - **File-existence phases** (all others): creates the required marker
    *   file(s) as stubs when they don't already exist. The stub content
    *   is long enough to pass every word-count threshold used by
@@ -210,7 +232,7 @@ export class PipelineService implements IPipelineService {
 
       // ── Archive-based phase ──────────────────────────────────────────────
       case 'revision':
-        // Reuse completeRevision which copies the reports to their v1 counterparts.
+        // Reuse completeRevision, which archives the reports and the plan.
         // completeRevision handles its own auto-confirm, so return early to
         // avoid double-writing pipeline-state.json.
         await this.completeRevision(bookSlug);
@@ -239,14 +261,14 @@ export class PipelineService implements IPipelineService {
         break;
 
       case 'second-read':
-        // Needs a fresh reader-report.md AND the archived reader-report-v1.md
-        await this.ensureStubFile(bookSlug, 'source/reader-report.md', 'Second Reader Report');
-        await this.ensureStubFile(bookSlug, 'source/reader-report-v1.md', 'First Reader Report (Archived)');
+        // Needs a fresh reader-report.md AND an archived earlier report
+        await this.ensureStubFile(bookSlug, READER_REPORT, 'Second Reader Report');
+        await this.ensureArchiveStub(bookSlug, READER_REPORT, 'First Reader Report (Archived)');
         break;
 
       case 'second-assessment':
-        // Detection key: dev-report-v1.md exists (the archived first assessment)
-        await this.ensureStubFile(bookSlug, 'source/dev-report-v1.md', 'First Developmental Assessment (Archived)');
+        // Detection key: an archived earlier assessment exists
+        await this.ensureArchiveStub(bookSlug, DEV_REPORT, 'First Developmental Assessment (Archived)');
         break;
 
       case 'copy-edit':
@@ -254,8 +276,8 @@ export class PipelineService implements IPipelineService {
         break;
 
       case 'revision-plan-2':
-        // Requires: project-tasks.md, revision-prompts.md, audit-report.md, project-tasks-v1.md
-        // The stubs must differ from the archived v1 copies so the word-count
+        // Requires: project-tasks.md, revision-prompts.md, audit-report.md, an archived plan
+        // The stubs must differ from the archived copies so the word-count
         // comparison in isPhaseComplete passes. ensureStubFile produces unique
         // content (includes a timestamp), so this is satisfied automatically
         // as long as the stub wasn't generated at the exact same millisecond
@@ -263,7 +285,7 @@ export class PipelineService implements IPipelineService {
         await this.ensureStubFile(bookSlug, 'source/project-tasks.md', 'Mechanical Fix Task Plan');
         await this.ensureStubFile(bookSlug, 'source/revision-prompts.md', 'Mechanical Fix Prompts');
         await this.ensureStubFile(bookSlug, 'source/audit-report.md', 'Copy Edit Audit Report');
-        await this.ensureStubFile(bookSlug, 'source/project-tasks-v1.md', 'First Revision Tasks (Archived)');
+        await this.ensureArchiveStub(bookSlug, PLAN_FILES[0], 'First Revision Tasks (Archived)');
         break;
 
       case 'build':
@@ -291,25 +313,28 @@ export class PipelineService implements IPipelineService {
   }
 
   /**
-   * Archive the revision reports to signal the revision phase is complete.
+   * Archive the revision's reports and plan to mark the revision complete.
    *
-   * Copies reader-report.md → reader-report-v1.md so the pipeline detects
-   * the revision phase as done and unlocks second-read. Also copies
-   * dev-report.md → dev-report-v1.md (if present) to pre-satisfy
-   * the second-assessment gate.
+   * Copies reader-report.md (required) and dev-report.md (if present) to
+   * their next free archive version, e.g. reader-report-v2.md. The live
+   * reports stay; second-read and second-assessment wait until the live
+   * report differs from its newest archive. The plan (project-tasks.md and
+   * revision-prompts.md) is copied the same way, so Fix Planning and the
+   * mechanical-fixes queue can tell the plan this revision ran from a new one.
+   *
+   * A file whose newest archive already holds the same content is not
+   * archived again. Earlier archives are never overwritten (#81).
    *
    * Auto-confirms the 'revision' phase — the user clicked "Complete Revision",
    * which is their explicit confirmation.
    */
   async completeRevision(bookSlug: string): Promise<void> {
-    const readerReport = await this.fs.readFile(bookSlug, 'source/reader-report.md');
-    await this.fs.writeFile(bookSlug, 'source/reader-report-v1.md', readerReport);
-
-    const devReportExists = await this.fs.fileExists(bookSlug, 'source/dev-report.md');
-    if (devReportExists) {
-      const devReport = await this.fs.readFile(bookSlug, 'source/dev-report.md');
-      await this.fs.writeFile(bookSlug, 'source/dev-report-v1.md', devReport);
+    const reader = await archiveGroup(this.fs, bookSlug, [READER_REPORT], 'copy');
+    if (!reader) {
+      throw new Error(`Cannot complete the revision: ${READER_REPORT} does not exist.`);
     }
+    await archiveGroup(this.fs, bookSlug, [DEV_REPORT], 'copy');
+    await archivePlan(this.fs, bookSlug, 'copy');
 
     // "Complete Revision" is explicit user confirmation — auto-confirm the phase.
     await this.addConfirmedPhase(bookSlug, 'revision');
@@ -319,8 +344,9 @@ export class PipelineService implements IPipelineService {
    * Revert a pipeline phase and all subsequent phases.
    *
    * Removes the target phase and every phase that comes after it from
-   * the confirmed list. For status-dependent or archive-dependent phases,
-   * also undoes the side-effects that made the phase detectable as complete.
+   * the confirmed list. For status-dependent phases, also rolls back the
+   * book status that made the phase detectable as complete. Archived reports
+   * and plans are never deleted (#81).
    */
   async revertPhase(bookSlug: string, phaseId: PipelinePhaseId): Promise<void> {
     const targetIndex = PIPELINE_PHASES.findIndex((p) => p.id === phaseId);
@@ -351,8 +377,9 @@ export class PipelineService implements IPipelineService {
    *
    * For most phases this is a no-op — the files stay on disk and the phase
    * will show as 'pending-completion' (ready to re-confirm). For phases
-   * whose completion depends on book status or archived files, we actively
-   * revert those conditions so the phase returns to 'active'.
+   * whose completion depends on book status, we revert the status so the
+   * phase returns to 'active'. Revision needs nothing here: it is
+   * action-gated, so it returns to 'active' once unconfirmed.
    */
   private async undoPhaseSideEffects(bookSlug: string, phaseId: PipelinePhaseId): Promise<void> {
     switch (phaseId) {
@@ -373,32 +400,13 @@ export class PipelineService implements IPipelineService {
         break;
       }
 
-      // ── Archive-based phase — remove archived v1 files ──────────────────
-      case 'revision': {
-        // Delete the v1 archive files so the phase detection sees revision
-        // as incomplete. The live report files are left intact.
-        await this.safeDelete(bookSlug, 'source/reader-report-v1.md');
-        await this.safeDelete(bookSlug, 'source/dev-report-v1.md');
-        break;
-      }
-
       // ── All other phases: no side-effects to undo ───────────────────────
+      // Revision's archives stay: earlier reports are never deleted (#81).
       // The detection files stay on disk. The phase will show as
       // 'pending-completion' (files exist, not confirmed). The user can
       // either re-confirm with "Advance →" or manually delete files.
       default:
         break;
-    }
-  }
-
-  /**
-   * Delete a file, silently ignoring ENOENT (file does not exist).
-   */
-  private async safeDelete(bookSlug: string, relativePath: string): Promise<void> {
-    try {
-      await this.fs.deleteFile(bookSlug, relativePath);
-    } catch {
-      // File doesn't exist — that's fine
     }
   }
 
@@ -465,6 +473,14 @@ export class PipelineService implements IPipelineService {
   }
 
   /**
+   * Create a stub archive (version 1) for `livePath` only when it has no archive yet.
+   */
+  private async ensureArchiveStub(bookSlug: string, livePath: string, title: string): Promise<void> {
+    if (await latestArchive(this.fs, bookSlug, livePath)) return;
+    await this.fs.writeFile(bookSlug, archivePath(livePath, 1), this.buildStubContent(title));
+  }
+
+  /**
    * Build a stub file that satisfies every pipeline word-count threshold.
    *
    * The stub clearly labels itself as a manual advancement marker so authors
@@ -519,8 +535,8 @@ export class PipelineService implements IPipelineService {
    * file cannot be read.
    *
    * This is used by the `second-read` and `second-assessment` phase checks to
-   * prevent the pipeline from advancing when `completeRevision()` has copied
-   * a report to its v1 counterpart but no new report has been generated yet.
+   * prevent the pipeline from advancing when `completeRevision()` has archived
+   * a report but no new report has been generated yet.
    */
   private async filesHaveDifferentWordCount(
     bookSlug: string,
@@ -594,66 +610,46 @@ export class PipelineService implements IPipelineService {
 
       case 'revision-plan-1': {
         // Forge produces TWO files: project-tasks.md and revision-prompts.md.
-        // Both must exist for the phase to be complete.
-        //
-        // Additionally, when an archived v1 copy exists (from a previous revision
-        // queue), the live project-tasks.md must have a different word count than
-        // the archive — proving Forge actually re-ran rather than the pipeline
-        // seeing stale files left over from the first cycle.
-        //
-        // First run (no archive): both files exist → complete.
-        // Second+ run (archive exists): both files exist AND word counts differ → complete.
-        const [hasTasks, hasPrompts, hasArchivedTasks] = await Promise.all([
-          this.hasSubstantiveFile(bookSlug, 'source/project-tasks.md'),
-          this.hasSubstantiveFile(bookSlug, 'source/revision-prompts.md'),
-          this.fs.fileExists(bookSlug, 'source/project-tasks-v1.md'),
+        // Either both exist, or an archived plan proves a plan was made.
+        // The app moves the live plan into the archive when Forge runs
+        // again (#81); a run in progress must not send the pipeline back here.
+        const [hasTasks, hasPrompts, archive] = await Promise.all([
+          this.hasSubstantiveFile(bookSlug, PLAN_FILES[0]),
+          this.hasSubstantiveFile(bookSlug, PLAN_FILES[1]),
+          latestPlanArchive(this.fs, bookSlug),
         ]);
-        if (!hasTasks || !hasPrompts) return false;
-        // If no archive exists, this is the first run — both files present is sufficient
-        if (!hasArchivedTasks) return true;
-        // Archive exists — verify Forge regenerated (live differs from archive)
-        return this.filesHaveDifferentWordCount(
-          bookSlug,
-          'source/project-tasks.md',
-          'source/project-tasks-v1.md',
-        );
+        return (hasTasks && hasPrompts) || archive !== null;
       }
 
       case 'revision':
-        return this.fs.fileExists(bookSlug, 'source/reader-report-v1.md');
+        // Complete Revision archives the reader report. The phase is also
+        // action-gated (see ACTION_GATED), so an earlier archive alone never
+        // offers to advance.
+        return (await latestArchive(this.fs, bookSlug, READER_REPORT)) !== null;
 
       case 'second-read': {
-        // Both the live reader report AND its archived v1 copy must exist.
-        // Additionally, the live report must differ from the archive — if the
+        // The live reader report must differ from its newest archive — if the
         // word counts match, the archive was just copied and no new report has
         // been generated yet (Ghostlight hasn't done a second read).
-        const [hasReport, hasArchived] = await Promise.all([
-          this.fs.fileExists(bookSlug, 'source/reader-report.md'),
-          this.fs.fileExists(bookSlug, 'source/reader-report-v1.md'),
+        const [hasReport, archived] = await Promise.all([
+          this.fs.fileExists(bookSlug, READER_REPORT),
+          latestArchive(this.fs, bookSlug, READER_REPORT),
         ]);
-        if (!hasReport || !hasArchived) return false;
-        return this.filesHaveDifferentWordCount(
-          bookSlug,
-          'source/reader-report.md',
-          'source/reader-report-v1.md',
-        );
+        if (!hasReport || !archived) return false;
+        return this.filesHaveDifferentWordCount(bookSlug, READER_REPORT, archived);
       }
 
       case 'second-assessment': {
-        // The archived dev-report-v1.md must exist AND the live dev-report.md
-        // must have a different word count — proving Lumen actually wrote a new
-        // assessment after revision rather than the pipeline seeing the archive
-        // copy that completeRevision() created.
-        const [hasDevReport, hasArchivedDev] = await Promise.all([
-          this.fs.fileExists(bookSlug, 'source/dev-report.md'),
-          this.fs.fileExists(bookSlug, 'source/dev-report-v1.md'),
+        // An archived assessment must exist AND the live dev-report.md must
+        // differ from the newest one — proving Lumen wrote a new assessment
+        // after revision rather than the pipeline seeing the copy that
+        // completeRevision() archived.
+        const [hasDevReport, archived] = await Promise.all([
+          this.fs.fileExists(bookSlug, DEV_REPORT),
+          latestArchive(this.fs, bookSlug, DEV_REPORT),
         ]);
-        if (!hasDevReport || !hasArchivedDev) return false;
-        return this.filesHaveDifferentWordCount(
-          bookSlug,
-          'source/dev-report.md',
-          'source/dev-report-v1.md',
-        );
+        if (!hasDevReport || !archived) return false;
+        return this.filesHaveDifferentWordCount(bookSlug, DEV_REPORT, archived);
       }
 
       case 'copy-edit':
@@ -664,35 +660,28 @@ export class PipelineService implements IPipelineService {
         //   1. project-tasks.md — Forge writes a new task list for mechanical fixes
         //   2. revision-prompts.md — Forge writes new session prompts for Verity
         //   3. audit-report.md — signals Sable ran (copy-edit phase complete)
-        //   4. project-tasks-v1.md — confirms the first revision queue was archived,
-        //      preventing a false-positive from the old files before the first
-        //      queue is even complete.
+        //   4. an archived plan — Complete Revision archives the plan the first
+        //      revision ran, and Forge archives the live plan when it runs again.
         //
-        // Additionally, both live files must DIFFER from their archived v1 copies.
-        // Without this check, leftover files from the first cycle (e.g. if the
-        // archive's delete failed, or the file was regenerated identically) would
-        // falsely mark this phase as complete before Forge actually runs.
-        const [hasTasks, hasPrompts, hasAudit, hasArchivedTasks] = await Promise.all([
-          this.hasSubstantiveFile(bookSlug, 'source/project-tasks.md'),
-          this.hasSubstantiveFile(bookSlug, 'source/revision-prompts.md'),
+        // Both live files must also DIFFER from the newest archived plan, so the
+        // plan the first revision ran doesn't count as the fix plan. Plan and
+        // prompts are archived together; a book whose newest archive has only
+        // the task list (the old agent rule) is judged on the task list alone.
+        const [hasTasks, hasPrompts, hasAudit, archive] = await Promise.all([
+          this.hasSubstantiveFile(bookSlug, PLAN_FILES[0]),
+          this.hasSubstantiveFile(bookSlug, PLAN_FILES[1]),
           this.fs.fileExists(bookSlug, 'source/audit-report.md'),
-          this.fs.fileExists(bookSlug, 'source/project-tasks-v1.md'),
+          latestPlanArchive(this.fs, bookSlug),
         ]);
-        if (!hasTasks || !hasPrompts || !hasAudit || !hasArchivedTasks) return false;
+        if (!hasTasks || !hasPrompts || !hasAudit || !archive) return false;
 
-        // Verify both files are genuinely NEW — not leftover copies from the
-        // first cycle. Compare word counts against the archived versions.
         const [tasksDiffer, promptsDiffer] = await Promise.all([
-          this.filesHaveDifferentWordCount(
-            bookSlug,
-            'source/project-tasks.md',
-            'source/project-tasks-v1.md',
-          ),
-          this.filesHaveDifferentWordCount(
-            bookSlug,
-            'source/revision-prompts.md',
-            'source/revision-prompts-v1.md',
-          ),
+          archive.tasks
+            ? this.filesHaveDifferentWordCount(bookSlug, PLAN_FILES[0], archive.tasks)
+            : true,
+          archive.prompts
+            ? this.filesHaveDifferentWordCount(bookSlug, PLAN_FILES[1], archive.prompts)
+            : true,
         ]);
         return tasksDiffer && promptsDiffer;
       }

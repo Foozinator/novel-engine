@@ -210,7 +210,11 @@ export class FileSystemService implements IFileSystemService {
     return meta;
   }
 
-  async getBookMeta(slug: string): Promise<BookMeta> {
+  /**
+   * Reads a book's about.json as a plain object, keeping every key. Throws if
+   * the file is missing, isn't valid JSON, or isn't a JSON object.
+   */
+  private async readAboutJson(slug: string): Promise<Record<string, unknown>> {
     const aboutPath = resolveBookPath(this.booksDir, slug, 'about.json');
     let raw: string;
     try {
@@ -219,25 +223,38 @@ export class FileSystemService implements IFileSystemService {
       throw new Error(`Book "${slug}" not found: about.json does not exist at ${aboutPath}`);
     }
 
-    let parsed: Record<string, unknown>;
+    let parsed: unknown;
     try {
-      parsed = JSON.parse(raw) as Record<string, unknown>;
+      parsed = JSON.parse(raw);
     } catch {
       throw new Error(`Book "${slug}" has malformed about.json at ${aboutPath}`);
     }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error(`Book "${slug}" has malformed about.json at ${aboutPath}`);
+    }
+    return parsed as Record<string, unknown>;
+  }
 
+  private toBookMeta(slug: string, about: Record<string, unknown>): BookMeta {
     return {
       slug,
-      title: String(parsed.title ?? ''),
-      author: String(parsed.author ?? ''),
-      status: String(parsed.status ?? 'scaffolded') as BookStatus,
-      created: String(parsed.created ?? ''),
-      coverImage: String(parsed.coverImage ?? ''),
+      title: String(about.title ?? ''),
+      author: String(about.author ?? ''),
+      status: String(about.status ?? 'scaffolded') as BookStatus,
+      created: String(about.created ?? ''),
+      coverImage: String(about.coverImage ?? ''),
     };
   }
 
+  async getBookMeta(slug: string): Promise<BookMeta> {
+    return this.toBookMeta(slug, await this.readAboutJson(slug));
+  }
+
   async updateBookMeta(slug: string, partial: Partial<BookMeta>): Promise<BookMeta> {
-    const existing = await this.getBookMeta(slug);
+    // Keep the whole parsed file: agents add keys BookMeta doesn't model
+    // (genre, subgenre, audience, comp titles) and later agents read them.
+    const about = await this.readAboutJson(slug);
+    const existing = this.toBookMeta(slug, about);
 
     const newSlug = partial.title ? this.slugify(partial.title) : slug;
     let currentSlug = slug;
@@ -273,7 +290,14 @@ export class FileSystemService implements IFileSystemService {
     await fs.writeFile(
       aboutPath,
       JSON.stringify(
-        { title: existing.title, author: existing.author, status: existing.status, created: existing.created, coverImage: existing.coverImage },
+        {
+          ...about,
+          title: existing.title,
+          author: existing.author,
+          status: existing.status,
+          created: existing.created,
+          coverImage: existing.coverImage,
+        },
         null,
         2,
       ),

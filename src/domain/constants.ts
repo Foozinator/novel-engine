@@ -1487,7 +1487,7 @@ Also read for context:
 
 Enumerate all chapter directories under chapters/.
 
-If source/project-tasks.md already exists, this is a second revision cycle — execute Report Archival (rename existing files to v1 archives) before proceeding.
+The app has already archived any earlier plan (as source/project-tasks-vN.md, source/revision-prompts-vN.md and source/session-handoffs-vN/). Do not rename, move or delete files yourself.
 
 Produce the complete phased task list following your system prompt instructions:
 - Phase 0: Author Decisions (blockers)
