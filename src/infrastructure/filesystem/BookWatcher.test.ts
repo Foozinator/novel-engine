@@ -49,6 +49,21 @@ describe('BookWatcher', () => {
     expect(paths.some((p) => p.includes('draft.md'))).toBe(true);
   });
 
+  it('reports nested paths with / separators on every platform', async () => {
+    await mkdir(path.join(booksDir, 'my-book', 'chapters', '01-one'), { recursive: true });
+    await startWatching('my-book');
+
+    await writeFile(path.join(booksDir, 'my-book', 'chapters', '01-one', 'draft.md'), 'v1', 'utf-8');
+
+    await vi.waitFor(
+      () => {
+        expect(onChange.mock.calls.flatMap((call) => call[0])).toContain('chapters/01-one/draft.md');
+      },
+      { timeout: 3000 }
+    );
+    expect(onChange.mock.calls.flatMap((call) => call[0]).some((p) => p.includes('\\'))).toBe(false);
+  });
+
   it('ignores filesystem noise like .DS_Store', async () => {
     await startWatching('my-book');
 

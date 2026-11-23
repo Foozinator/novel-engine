@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { structuredPatch } from 'diff';
+import { toStoredBookPath } from '@domain/constants';
 import type { IDatabaseService, IFileSystemService, IVersionService } from '@domain/interfaces';
 import type {
   ChapterEditStatus,
@@ -17,6 +18,12 @@ const VERSIONABLE_EXTENSIONS = new Set(['.md', '.json']);
 /** Max rendered diff lines per chapter in the author-edits context section. */
 const AUTHOR_EDITS_MAX_DIFF_LINES = 120;
 
+/**
+ * File version history. Rows are keyed by the stored path form (`/`
+ * separators, see `toStoredBookPath`), whatever form a caller passes, so
+ * Windows paths from the watcher or an older renderer land in the same
+ * history. Disk reads and writes still use the caller's path.
+ */
 export class VersionService implements IVersionService {
   constructor(
     private db: IDatabaseService,
@@ -48,18 +55,19 @@ export class VersionService implements IVersionService {
   ): Promise<FileVersion | null> {
     if (!this.isVersionable(filePath)) return null;
 
+    const storedPath = toStoredBookPath(filePath);
     const contentHash = this.hashContent(content);
     const byteSize = Buffer.byteLength(content, 'utf-8');
 
     // Dedup: check if latest version has the same hash
-    const latest = this.db.getLatestFileVersion(bookSlug, filePath);
+    const latest = this.db.getLatestFileVersion(bookSlug, storedPath);
     if (latest && latest.contentHash === contentHash) {
       return null; // Content unchanged — no new version
     }
 
     return this.db.insertFileVersion({
       bookSlug,
-      filePath,
+      filePath: storedPath,
       content,
       contentHash,
       byteSize,
@@ -73,7 +81,7 @@ export class VersionService implements IVersionService {
     limit = 50,
     offset = 0,
   ): Promise<FileVersionSummary[]> {
-    return this.db.listFileVersions(bookSlug, filePath, limit, offset);
+    return this.db.listFileVersions(bookSlug, toStoredBookPath(filePath), limit, offset);
   }
 
   async getVersion(versionId: number): Promise<FileVersion | null> {
@@ -123,11 +131,12 @@ export class VersionService implements IVersionService {
     filePath: string,
     versionId: number,
   ): Promise<FileVersion> {
+    const storedPath = toStoredBookPath(filePath);
     const targetVersion = this.db.getFileVersion(versionId);
     if (!targetVersion) {
       throw new Error(`Version ${versionId} not found`);
     }
-    if (targetVersion.bookSlug !== bookSlug || targetVersion.filePath !== filePath) {
+    if (targetVersion.bookSlug !== bookSlug || targetVersion.filePath !== storedPath) {
       throw new Error(`Version ${versionId} does not belong to ${bookSlug}/${filePath}`);
     }
 
@@ -141,7 +150,7 @@ export class VersionService implements IVersionService {
 
     return this.db.insertFileVersion({
       bookSlug,
-      filePath,
+      filePath: storedPath,
       content: targetVersion.content,
       contentHash,
       byteSize,
@@ -150,7 +159,7 @@ export class VersionService implements IVersionService {
   }
 
   async getVersionCount(bookSlug: string, filePath: string): Promise<number> {
-    return this.db.countFileVersions(bookSlug, filePath);
+    return this.db.countFileVersions(bookSlug, toStoredBookPath(filePath));
   }
 
   async pruneVersions(bookSlug: string, keepCount = DEFAULT_KEEP_COUNT): Promise<number> {
@@ -166,7 +175,8 @@ export class VersionService implements IVersionService {
     bookSlug: string,
     filePath: string,
   ): Promise<FileDiff | null> {
-    const baseline = this.db.getLatestFileVersionBySource(bookSlug, filePath, 'agent');
+    const storedPath = toStoredBookPath(filePath);
+    const baseline = this.db.getLatestFileVersionBySource(bookSlug, storedPath, 'agent');
     if (!baseline) return null;
 
     let current: string;
@@ -179,7 +189,7 @@ export class VersionService implements IVersionService {
     const currentHash = this.hashContent(current);
     if (currentHash === baseline.contentHash) return null;
 
-    const hunks = this.computeDiff(baseline.content, current, filePath);
+    const hunks = this.computeDiff(baseline.content, current, storedPath);
 
     let totalAdditions = 0;
     let totalDeletions = 0;
@@ -192,11 +202,11 @@ export class VersionService implements IVersionService {
 
     // Synthetic summary for "current disk content" — id: -1 sentinel because the
     // disk state may not correspond to a stored snapshot.
-    const latestUser = this.db.getLatestFileVersionBySource(bookSlug, filePath, 'user');
+    const latestUser = this.db.getLatestFileVersionBySource(bookSlug, storedPath, 'user');
     const newVersion: FileVersionSummary = {
       id: -1,
       bookSlug,
-      filePath,
+      filePath: storedPath,
       contentHash: currentHash,
       byteSize: Buffer.byteLength(current, 'utf-8'),
       source: 'user',

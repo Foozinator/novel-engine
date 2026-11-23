@@ -134,4 +134,30 @@ describe('runMigrations', () => {
     expect(tableNames()).toContain('word_count_snapshots');
     expect(tableNames()).not.toContain('file_versions');
   });
+
+  it('rewrites \\ in file_versions paths to / and keeps row ids (v5)', () => {
+    db.exec(`
+      CREATE TABLE schema_version (
+        version INTEGER NOT NULL,
+        applied_at TEXT NOT NULL DEFAULT (datetime('now')),
+        description TEXT NOT NULL DEFAULT ''
+      );
+      INSERT INTO schema_version (version) VALUES (4);
+      CREATE TABLE file_versions (id INTEGER PRIMARY KEY AUTOINCREMENT, book_slug TEXT NOT NULL, file_path TEXT NOT NULL);
+    `);
+    const insert = db.prepare('INSERT INTO file_versions (book_slug, file_path) VALUES (?, ?)');
+    insert.run('b', 'chapters\\01-a\\draft.md');
+    insert.run('b', 'chapters/01-a/draft.md');
+    insert.run('b', 'about.json');
+    insert.run('b', 'chapters\\01-a\\draft.md');
+
+    runMigrations(db);
+
+    expect(db.prepare('SELECT id, file_path FROM file_versions ORDER BY id').all()).toEqual([
+      { id: 1, file_path: 'chapters/01-a/draft.md' },
+      { id: 2, file_path: 'chapters/01-a/draft.md' },
+      { id: 3, file_path: 'about.json' },
+      { id: 4, file_path: 'chapters/01-a/draft.md' },
+    ]);
+  });
 });

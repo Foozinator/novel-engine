@@ -113,6 +113,16 @@ export const BOOK_HISTORY_DIR = '.novel-engine';
 /** Per-book history snapshot file inside BOOK_HISTORY_DIR. */
 export const BOOK_HISTORY_FILE = 'history.sqlite';
 
+/**
+ * The stored form of a book-relative path: `/` separators on every platform.
+ * Version history keys rows by this form, so a data folder made on Windows
+ * still works on Linux. `\` is treated as a separator, since Windows file
+ * names can't contain it.
+ */
+export function toStoredBookPath(relativePath: string): string {
+  return relativePath.replace(/\\/g, '/');
+}
+
 // Creative agents only — excludes Wrangler (used for UI agent lists)
 export const CREATIVE_AGENT_NAMES: CreativeAgentName[] = ['Spark', 'Verity', 'Ghostlight', 'Lumen', 'Sable', 'Forge', 'Quill'];
 

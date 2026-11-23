@@ -117,6 +117,11 @@ export function importBookHistory(db: Database.Database, srcFile: string, target
       mergeTable(db, 'messages', { dropId: false, slugColumn: false, targetSlug });
       mergeTable(db, 'token_usage', { dropId: true, slugColumn: false, targetSlug });
       mergeTable(db, 'file_versions', { dropId: true, slugColumn: true, targetSlug });
+      // A snapshot older than migration v5 can hold `\` paths (char(92)); store them with `/`.
+      db.prepare(
+        `UPDATE main.file_versions SET file_path = REPLACE(file_path, char(92), '/')
+           WHERE book_slug = ? AND id >= ? AND instr(file_path, char(92)) > 0`,
+      ).run(targetSlug, firstFileVersionId);
       mergeTable(db, 'word_count_snapshots', { dropId: true, slugColumn: true, targetSlug });
 
       const conversationIds = (db.prepare(`SELECT id FROM ${H}.conversations`).all() as { id: string }[]).map((r) => r.id);

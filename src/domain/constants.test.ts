@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CreativeAgentName } from '@domain/types';
 import {
+  toStoredBookPath,
   isVersionAtLeast,
   parseClaudeCliVersion,
   parseClaudeCliVersionError,
@@ -470,5 +471,13 @@ describe('reading font helpers', () => {
   it('defaults the reading font to Fraunces', () => {
     expect(DEFAULT_SETTINGS.proseFont).toBe('fraunces');
     expect(DEFAULT_SETTINGS.proseFontCustom).toBe('');
+  });
+});
+
+describe('toStoredBookPath', () => {
+  it('stores book paths with / separators', () => {
+    expect(toStoredBookPath('chapters\\01-one\\draft.md')).toBe('chapters/01-one/draft.md');
+    expect(toStoredBookPath('chapters/01-one/draft.md')).toBe('chapters/01-one/draft.md');
+    expect(toStoredBookPath('about.json')).toBe('about.json');
   });
 });

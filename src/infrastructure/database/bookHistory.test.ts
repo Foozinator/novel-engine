@@ -121,6 +121,20 @@ describe('book history snapshots', () => {
     expect(target.getWordCountHistory('book-a')).toEqual([]);
   });
 
+  it('stores \\ paths from an older snapshot with / separators', () => {
+    makeFileVersion(source, { bookSlug: 'book-a', filePath: 'chapters\\01\\draft.md', content: 'win agent', source: 'agent' });
+    makeFileVersion(source, { bookSlug: 'book-a', filePath: 'chapters/01/draft.md', content: 'user edit' });
+    makeFileVersion(target, { bookSlug: 'other', filePath: 'notes\\keep.md', content: 'not imported' });
+    const file = path.join(dir, 'history.sqlite');
+    source.exportBookHistory('book-a', file);
+
+    target.importBookHistory(file, 'book-a');
+
+    expect(target.getVersionedFilePaths('book-a')).toEqual(['chapters/01/draft.md']);
+    expect(target.listFileVersions('book-a', 'chapters/01/draft.md', 10, 0).map((v) => v.source)).toEqual(['user', 'agent']);
+    expect(target.getVersionedFilePaths('other')).toEqual(['notes\\keep.md']); // only imported rows change
+  });
+
   it('refuses a snapshot from a newer schema', () => {
     seed();
     const file = path.join(dir, 'history.sqlite');

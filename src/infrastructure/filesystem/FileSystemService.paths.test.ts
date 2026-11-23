@@ -46,6 +46,19 @@ describe('book file operations stay inside the book', () => {
     expect(() => lib.service.getAbsolutePath(lib.userDataDir, 'outside.txt')).toThrow(/Invalid book slug/);
   });
 
+  it('listDirectory gives nested entry paths with / separators on every platform', async () => {
+    await lib.service.writeFile('my-book', 'chapters/01-one/draft.md', 'Chapter one.');
+
+    const top = await lib.service.listDirectory('my-book');
+    const chapters = top.find((e) => e.name === 'chapters');
+    const chapter = chapters?.children?.find((e) => e.name === '01-one');
+    expect(chapter?.path).toBe('chapters/01-one');
+    expect(chapter?.children?.map((e) => e.path)).toEqual(['chapters/01-one/draft.md']);
+
+    const sub = await lib.service.listDirectory('my-book', 'chapters/01-one');
+    expect(sub.map((e) => e.path)).toEqual(['chapters/01-one/draft.md']);
+  });
+
   it('getAbsolutePath resolves in-book paths only', () => {
     expect(lib.service.getAbsolutePath('my-book', 'dist')).toBe(path.join(lib.booksDir, 'my-book', 'dist'));
     expect(() => lib.service.getAbsolutePath('my-book', '../../outside.txt')).toThrow(/outside book/);

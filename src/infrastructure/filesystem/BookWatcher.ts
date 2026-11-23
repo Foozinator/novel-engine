@@ -1,10 +1,12 @@
 import { watch, type FSWatcher } from 'node:fs';
 import path from 'node:path';
+import { toPortablePath } from './bookPaths';
 
 /**
  * Watches the active book's directory for file changes using Node's built-in
  * `fs.watch` with recursive mode. Debounces rapid changes (common during
- * agent file writes) into a single notification.
+ * agent file writes) into a single notification. Paths are book-relative
+ * with `/` separators on every platform.
  *
  * This solves the "files tab doesn't update until refresh" problem by providing
  * a reliable file change signal regardless of how files were modified — whether
@@ -44,7 +46,8 @@ export class BookWatcher {
         // Ignore common noise: .DS_Store, temporary editor files, sqlite journals
         if (this.isIgnored(filename)) return;
 
-        this.changedFiles.add(filename);
+        // fs.watch reports `\` on Windows; listeners get `/` paths.
+        this.changedFiles.add(toPortablePath(filename));
         this.scheduleNotification();
       });
 

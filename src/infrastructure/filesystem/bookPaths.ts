@@ -21,6 +21,15 @@ export function resolveBookPath(booksDir: string, slug: string, relativePath = '
   return fullPath;
 }
 
+/**
+ * Convert a relative path in the platform's own form (from `fs.watch` or
+ * `path.join`) to `/` separators. Only `sep` is converted, so on Linux and
+ * macOS a `\` inside a file name stays as it is.
+ */
+export function toPortablePath(nativeRelativePath: string, sep: string = path.sep): string {
+  return sep === '/' ? nativeRelativePath : nativeRelativePath.split(sep).join('/');
+}
+
 /** Return `value` if it is a single path segment; throw otherwise. */
 export function safeSegment(value: string, what: string): string {
   if (!isSafePathSegment(value)) {
