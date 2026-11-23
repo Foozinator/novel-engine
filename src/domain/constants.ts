@@ -56,9 +56,11 @@ export const AGENT_READ_GUIDANCE: Record<CreativeAgentName, ReadGuidance> = {
     readIfRelevant: ['source/pitch.md', 'source/scene-outline.md', 'source/story-bible.md', 'author-profile.md', 'source/revision-prompts.md', 'series-bible.md'],
     neverRead: ['source/reader-report.md', 'source/dev-report.md', 'source/audit-report.md'],
   },
+  // No series bible: it is the author's reference, which no reader has, so
+  // Ghostlight's read of a series book stays cold (#61).
   Ghostlight: {
     alwaysRead: [],
-    readIfRelevant: ['series-bible.md'],
+    readIfRelevant: [],
     neverRead: ['source/pitch.md', 'source/scene-outline.md', 'source/story-bible.md', 'author-profile.md', 'source/dev-report.md', CHAPTER_NOTES_PATTERN],
     readAfter: ['source/voice-profile.md'],
   },

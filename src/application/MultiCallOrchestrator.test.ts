@@ -43,7 +43,7 @@ function wireProviderWrites(filesPerCall: (string | null)[]): void {
   });
 }
 
-function makeOrchestrator(fsFake: FakeFileSystem): MultiCallOrchestrator {
+function makeOrchestrator(fsFake: FakeFileSystem, seriesBiblePath: string | null = null): MultiCallOrchestrator {
   return new MultiCallOrchestrator(
     makeFakeSettings(),
     makeFakeAgents(),
@@ -51,7 +51,7 @@ function makeOrchestrator(fsFake: FakeFileSystem): MultiCallOrchestrator {
     makeFakeRegistry(provider, { models: [makeModelInfo(DEFAULT_SETTINGS.model)] }),
     fsFake,
     new StreamManager(db, makeUsageRecorder().usage),
-    makeFakeSeries(),
+    makeFakeSeries(seriesBiblePath),
     makeFakeVersion()
   );
 }
@@ -418,6 +418,21 @@ describe('agent prompts and reading rules per step (#23)', () => {
     expect(task.indexOf('source/.scratch/ghostlight-read-1.md')).toBeLessThan(task.indexOf('**Step 2.**'));
     expect(task).toContain('**Step 2.** If `source/voice-profile.md` is in the file manifest, read it.');
     expect(task).toContain('- Intent vs. experience (last section, short; only if the voice profile exists)');
+  });
+
+  it('on a series book, no Ghostlight step gets the series bible; Lumen synthesis does (#61)', async () => {
+    const biblePath = '/abs/series/saga/series-bible.md';
+    orchestrator = makeOrchestrator(fs, biblePath);
+
+    const ghostlight = [...(await runAll('Ghostlight'))];
+    expect(ghostlight.length).toBeGreaterThan(1); // read step(s) + synthesis
+    for (const call of ghostlight) {
+      expect(call.systemPrompt).not.toContain(biblePath);
+      expect(call.systemPrompt).not.toContain('### Series Context');
+    }
+
+    const lumenSynthesis = (await runAll('Lumen')).at(-1)!;
+    expect(lumenSynthesis.systemPrompt).toContain(`The shared series bible is at: \`${biblePath}\``);
   });
 
   it.each(['Lumen', 'Sable'] as const)('%s read steps list each chapter\'s notes and carry the read-notes rule', async (agent) => {
