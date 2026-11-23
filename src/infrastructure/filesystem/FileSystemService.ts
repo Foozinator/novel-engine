@@ -23,7 +23,7 @@ import {
   isTextFilePath,
   slugifyBookTitle,
 } from '@domain/constants';
-import { resolveBookPath, safeSegment } from './bookPaths';
+import { resolveBookPath, safeSegment, toPortablePath } from './bookPaths';
 
 const VALID_COVER_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
 
@@ -1429,7 +1429,8 @@ export class FileSystemService implements IFileSystemService {
     const files: FileEntry[] = [];
 
     for (const name of entries) {
-      const entryRelPath = relativePath ? path.join(relativePath, name) : name;
+      // Entry paths use `/` on every platform (version history keys on them).
+      const entryRelPath = relativePath ? toPortablePath(path.join(relativePath, name)) : name;
       const fullPath = path.join(basePath, entryRelPath);
       const stat = await fs.stat(fullPath).catch(() => null);
       if (!stat) continue;

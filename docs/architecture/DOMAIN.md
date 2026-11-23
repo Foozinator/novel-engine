@@ -743,6 +743,7 @@ Implemented by: `QueryService` (`src/application/QueryService.ts`)
 | `HELPER_SLUG` | `'__helper__'` | Reserved book slug for helper conversations |
 | `BOOK_HISTORY_DIR` | `'.novel-engine'` | History dir inside a *staged* book folder (never in a live one) |
 | `BOOK_HISTORY_FILE` | `'history.sqlite'` | Per-book history snapshot file name |
+| `toStoredBookPath(relativePath)` | `(string) => string` | Stored form of a book-relative path: every `\` becomes `/`. `VersionService` keys `file_versions` rows by it |
 | `CREATIVE_AGENT_NAMES` | 7-element array | UI agent lists (excludes Wrangler) |
 | `WRANGLER_MODEL` | `'claude-sonnet-4-20250514'` | Model for plan parsing |
 | `AGENT_RESPONSE_BUFFER` | `Record<AgentName, number>` | Per-agent expected response sizes |

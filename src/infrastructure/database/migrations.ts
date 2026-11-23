@@ -8,6 +8,10 @@ export type Migration = {
   apply?: (db: Database.Database) => void;
 };
 
+function tableExists(db: Database.Database, table: string): boolean {
+  return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table);
+}
+
 /** Add a column unless the table already has it. Skips a missing table. */
 function addColumnIfMissing(db: Database.Database, table: string, column: string, definition: string): void {
   const columns = db.pragma(`table_info(${table})`) as { name: string }[];
@@ -82,6 +86,21 @@ export const MIGRATIONS: Migration[] = [
       addColumnIfMissing(db, 'token_usage', 'cache_read_tokens', 'INTEGER NOT NULL DEFAULT 0');
       addColumnIfMissing(db, 'token_usage', 'cache_write_tokens', 'INTEGER NOT NULL DEFAULT 0');
       addColumnIfMissing(db, 'token_usage', 'cost_usd', 'REAL'); // NULL = cost not reported
+    },
+  },
+  {
+    version: 5,
+    description: 'Store file_versions.file_path with / separators (Windows builds stored some with \\)',
+    sql: '',
+    apply: (db) => {
+      if (!tableExists(db, 'file_versions')) return;
+      // char(92) is `\`. Row ids are untouched, so each file's merged history
+      // stays in the order it was written.
+      db.exec(`
+        UPDATE file_versions
+          SET file_path = REPLACE(file_path, char(92), '/')
+          WHERE instr(file_path, char(92)) > 0;
+      `);
     },
   },
 ];

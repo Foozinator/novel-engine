@@ -30,7 +30,7 @@ Key behavior:
 | File | Purpose |
 |------|---------|
 | `schema.ts` | CREATE TABLE statements, WAL mode, foreign keys, migration guards |
-| `migrations.ts` | Forward-only `MIGRATIONS` list (v0–v4) and `runMigrations(db)`. A migration runs its `sql`, or its `apply(db)` function when set (used for idempotent `ADD COLUMN`). Also `APP_SCHEMA_VERSION` and `readAppliedVersion(db)` (-1 without `schema_version`; creates nothing). |
+| `migrations.ts` | Forward-only `MIGRATIONS` list (v0–v5) and `runMigrations(db)`. A migration runs its `sql`, or its `apply(db)` function when set (used for idempotent `ADD COLUMN` and for skipping a missing table). Also `APP_SCHEMA_VERSION` and `readAppliedVersion(db)` (-1 without `schema_version`; creates nothing). |
 | `backup.ts` | Pre-migration snapshot (#58): `backupBeforeMigrations`, `pruneMigrationBackups`, `MigrationBackupError` |
 | `DatabaseService.ts` | Implements `IDatabaseService`. Prepared statements for all queries. |
 | `bookHistory.ts` | Per-book history snapshots: export, merge, revert, stats (#37; the seam for #36 archives) |
@@ -59,6 +59,7 @@ Per-book history snapshot (`bookHistory.ts`):
   - Conversation and message TEXT ids are kept.
   - Integer ids are reassigned, in source id order.
   - `book_slug` is set to the target slug.
+  - Merged `file_versions.file_path` values with `\` get `/` (snapshots older than v5).
   - Any PK clash rolls back the whole merge.
 - The receipt records the conversation ids and the first new `file_versions` / `word_count_snapshots` ids, so `revertBookHistoryImport` can undo the merge.
 
@@ -86,8 +87,8 @@ Key behavior:
 | File | Purpose |
 |------|---------|
 | `FileSystemService.ts` | Implements `IFileSystemService`. Book CRUD, file read/write, directory listing, shelved pitches, pitch room drafts. |
-| `bookPaths.ts` | `resolveBookPath(booksDir, slug, rel)`: joins under `<booksDir>/<slug>`, throws on a slug that isn't one folder name or a result outside the book. `safeSegment(value, what)` for pitch slugs and draft IDs. |
-| `BookWatcher.ts` | Watches active book dir for file changes, debounced notifications. |
+| `bookPaths.ts` | `resolveBookPath(booksDir, slug, rel)`: joins under `<booksDir>/<slug>`, throws on a slug that isn't one folder name or a result outside the book. `toPortablePath(rel, sep = path.sep)`: converts the platform separator to `/` (a `\` in a POSIX file name is kept). `safeSegment(value, what)` for pitch slugs and draft IDs. |
+| `BookWatcher.ts` | Watches active book dir for file changes, debounced notifications. Reports book-relative paths with `/`. |
 | `BooksDirWatcher.ts` | Watches `books/` root for new/deleted books (folder add/remove). |
 | `index.ts` | Barrel export |
 
@@ -104,6 +105,7 @@ Key behavior:
 - Every book-relative path goes through `resolveBookPath()` (read/write/delete/rename/exists/list, covers, word counts, manifest). Pitch slugs and draft IDs go through `safeSegment()`. A `coverImage` outside the book reads as no cover
 - `writeFile` refuses to overwrite a binary file (#83). Paths that pass `isTextFilePath()` skip the check. For any other path it reads the first 8192 bytes of the existing file; a NUL or invalid UTF-8 throws `Not a text file: … was left unchanged`. Missing files are created as before
 - `listDirectory` file entries carry `size` (bytes) from the `stat` the tree walk already makes
+- `listDirectory` entry paths use `/` on every platform (`buildFileTree` passes them through `toPortablePath()`), so they match the `chapters/<slug>/draft.md` keys in version history
 - Shelved pitches stored in `books/_pitches/{slug}.md` with YAML front matter
 - Pitch Room drafts stored in `books/__pitch-room__/drafts/{conversationId}/`
 - `BookWatcher.watch(slug)` switches which book directory is being monitored
@@ -344,7 +346,7 @@ Index: `idx_stream_sessions_active` on `ended_at` WHERE `ended_at IS NULL`
 |--------|------|-------------|-------|
 | `id` | INTEGER | PK AUTOINCREMENT | Sequential version ordering |
 | `book_slug` | TEXT | NOT NULL | Book directory slug |
-| `file_path` | TEXT | NOT NULL | Relative to book root |
+| `file_path` | TEXT | NOT NULL | Relative to book root, `/` separators on every platform (v5) |
 | `content` | TEXT | NOT NULL | Full file content snapshot |
 | `content_hash` | TEXT | NOT NULL | SHA-256 hex digest for dedup |
 | `byte_size` | INTEGER | NOT NULL | Content length in bytes |
@@ -355,7 +357,7 @@ Indexes:
 - `idx_file_versions_lookup` on `(book_slug, file_path, id DESC)` — primary query pattern
 - `idx_file_versions_hash` on `(book_slug, file_path, content_hash)` — dedup lookups
 
-Migration: v2 in `migrations.ts`
+Migration: v2 in `migrations.ts` creates the table. v5 rewrites `\` to `/` in `file_path` (Windows builds stored watcher and file-tree paths with `\`). Row ids are kept, so the two forms merge into one history per file in write order. The table is skipped if missing.
 
 ---
 
@@ -404,8 +406,8 @@ On startup, `ChatService.recoverOrphanedSessions()` checks `stream_sessions` for
 ### BookWatcher
 
 - Watches: single book directory (switchable via `watch(slug)`)
-- Events: file change/add/delete within the book
-- Consumer: `chat:filesChanged` IPC event → renderer
+- Events: file change/add/delete within the book. Paths are book-relative with `/` (Windows `fs.watch` names are converted)
+- Consumer: `chat:filesChanged` IPC event → renderer; also `VersionService.snapshotFile(activeSlug, path, 'agent')` in `src/main/index.ts`
 - Debounced to avoid flooding during rapid writes
 
 ### BooksDirWatcher

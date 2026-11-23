@@ -4,6 +4,42 @@ All notable changes to Novel Engine Spur are documented here.
 
 ---
 
+## [2026-11-23] — File history uses / separators on every platform (#84)
+
+### Summary
+
+On Windows, `BookWatcher` passed `fs.watch` names through with `\`, and `buildFileTree` built entry paths with `path.join`. Version history stored those paths as given, while chapter history and author-edit detection look up `chapters/<slug>/draft.md` with `/`. So on Windows those lookups missed the watcher's agent snapshots and split one file's history in two, and on a data folder moved to Linux the `\` rows could not be reached at all. The watcher and the file tree now report `/` paths, `VersionService` keys rows by the `/` form whatever the caller passes, and migration v5 rewrites existing rows. Row ids don't change, so each file's merged history keeps its write order. The pre-migration database snapshot (#58) holds the old rows.
+
+### Added
+- `src/domain/constants.ts` — `toStoredBookPath(relativePath)`: every `\` becomes `/`.
+- `src/infrastructure/filesystem/bookPaths.ts` — `toPortablePath(rel, sep = path.sep)`: converts only the platform separator, so a `\` inside a Linux or macOS file name is kept.
+
+### Changed
+- `src/infrastructure/database/migrations.ts` — Migration v5 (see Migration Notes). New private `tableExists()`.
+- `src/infrastructure/database/bookHistory.ts` — `importBookHistory()` rewrites `\` to `/` in the `file_versions` rows it merges, for snapshots older than v5.
+- `src/application/VersionService.test.ts` — `\` and `/` callers share one history. A fixture DB rolled back to v4 with both forms migrates to one history per file in id order, and author-edit detection finds the agent baseline that was stored with `\`.
+- `src/infrastructure/database/migrations.test.ts` — v5 rewrites `\` paths and keeps row ids.
+- `src/infrastructure/database/bookHistory.test.ts` — Imported `\` rows are stored with `/`; rows outside the import are untouched.
+- `src/infrastructure/filesystem/BookWatcher.test.ts`, `src/infrastructure/filesystem/FileSystemService.paths.test.ts` — Nested watcher and `listDirectory()` paths are `/` paths. These also run on the Windows CI job.
+- `src/infrastructure/filesystem/bookPaths.test.ts`, `src/domain/constants.test.ts` — Helper cases.
+- `docs/architecture/DOMAIN.md`, `docs/architecture/INFRASTRUCTURE.md`, `docs/architecture/APPLICATION.md` — New helpers, `/` paths from the watcher and file tree, v5, history keys.
+
+### Fixed
+- `src/infrastructure/filesystem/BookWatcher.ts` — Changed paths go through `toPortablePath()`. On Windows they had `\`.
+- `src/infrastructure/filesystem/FileSystemService.ts` — `buildFileTree()` entry paths go through `toPortablePath()`, so `listDirectory()` returns `chapters/01-one/draft.md` on Windows too.
+- `src/application/VersionService.ts` — `snapshotFile`, `snapshotContent`, `getHistory`, `getVersionCount`, `revertToVersion` and `getUserEditsSinceAgentBaseline` key `file_versions` by `toStoredBookPath(filePath)`. Disk reads and writes still use the caller's path.
+
+### Architecture Impact
+- Schema change: migration v5 rewrites `file_versions.file_path` to `/` separators. `APP_SCHEMA_VERSION` is now 5.
+- No wiring, IPC or store changes.
+
+### Migration Notes
+- v5 runs on first launch: `UPDATE file_versions SET file_path = REPLACE(file_path, char(92), '/') WHERE instr(file_path, char(92)) > 0`. It is skipped if the table is missing. The app first writes `{userData}/backups/novel-engine-pre-v4-to-v5-<timestamp>.db` (#58).
+- The startup prune (`pruneVersions(slug, 50)` in `src/main/index.ts`) runs right after. A file whose history was split across both forms kept up to 50 versions per form. Now it keeps the newest 50 overall plus the pinned agent baseline. The older versions remain only in the pre-migration backup.
+- A build from before this change refuses history snapshots exported after it (schema v5).
+
+---
+
 ## [2026-11-23] — Ghostlight's cold read no longer gets the series bible (#61)
 
 ### Summary

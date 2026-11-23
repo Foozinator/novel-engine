@@ -1,7 +1,12 @@
+import { createHash } from 'node:crypto';
+import path from 'node:path';
+import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DatabaseService } from '@infra/database/DatabaseService';
 import { VersionService } from './VersionService';
 import { makeDb } from '../test/db';
 import { makeFakeFs, type FakeFileSystem } from '../test/fakes';
+import { cleanupTempDirs, makeTempDir } from '../test/tempDir';
 
 let db: ReturnType<typeof makeDb>;
 let fs: FakeFileSystem;
@@ -178,5 +183,73 @@ describe('pruning', () => {
     expect(await service.getVersionCount('book', 'a.md')).toBe(2);
     expect(await service.getVersionCount('book', 'b.md')).toBe(2);
     expect((await service.getHistory('book', 'a.md')).map((v) => v.id).length).toBe(2);
+  });
+});
+
+describe('Windows path separators (#84)', () => {
+  const DRAFT = 'chapters/02-two/draft.md';
+  const DRAFT_WIN = 'chapters\\02-two\\draft.md';
+  const sha256 = (text: string) => createHash('sha256').update(text, 'utf-8').digest('hex');
+
+  afterEach(async () => {
+    await cleanupTempDirs();
+  });
+
+  it('keys history by the / form, whichever separator the caller passes', async () => {
+    const agent = await service.snapshotContent('book', DRAFT_WIN, 'agent text', 'agent');
+    expect(agent?.filePath).toBe(DRAFT);
+
+    // Same content under the / form dedups against the \ snapshot
+    expect(await service.snapshotContent('book', DRAFT, 'agent text', 'user')).toBeNull();
+    await service.snapshotContent('book', DRAFT, 'user text', 'user');
+
+    const viaWin = await service.getHistory('book', DRAFT_WIN);
+    expect(viaWin).toEqual(await service.getHistory('book', DRAFT));
+    expect(viaWin.map((v) => v.source)).toEqual(['user', 'agent']);
+    expect(await service.getVersionCount('book', DRAFT_WIN)).toBe(2);
+
+    const reverted = await service.revertToVersion('book', DRAFT_WIN, agent!.id);
+    expect(reverted.filePath).toBe(DRAFT);
+  });
+
+  it('merges a pre-v5 database holding both forms into one history per file', async () => {
+    // Fixture: a current-schema DB rolled back to v4, with rows as a Windows
+    // build wrote them (watcher snapshots with \, renderer saves with /).
+    const file = path.join(await makeTempDir(), 'novel-engine.db');
+    new DatabaseService(file).close();
+    const raw = new Database(file);
+    raw.prepare('DELETE FROM schema_version WHERE version >= 5').run();
+    const insert = raw.prepare(
+      'INSERT INTO file_versions (book_slug, file_path, content, content_hash, byte_size, source) VALUES (?, ?, ?, ?, ?, ?)',
+    );
+    const rows: [string, string, 'agent' | 'user'][] = [
+      [DRAFT_WIN, 'agent draft one', 'agent'],
+      [DRAFT, 'author edit one', 'user'],
+      [DRAFT_WIN, 'agent draft two', 'agent'],
+      ['source/pitch.md', 'pitch v1', 'user'],
+      ['source\\pitch.md', 'pitch v2', 'agent'],
+    ];
+    const ids = rows.map(([filePath, content, source]) =>
+      Number(insert.run('book', filePath, content, sha256(content), Buffer.byteLength(content), source).lastInsertRowid),
+    );
+    raw.close();
+
+    const migrated = new DatabaseService(file); // runs migration v5
+    try {
+      const svc = new VersionService(migrated, fs);
+
+      expect(migrated.getVersionedFilePaths('book')).toEqual([DRAFT, 'source/pitch.md']);
+      expect((await svc.getHistory('book', DRAFT)).map((v) => v.id)).toEqual([ids[2], ids[1], ids[0]]);
+      expect((await svc.getHistory('book', 'source/pitch.md')).map((v) => v.id)).toEqual([ids[4], ids[3]]);
+
+      // The live draft differs from the agent's latest snapshot, which was stored with \ before v5
+      const edits = await svc.getUserEditsSinceAgentBaseline('book', DRAFT);
+      expect(edits?.oldVersion?.id).toBe(ids[2]);
+      expect(await svc.getChapterEditStatuses('book')).toEqual([
+        expect.objectContaining({ chapterSlug: '02-two', filePath: DRAFT, hasUserEdits: true }),
+      ]);
+    } finally {
+      migrated.close();
+    }
   });
 });

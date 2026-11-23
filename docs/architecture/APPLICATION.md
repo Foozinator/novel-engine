@@ -406,6 +406,7 @@ Dependencies: `IDatabaseService`, `IFileSystemService`
 
 **Key behaviors:**
 - Only versions `.md` and `.json` files (`isVersionable()` check)
+- Rows are keyed by `toStoredBookPath(filePath)` (`/` separators), so `chapters\x\draft.md` and `chapters/x/draft.md` share one history. Disk reads and writes (`snapshotFile`, `revertToVersion`, `getUserEditsSinceAgentBaseline`) use the caller's path
 - SHA-256 dedup: skips snapshot when content hash matches latest version
 - Exception: `revertToVersion()` always creates a snapshot for auditability
 - Diff uses `diff.structuredPatch()` with 3 lines of context, producing `DiffHunk[]` with per-line numbering
