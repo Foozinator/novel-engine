@@ -85,7 +85,7 @@ describe('FileBrowser', () => {
     expect(onNavigate).toHaveBeenCalledWith('chapters');
 
     fireEvent.click(screen.getByText('pitch'));
-    expect(onFileSelect).toHaveBeenCalledWith('pitch.md');
+    expect(onFileSelect).toHaveBeenCalledWith('pitch.md', expect.objectContaining({ path: 'pitch.md' }));
   });
 
   it('renders chapter folders as chapter cards with Draft/Notes shortcuts', async () => {

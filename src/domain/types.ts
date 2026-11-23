@@ -723,6 +723,7 @@ export type FileEntry = {
   path: string;            // relative to book root
   isDirectory: boolean;
   children?: FileEntry[];
+  size?: number;           // bytes; files only
 };
 
 // === Version Control ===

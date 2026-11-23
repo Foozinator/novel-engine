@@ -544,6 +544,7 @@ Importing the module sets marked's options once: `gfm`, `breaks`, `async: false`
 | `PhaseStarterCard.tsx` | Call-to-action card on a fresh phase (no conversation, or one with no messages): phase label, agent + role, description, and starter buttons from `getPhaseStarterActions()`. A pick fills the chat input like Quick actions; with no conversation, it creates one first. Optional "Start a blank conversation". Hidden on read-only phases, ad-hoc conversations and while streaming |
 | `SplitPane.tsx` | Chat ‖ companion split with draggable divider, reset and collapse |
 | `CompanionPane.tsx` | Companion tab bar (`companion/` Sources, Chapter, Reports, Explorer tabs); `openCompanionDoc()` |
+| `companion/ExplorerTab.tsx` | Book folder browser (`FileBrowser`) with breadcrumb and read-only preview. History and Edit (hands off to the manuscript editor) show for text files only; Edit is also hidden for Verity drafts. Non-text files (`isTextFilePath()` false) are never read: the preview shows name, type and size |
 | `usePhaseConversations.ts` | Phase-scoped conversation list, auto-activation of the latest, create/select |
 
 ### Files/
@@ -551,7 +552,7 @@ Importing the module sets marked's options once: `gfm`, `breaks`, `async: false`
 | File | Purpose |
 |------|---------|
 | `FilesView.tsx` | Container: 5 tabs (Source, Chapters, Agents, Explorer, Motif Ledger). Browser mode renders tab-specific panels. Reader/editor mode overlays file content with tab bar still visible. |
-| `FileBrowser.tsx` | Directory browser with grid/list layout, used by Explorer tab |
+| `FileBrowser.tsx` | Directory browser with grid/list layout, used by Explorer tab. `onFileSelect(path, entry?)` passes the clicked `FileEntry` (absent for the chapter Draft/Notes shortcuts) |
 | `FileEditor.tsx` | Markdown editor with save/cancel, History toggle with split-panel `VersionHistoryPanel` |
 | `FilesHeader.tsx` | Header with view mode toggles and "⇄ Find & Replace" button (`onFindReplace?` prop) |
 | `SourcePanel.tsx` | Source files list, rendered directly in Source tab |
@@ -561,6 +562,14 @@ Importing the module sets marked's options once: `gfm`, `breaks`, `async: false`
 | `FindReplaceModal.tsx` | Three-phase modal (input → preview → result) for bulk find & replace across chapter drafts. All state local — no Zustand store. Calls `window.novelEngine.findReplace.*`. |
 | `DiffViewer.tsx` | Renders `FileDiff` as color-coded unified diff (green/red/neutral) |
 | `VersionHistoryPanel.tsx` | Slide-over panel: version timeline, diff viewer, revert with confirmation |
+
+### Manuscript/
+
+| File | Purpose |
+|------|---------|
+| `ManuscriptView.tsx` | Manuscript screen: chapter rail plus Reader (chapter or full book) and Editor modes. Editor opens the selected draft, a chapter's notes, or a `filePath` from Explorer's Edit. A non-text `filePath` is never read or handed to `FileEditor`; the pane says it can't be edited |
+| `ChapterRail.tsx` | Chapter rail (front matter, story chapters, back matter) with a per-row menu; `useChapterList()` |
+| `UserEditsDiffModal.tsx` | Diff of the author's edits to a Verity draft since the latest agent baseline |
 
 ### Build/
 

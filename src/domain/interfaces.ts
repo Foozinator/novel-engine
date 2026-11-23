@@ -526,12 +526,14 @@ export interface IPipelineService {
   confirmPhaseAdvancement(bookSlug: string, phaseId: PipelinePhaseId): Promise<void>;
 
   /**
-   * Archive the revision reports to signal the revision phase is complete.
+   * Archive the revision's reports and plan and confirm the revision phase.
    *
-   * Copies source/reader-report.md → source/reader-report-v1.md and
-   * source/dev-report.md → source/dev-report-v1.md (if it exists).
-   * Once these versioned files exist, the pipeline auto-advances:
-   * the `revision` phase completes and `second-read` unlocks.
+   * Copies source/reader-report.md (required), source/dev-report.md (if it
+   * exists) and the plan (project-tasks.md + revision-prompts.md) to their
+   * next free version, e.g. reader-report-v2.md. A file whose newest archive
+   * already holds the same content is not archived again; earlier archives
+   * are never overwritten. The `revision` phase completes and `second-read`
+   * unlocks.
    */
   completeRevision(bookSlug: string): Promise<void>;
 
@@ -543,11 +545,13 @@ export interface IPipelineService {
    * phase — it will show as 'pending-completion' if its detection files
    * still exist, or 'active' if they don't.
    *
-   * For phases that depend on book status or archived files, the revert
-   * also undoes those side-effects:
+   * For phases that depend on book status, the revert also rolls it back:
    * - `first-draft`: reverts book status to 'first-draft'
    * - `mechanical-fixes`: reverts book status to 'copy-edit'
-   * - `revision`: removes the archived v1 report files
+   *
+   * Archived reports and plans are never deleted. `revision` is completed
+   * only by Complete Revision, so it returns to 'active' even though its
+   * archives remain.
    *
    * This is a non-destructive operation for file-existence phases — the
    * agent's output files remain on disk. The user can re-confirm them

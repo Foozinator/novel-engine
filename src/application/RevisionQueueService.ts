@@ -31,6 +31,7 @@ import {
   REVISION_QUEUE_PROTOCOL,
   MAX_AUTO_GATE_REPLIES,
 } from '@domain/constants';
+import { latestPlanArchive, type PlanArchive } from './archives';
 import { ContextBuilder } from './ContextBuilder';
 import { classifyGate, isSessionComplete } from './revisionGate';
 
@@ -260,6 +261,34 @@ export class RevisionQueueService implements IRevisionQueueService {
     }
   }
 
+  /**
+   * True when the live plan matches the newest archived plan (checkbox ticks
+   * ignored), i.e. no new plan has been written since it was archived. A
+   * file missing from the archive counts as matching only when it is also
+   * missing live.
+   */
+  private async isArchivedPlan(
+    bookSlug: string,
+    archive: PlanArchive,
+    tasks: string | null,
+    prompts: string | null,
+  ): Promise<boolean> {
+    const same = async (archivedPath: string | null, live: string | null): Promise<boolean> => {
+      if (!archivedPath) return live === null;
+      if (live === null) return false;
+      try {
+        return this.computeHash(await this.fs.readFile(bookSlug, archivedPath)) === this.computeHash(live);
+      } catch {
+        return false;
+      }
+    };
+    const [tasksSame, promptsSame] = await Promise.all([
+      same(archive.tasks, tasks),
+      same(archive.prompts, prompts),
+    ]);
+    return tasksSame && promptsSame;
+  }
+
   // ── Plan loading with cache ──────────────────────────────────────
 
   async loadPlan(bookSlug: string): Promise<RevisionPlan> {
@@ -283,20 +312,29 @@ export class RevisionQueueService implements IRevisionQueueService {
     //
     // Sable's output (audit-report.md) signals the copy-edit phase is complete,
     // meaning we are now in the SECOND revision cycle (mechanical fixes).
-    // The first-cycle files must have been archived (project-tasks-v1.md exists)
-    // before the second queue can load. If they weren't archived, the live files
-    // belong to the first cycle and must not be run as the second cycle's plan.
-    const [auditExists, archivedTasksExist] = await Promise.all([
+    // The first-cycle plan must have been archived (Complete Revision copies
+    // it; a Forge run moves it) before the second queue can load. If it wasn't,
+    // or the live plan is still that archived plan, the live files belong to
+    // the first cycle and must not be run as the second cycle's plan.
+    const [auditExists, planArchive] = await Promise.all([
       this.fs.fileExists(bookSlug, 'source/audit-report.md'),
-      this.fs.fileExists(bookSlug, 'source/project-tasks-v1.md'),
+      latestPlanArchive(this.fs, bookSlug),
     ]);
+    const archivedTasksExist = planArchive !== null;
 
-    if (auditExists && !archivedTasksExist && (revisionPromptsContent || projectTasksContent)) {
-      throw new Error(
-        'Sable has completed copy editing, but the first revision cycle files have not been archived yet. ' +
-        'The archiving of revision files (project-tasks, revision-prompts) is an agent action ' +
-        'that should be handled as part of the revision workflow.',
-      );
+    if (auditExists && (revisionPromptsContent || projectTasksContent)) {
+      if (!planArchive) {
+        throw new Error(
+          'Sable has completed copy editing, but the first revision plan has not been archived yet. ' +
+          'Complete the revision, then run Forge to write the mechanical fixes plan.',
+        );
+      }
+      if (await this.isArchivedPlan(bookSlug, planArchive, projectTasksContent, revisionPromptsContent)) {
+        throw new Error(
+          `No mechanical fixes plan yet: the plan on disk is the one already archived as version ${planArchive.version}. ` +
+          'Run Forge to write the mechanical fixes plan.',
+        );
+      }
     }
 
     // Determine which revision cycle we're loading and auto-clear stale state

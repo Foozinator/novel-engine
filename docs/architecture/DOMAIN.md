@@ -150,7 +150,7 @@ Everything in `src/domain/`. Pure TypeScript declarations — zero imports from 
 
 | Type | Shape | Used By |
 |------|-------|---------|
-| `FileEntry` | `{ name, path, isDirectory, children? }` | FileTree, FileBrowser |
+| `FileEntry` | `{ name, path, isDirectory, children?, size? }` (`size` in bytes, files only) | FileBrowser, ExplorerTab |
 
 ### Data Folder & Prompt Sync
 
@@ -381,15 +381,15 @@ Implemented by: `FileSystemService` (`src/infrastructure/filesystem/`)
 | `createBook` | `(title, author?) => Promise<BookMeta>` | Creates book directory. Throws without writing when `findTitleConflict(title)` finds a book |
 | `findTitleConflict` | `(title) => Promise<BookTitleConflict \| null>` | Live or archived book with the same folder (any case) or a title that differs only in case or punctuation; null when free |
 | `getBookMeta` | `(slug) => Promise<BookMeta>` | Reads about.json |
-| `updateBookMeta` | `(slug, partial) => Promise<BookMeta>` | Updates about.json |
+| `updateBookMeta` | `(slug, partial) => Promise<BookMeta>` | Merges known fields into about.json; keeps all other keys |
 | `getProjectManifest` | `(slug) => Promise<ProjectManifest>` | File listing with word counts |
 | `readFile` | `(bookSlug, relativePath) => Promise<string>` | File contents |
-| `writeFile` | `(bookSlug, relativePath, content) => Promise<void>` | — |
+| `writeFile` | `(bookSlug, relativePath, content) => Promise<void>` | Throws when an existing file that isn't a known text type looks binary; the file is left unchanged |
 | `deleteFile` | `(bookSlug, relativePath) => Promise<void>` | — |
 | `deletePath` | `(bookSlug, relativePath) => Promise<void>` | Recursive delete |
 | `renameFile` | `(bookSlug, oldPath, newPath) => Promise<void>` | — |
 | `fileExists` | `(bookSlug, relativePath) => Promise<boolean>` | — |
-| `listDirectory` | `(bookSlug, relativePath?) => Promise<FileEntry[]>` | Directory tree |
+| `listDirectory` | `(bookSlug, relativePath?) => Promise<FileEntry[]>` | Directory tree; files carry `size` |
 | `countWords` | `(bookSlug) => Promise<number>` | Total manuscript words |
 | `countWordsPerChapter` | `(bookSlug) => Promise<{slug, wordCount}[]>` | Per-chapter counts |
 | `saveCoverImage` | `(bookSlug, sourcePath) => Promise<string>` | Relative path to saved image |
@@ -476,7 +476,7 @@ Implemented by: `PipelineService` (`src/application/`)
 | `getAgentForPhase` | `(phaseId) => AgentName \| null` | Agent assignment |
 | `markPhaseComplete` | `(bookSlug, phaseId) => Promise<void>` | Advances book status |
 | `confirmPhaseAdvancement` | `(bookSlug, phaseId) => Promise<void>` | Confirms pending-completion |
-| `completeRevision` | `(bookSlug) => Promise<void>` | Archives revision reports |
+| `completeRevision` | `(bookSlug) => Promise<void>` | Archives the reports and plan under their next version; confirms `revision` |
 | `revertPhase` | `(bookSlug, phaseId) => Promise<void>` | Rolls back phase + subsequent |
 
 ### IBuildService
@@ -756,6 +756,8 @@ Implemented by: `QueryService` (`src/application/QueryService.ts`)
 | `slugifyBookTitle(title)` | `(string) => string` | Book folder name: lowercase ASCII letters and digits, other runs → `-`, trimmed. Titles that differ only in case or punctuation share a folder (#79). Used by `FileSystemService.slugify()`, `SeriesImportService.checkTitles()` |
 | `describeBookTitleConflict(newTitle, conflict)` | `(string, BookTitleConflict) => string` | User-facing refusal, e.g. `A book titled "X" already exists. Choose another title.` Adds the case/punctuation note when the titles differ. Shared by `createBook`, rename, series import and the renderer |
 | `bookTitleFromPitch(content)` | `(string) => string` | First `# ` heading of a Pitch Room draft, else `'Untitled Book'`. Used by `promotePitchToBook` and `pitchRoomStore` |
+| `TEXT_FILE_EXTENSIONS` | `ReadonlySet<string>` (`.md .markdown .txt .json .yaml .yml .csv .tsv .html .htm .xml .css`) | Extensions opened as text by the Files preview, the editor and find-and-replace |
+| `isTextFilePath(filePath)` | `(string) => boolean` | True when the extension (any case) is in `TEXT_FILE_EXTENSIONS`. No extension or a bare dotfile is not text. Used by ExplorerTab, ManuscriptView, FindReplaceService and `FileSystemService.writeFile` |
 | `CLAUDE_PROJECT_CONFIG_DIR` | `'.claude'` | Claude CLI project-config folder; removed from books on unarchive and data-folder import |
 | `OPENCODE_CLI_PROVIDER_ID` | `'opencode-cli'` | Reserved for future OpenCode CLI provider |
 | `OLLAMA_CLI_PROVIDER_ID` | `'ollama-cli'` | Built-in Ollama provider ID |
@@ -835,12 +837,14 @@ Extracted to a separate file. Zero imports — pure functions over static arrays
 | `first-draft` | First Draft | Verity | Chapters exist with >1000 total words + book status advanced |
 | `first-read` | First Read | Ghostlight | `source/reader-report.md` exists |
 | `first-assessment` | Structural Assessment | Lumen | `source/dev-report.md` exists |
-| `revision-plan-1` | Revision Plan | Forge | `source/project-tasks.md` exists |
-| `revision` | Revision | Verity | `source/reader-report-v1.md` exists (archived) |
-| `second-read` | Second Read | Ghostlight | Both `reader-report.md` AND `reader-report-v1.md` exist |
-| `second-assessment` | Second Assessment | Lumen | `source/dev-report-v1.md` exists |
+| `revision-plan-1` | Revision Plan | Forge | `project-tasks.md` + `revision-prompts.md` exist, or a plan archive (`project-tasks-vN.md` / `revision-prompts-vN.md`) exists |
+| `revision` | Revision | Verity | A `reader-report-vN.md` archive exists. Action-gated: never `pending-completion`; completed by Complete Revision |
+| `second-read` | Second Read | Ghostlight | `reader-report.md` differs (word count) from the newest `reader-report-vN.md` |
+| `second-assessment` | Second Assessment | Lumen | `dev-report.md` differs (word count) from the newest `dev-report-vN.md` |
 | `copy-edit` | Copy Edit | Sable | `source/audit-report.md` exists |
-| `revision-plan-2` | Fix Planning | Forge | `source/revision-prompts.md` AND `source/audit-report.md` exist |
+| `revision-plan-2` | Fix Planning | Forge | Live plan + `audit-report.md` + a plan archive exist, and the live plan differs from the newest archived plan |
+
+Archives (`-vN`) are written by the app (`src/application/archives.ts`), never by agents, and are never overwritten or deleted (#81).
 | `mechanical-fixes` | Mechanical Fixes | Verity | `audit-report.md` exists AND book status >= 'copy-edit' |
 | `build` | Build | (none) | `dist/output.md` exists |
 | `publish` | Publish & Audit | Quill | `source/metadata.md` exists |

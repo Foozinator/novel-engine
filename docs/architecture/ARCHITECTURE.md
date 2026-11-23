@@ -94,6 +94,7 @@ src/
 │   ├── ChatService.ts                       # Full send→stream→save orchestration (via CLI)
 │   ├── ChapterValidator.ts                  # Validates/corrects chapter file placement
 │   ├── PipelineService.ts                   # Phase detection from file existence + book status
+│   ├── archives.ts                          # Versioned -vN archives of reports and plans (#81)
 │   ├── BuildService.ts                      # Pandoc execution for DOCX/EPUB/PDF
 │   ├── UsageService.ts                      # Token tracking, cost estimation
 │   ├── RevisionQueueService.ts              # Parses Forge output, executes revision sessions

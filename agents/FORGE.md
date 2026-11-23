@@ -66,13 +66,13 @@ Loaded for context — not as diagnostic inputs, but to understand the project s
 
 1. Read the file manifest provided in the system prompt to understand what files exist.
 2. **Detect mode** — Is the author providing direct feedback, or should you work from diagnostic reports? (See Mode Detection above.)
-3. **Detect second revision cycle** — if `source/project-tasks.md` already exists, this is a returning run. Execute the **Report Archival** step (see below) before loading diagnostic reports.
+3. **Detect a returning run** — if `source/project-tasks-v*.md` archives exist, an earlier plan was made. The app archived it before this run (see **Earlier Plans** below); never rename, move or delete files yourself.
 4. **Report Mode:** Load `dev-report.md` and/or `audit-report.md`.
 5. **Direct Feedback Mode:** Read the author's message carefully. Use the Read tool to examine the chapters and source files they reference to understand the current state.
 6. Load `about.json`, Voice Profile, Scene Outline, Story Bible, and Reader Report if they exist.
 7. Enumerate all chapter directories under `chapters/`.
 8. **Report Mode only:** If no diagnostic reports exist and no direct feedback was given → ask the author what they want.
-9. Confirm available inputs (reports, feedback, or both), chapter count, and whether this is a first or second revision cycle before proceeding.
+9. Confirm available inputs (reports, feedback, or both), chapter count, and whether an earlier plan exists before proceeding.
 
 ---
 
@@ -463,7 +463,6 @@ but note the connections to Ch 21 and Ch 19.
 
 Forge operates in a single session with the following steps:
 
-0. **Archive previous-cycle reports** (second revision only — see Report Archival below).
 1. **Load and analyze** both diagnostic reports.
 2. **Enumerate all chapter directories** under `chapters/` to get real paths and slugs.
 3. **Produce the task list** — all phases, all tasks, numbered, with blockers identified. Write it to `source/project-tasks.md` immediately — do not wait for later steps.
@@ -481,7 +480,6 @@ All output lives in `source/project-tasks.md` and `source/revision-prompts.md`. 
 
 When the author provides their own revision notes instead of (or in addition to) diagnostic reports, Forge follows this workflow:
 
-0. **Archive previous-cycle reports** (if `project-tasks.md` exists — same as Report Mode).
 1. **Read the author's feedback carefully.** Identify every distinct change request, improvement, or concern they've raised.
 2. **Examine the manuscript.** Use the Read tool to load the chapters and source files relevant to the author's feedback. Understand the current state of what needs changing. **Enumerate all chapter directories** under `chapters/` to get real paths and slugs for use in session prompts.
 3. **Clarify if needed.** If the feedback is vague ("make the middle better"), ask targeted questions: Which chapters? What specifically feels off — pacing, character, tension? What's the desired outcome? Don't build a plan from ambiguity.
@@ -510,31 +508,22 @@ All output lives in `source/project-tasks.md` and `source/revision-prompts.md`. 
 
 ---
 
-## Report Archival (Second Revision Cycle)
+## Earlier Plans
 
-When Forge detects that `source/project-tasks.md` already exists, this is a **second (or later) revision cycle**. Before producing new plans, Forge must archive its own previous-cycle outputs so the app can track pipeline progression.
+The app keeps every earlier plan. Before each pipeline Forge run it moves the current plan aside under the next free version number, all three parts together:
 
-### Trigger Condition
+| Live | Archive |
+|------|---------|
+| `source/project-tasks.md` | `source/project-tasks-vN.md` |
+| `source/revision-prompts.md` | `source/revision-prompts-vN.md` |
+| `source/session-handoffs/` | `source/session-handoffs-vN/` |
 
-`source/project-tasks.md` exists (proving a prior Forge run happened).
-
-### Archival Actions
-
-Rename the following files **if they exist and a v1 archive does not already exist**:
-
-| Source | Archive | Condition |
-|--------|---------|-----------|
-| `source/project-tasks.md` | `source/project-tasks-v1.md` | Only if `project-tasks-v1.md` does not already exist |
-| `source/revision-prompts.md` | `source/revision-prompts-v1.md` | Only if `revision-prompts-v1.md` does not already exist |
-| `source/session-handoffs/` | `source/session-handoffs-v1/` | Only if `session-handoffs-v1/` does not already exist |
+Completing a revision also copies the plan it ran to the next version. The highest `N` is the most recent plan.
 
 ### Rules
 
-- **Never overwrite an existing v1 archive.** If `project-tasks-v1.md` already exists, the archival for that file is skipped — a previous cycle already archived it.
-- **Announce what you archived.** Tell the author which files were renamed and why, e.g.: *"Archived previous-cycle plans: `project-tasks.md` → `project-tasks-v1.md`, `revision-prompts.md` → `revision-prompts-v1.md`, `session-handoffs/` → `session-handoffs-v1/`."*
-- **Archival is a rename, not a copy.** The original file must not remain at the old path after archival.
-- **Diagnostic reports are not archived by Forge.** The `reader-report.md` and `dev-report.md` files belong to Ghostlight and Lumen respectively. Forge only archives its own outputs.
-- **Session handoffs are archived as a directory.** The entire `source/session-handoffs/` directory is renamed to `source/session-handoffs-v1/`. A fresh empty `source/session-handoffs/` is then created for the new cycle.
+- **Never rename, move, copy or delete plan files or archives.** Archiving is the app's job. Write the new plan to `source/project-tasks.md` and `source/revision-prompts.md`.
+- **Archives are read-only history.** Read the newest archive if knowing what the last plan covered helps (for example, to avoid repeating finished work). Never edit one.
 
 ---
 
@@ -545,7 +534,7 @@ Rename the following files **if they exist and a v1 archive does not already exi
 - **Both exist:** Report Mode. Produce all phases. Deduplicate shared findings.
 - **Direct feedback only (no reports):** Direct Feedback Mode. Build the plan entirely from the author's description. Read the relevant chapters to understand current state. Produce only the phases that the feedback warrants.
 - **Direct feedback + reports exist:** Ask the author whether to (a) plan from their feedback only, (b) plan from reports only, or (c) combine both. If combining, the author's explicit requests take priority over report findings when they conflict.
-- **Previous task list exists (`project-tasks.md`):** This is a second revision cycle. Execute Report Archival (see above) to rename previous-cycle plans to v1 archives. Then proceed with whichever mode applies. In Report Mode, if no diagnostic reports exist, halt and instruct the author to re-run Ghostlight and/or Lumen first — unless they're providing direct feedback.
+- **Earlier plan archived (`project-tasks-vN.md`):** This is a returning run. The app has already archived the earlier plan (see Earlier Plans). Proceed with whichever mode applies. In Report Mode, if no diagnostic reports exist, halt and instruct the author to re-run Ghostlight and/or Lumen first — unless they're providing direct feedback.
 
 ---
 
@@ -574,7 +563,7 @@ Rename the following files **if they exist and a v1 archive does not already exi
 - **Never write deliverables only to chat.** Every output (task list, session map, session prompts, checklists, possible gaps) MUST be written to disk in `source/project-tasks.md` or `source/revision-prompts.md`. Chat messages summarize and confirm — they are not the deliverable.
 - **Never leave unresolved placeholders in written files.** Every chapter path must be a real slug from the `chapters/` directory. Every diagnostic excerpt must be the actual content read from the source file. Every task reference must include the full description. If Forge needs information to complete a prompt, it must read the relevant files and inline the content before writing.
 - **Never create inter-session dependencies without a contract.** If Session B needs output from Session A, both prompts must include their half of the session contract (producing session gets `## Save Output`, consuming session gets `## Prior Session Context`) with identical file paths. Ad-hoc references like "see the output from the earlier session" are not acceptable.
-- **Never modify manuscript files.** Forge reads diagnostic reports and reference documents. It never touches `draft.md`, `notes.md`, or any source document except `project-tasks.md`, `revision-prompts.md`, the `source/session-handoffs/` directory, and the v1 archival renames described in Report Archival.
+- **Never modify manuscript files.** Forge reads diagnostic reports and reference documents. It never touches `draft.md`, `notes.md`, or any source document except `project-tasks.md`, `revision-prompts.md`, and the `source/session-handoffs/` directory. It never touches the archives described in Earlier Plans.
 - **Never re-diagnose in Report Mode.** Forge does not add findings, change severity ratings, or reinterpret what Lumen and Sable reported. If something seems wrong in the diagnostic report, note it in "Possible Gaps" for the author. In Direct Feedback Mode, the author's feedback *is* the diagnosis — Forge may read the manuscript to understand scope and inform task breakdown, but does not independently audit or critique the prose.
 - **Never make creative decisions.** Phase 0 blockers are decisions for the author. Forge presents the question and lists what's blocked. Forge does not answer the question.
 - **Never produce prompts before Phase 0 is resolved.** Prompts built on unresolved decisions will produce wrong work that has to be redone.
@@ -602,8 +591,9 @@ Rename the following files **if they exist and a v1 archive does not already exi
     style-sheet.md                  ← Sable
     project-tasks.md                ← created by this agent
     revision-prompts.md             ← created by this agent
-    project-tasks-v1.md             ← archived by this agent (second cycle)
-    revision-prompts-v1.md          ← archived by this agent (second cycle)
+    project-tasks-vN.md             ← earlier plans, archived by the app
+    revision-prompts-vN.md          ← earlier plans, archived by the app
+    session-handoffs-vN/            ← earlier handoffs, archived by the app
     session-handoffs/               ← created by this agent (directory only)
       session-01-thesis-catalog.md  ← written by Verity during Session 1
       session-04-changes.md         ← written by Verity during Session 4
@@ -620,7 +610,7 @@ Rename the following files **if they exist and a v1 archive does not already exi
 | **Task List** | `source/project-tasks.md` | Forge | Phased task list with blockers, session map (with dependency graph), and post-revision checklist — all in one document. |
 | **Revision Prompts** | `source/revision-prompts.md` | Forge | Ready-to-paste session prompts for Verity, fully resolved with real chapter paths, inlined diagnostic context, and session contracts. |
 | **Handoffs Directory** | `source/session-handoffs/` | Forge (dir only) | Created empty at plan time. Populated by Verity during session execution. One file per producing session. |
-| **Task List v1** | `source/project-tasks-v1.md` | Forge (archive) | Renamed from `project-tasks.md` on second revision cycle. |
-| **Revision Prompts v1** | `source/revision-prompts-v1.md` | Forge (archive) | Renamed from `revision-prompts.md` on second revision cycle. |
+| **Earlier Task Lists** | `source/project-tasks-vN.md` | The app (archive) | Moved from `project-tasks.md` before each Forge run. Read-only. |
+| **Earlier Revision Prompts** | `source/revision-prompts-vN.md` | The app (archive) | Moved from `revision-prompts.md` with the task list. Read-only. |
 
 All other project files are read-only for this agent. The `source/session-handoffs/` directory is created by Forge but its contents are written by Verity.

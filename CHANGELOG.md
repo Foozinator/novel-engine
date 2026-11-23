@@ -51,6 +51,99 @@ A book's folder name comes from its title, and `createBook()` never checked whet
 
 ---
 
+## [2026-11-22] — Opening or editing a binary file no longer corrupts it (#83)
+
+### Summary
+
+The Explorer offered Edit on every file but Verity's drafts, images included. The editor decoded the file as UTF-8, and a save (or leaving after a change) wrote that text back, which destroyed the file. Text handling is now an allowlist: `isTextFilePath()` in the domain names the extensions the app opens as text. The Explorer preview, its Edit and History buttons and the manuscript editor apply it; any other file shows its name, type and size and is never read. As a backstop, `FileSystemService.writeFile` refuses to overwrite an existing file that isn't a known text type and whose first bytes look binary, which covers every caller of the write path. Find and replace skips non-text paths. Version history already kept only `.md` and `.json` files, so the issue's report of garbled snapshots did not reproduce; a refused write now also takes no snapshot.
+
+### Added
+- `src/test/fixtures/binaryFiles.ts` — PNG, JPEG (JFIF header) and GLB byte fixtures.
+- `src/infrastructure/filesystem/FileSystemService.binary.test.ts` — Each fixture survives a read, edit and write round trip byte for byte, with both writes refused; binary detection by bytes for unlisted extensions; unlisted text files, new files and `.md` files still write; `listDirectory` sizes.
+
+### Changed
+- `src/domain/constants.ts` — `TEXT_FILE_EXTENSIONS` and `isTextFilePath()`.
+- `src/domain/types.ts` — `FileEntry.size?` (bytes, files only).
+- `src/infrastructure/filesystem/FileSystemService.ts` — `buildFileTree` sets `size` on file entries.
+- `src/renderer/components/Files/FileBrowser.tsx` — `onFileSelect(path, entry?)` passes the clicked entry.
+- `src/renderer/components/Workbench/companion/ExplorerTab.tsx` — Non-text files are not read; the preview shows name, type and size, and History and Edit are hidden.
+- `src/renderer/components/Manuscript/ManuscriptView.tsx` — A non-text editor path (Explorer Edit deep link) is not read or opened in `FileEditor`, and file-change signals don't read it.
+- `src/application/FindReplaceService.ts` — `apply` skips paths that fail `isTextFilePath()`.
+- `src/domain/constants.test.ts`, `src/application/FindReplaceService.test.ts`, `src/main/ipc/handlers.test.ts`, `src/renderer/components/Workbench/companion/ExplorerTab.test.tsx`, `src/renderer/components/Manuscript/ManuscriptView.test.tsx`, `src/renderer/components/Files/FileBrowser.test.tsx` — Cases for the above.
+- `docs/architecture/DOMAIN.md`, `docs/architecture/INFRASTRUCTURE.md`, `docs/architecture/APPLICATION.md`, `docs/architecture/IPC.md` — New constant and helper, `FileEntry.size`, the write guard, the find-and-replace skip.
+- `docs/architecture/RENDERER.md` — Rows for `companion/ExplorerTab.tsx` and a `Manuscript/` section, which were missing.
+
+### Fixed
+- `src/infrastructure/filesystem/FileSystemService.ts` — `writeFile` refused nothing, so text from the editor, find and replace or any other caller could overwrite an image or model file. It now throws `Not a text file: … was left unchanged` when the existing target isn't a known text type and its first 8192 bytes hold a NUL or invalid UTF-8.
+
+### Architecture Impact
+- None — no wiring changes. `files:write` can now reject; `files:listDir` entries carry `size`.
+
+### Migration Notes
+- None
+
+---
+
+## [2026-11-22] — Book status, title and cover changes keep the rest of about.json (#80)
+
+### Summary
+
+`FileSystemService.updateBookMeta()` rebuilt `about.json` from the five `BookMeta` fields and dropped every other key. Spark writes genre, subgenre, audience and comp titles there, so a status change (for example, finishing First Draft), a rename or a new cover erased them. Ghostlight picks its reader persona from the genre, and Quill builds positioning and metadata from these fields. `updateBookMeta()` now writes the known fields over the parsed file. Other keys keep their values and their position, so the file's diff shows only the change.
+
+### Changed
+- `src/infrastructure/filesystem/FileSystemService.ts` — New private `readAboutJson(slug)` and `toBookMeta(slug, about)`, shared by `getBookMeta()` and `updateBookMeta()`. `getBookMeta()` now also throws "malformed about.json" when the file parses to something other than an object (`null`, an array, a string or a number). Before, `null` threw a `TypeError` and the others returned empty fields.
+- `docs/architecture/INFRASTRUCTURE.md` — `getBookMeta` and `updateBookMeta` behavior under the filesystem module.
+- `docs/architecture/DOMAIN.md` — `updateBookMeta` row says it keeps other keys.
+
+### Fixed
+- `src/infrastructure/filesystem/FileSystemService.ts` — `updateBookMeta()` spreads the parsed `about.json` before the known fields instead of writing only those fields. Unknown keys in the `partial` are still ignored.
+- `src/infrastructure/filesystem/FileSystemService.books.test.ts` — Top-level and nested agent keys survive a status change, a rename and a cover change, in their original order. Known fields missing from the file get added. Non-object `about.json` is reported as malformed.
+
+### Architecture Impact
+- None — no wiring changes.
+
+### Migration Notes
+- None. Keys already dropped from a book's `about.json` don't come back; the agent that wrote them (Spark for genre and comp titles) has to write them again.
+## [2026-11-22] — Repeat passes run every step and keep earlier reports (#81)
+
+### Summary
+
+A second Forge pass skipped "Build Task List": `MultiCallOrchestrator` treated any existing output as a finished step, so the old `project-tasks.md` was reused, the session prompts were rebuilt from it, and the archive instruction inside that step never ran. The same rule let an interrupted read resume from scratch notes about chapters that had since changed. Separately, `completeRevision()` overwrote `reader-report-v1.md` / `dev-report-v1.md` on every revision, and reverting Revision deleted both. Now a multi-call run keeps a run record and resumes only its own finished steps, and only while the book is unchanged. The app, not the agents, archives earlier plans and reports under the next free `-vN` number and never deletes them. Phase detection compares against the newest archive. Minimal fix ahead of the run log in #87.
+
+### Added
+- `src/application/archives.ts` — Versioned archive helpers: `archivePath`, `archiveVersions`, `latestArchive`, `latestPlanArchive`, `archiveGroup` (copy or move a group under one shared version; no new archive when the newest already matches), `archivePlan` (task list + session prompts, and on a move `session-handoffs/` → `session-handoffs-vN/`). Path constants `PLAN_FILES`, `SESSION_HANDOFFS_DIR`, `READER_REPORT`, `DEV_REPORT`.
+
+### Changed
+- `src/application/MultiCallOrchestrator.ts` — Run record at `source/.scratch/<agent>-run.json` (`stepsHash`, `inputsHash`, `completedSteps`). A run resumes only when the step list and a content fingerprint of the manifest's files (minus scratch, re-taken after each finished step) match; it then skips only steps the record lists. Otherwise it deletes this agent's scratch files and archives the agent's earlier output before step 1: Forge's plan moves (`archivePlan(..., 'move')`), reports are copied. Each attempt deletes its own stale scratch file first. A step whose output file existed before it ran fails unless it changes that file. The record is removed after synthesis.
+- `src/application/PipelineService.ts` — `completeRevision()` copies `reader-report.md` (required; clear error if missing), `dev-report.md` and the plan to their next free version instead of overwriting `-v1`. `revertPhase('revision')` no longer deletes archives. New `ACTION_GATED` set (`revision`): such a phase is never `pending-completion`, so with archives kept it returns to `active` after a revert. Detection uses the newest archive: `revision-plan-1` = live plan pair or any plan archive; `second-read` / `second-assessment` compare with the newest report archive; `revision-plan-2` compares task list and prompts with the newest archived plan and no longer requires a prompts archive at that version. Done stubs write a `-v1` archive only when none exists. Removed `safeDelete()`.
+- `src/application/RevisionQueueService.ts` — Cycle 2 is detected from any plan archive (`latestPlanArchive`), not `project-tasks-v1.md`. With an audit report, `loadPlan` refuses a live plan that matches the newest archived plan (`isArchivedPlan`, checkbox ticks ignored): that is still the first revision's plan. The error text names Forge instead of an "agent action".
+- `src/domain/constants.ts` — `FORGE_MULTI_CALL_STEPS` "Build Task List" prompt: the app has already archived any earlier plan; Forge must not rename, move or delete files.
+- `src/domain/interfaces.ts` — `IPipelineService.completeRevision` / `revertPhase` JSDoc describe versioned archives and the action-gated revision phase.
+- `agents/FORGE.md` — "Report Archival" (agent renames to `-v1`) replaced by "Earlier Plans": the app archives plan, prompts and handoffs to `-vN` before each pipeline run and on Complete Revision; Forge never renames, moves or deletes them. Session start, both workflows, partial-input rules, red lines, directory tree and owned-files table updated.
+- `agents/GHOSTLIGHT.md`, `agents/LUMEN.md`, `agents/SABLE.md` — Red line "archive the prior report yourself (e.g. `-v1`)" replaced by "never rename, move or delete reports; the app archives the previous one (`-vN`) before each pipeline run".
+- `agents/prompt-history.json` — Regenerated (`npm run agent-hashes`) for the four changed prompts.
+- `src/test/fakes.ts` — `makeFakeFs` gains `renameFile` (files and directories).
+- `src/application/MultiCallOrchestrator.test.ts` — Forge three times (all six steps run; plans, prompts and handoffs kept as v1, v2), resume from the run's own finished step, start over after a report or chapter change, report archive on a new read, no duplicate archive, synthesis that leaves the report unchanged fails. Replaces the "skip any existing output" test.
+- `src/application/PipelineService.test.ts` — Revision completed three times keeps reader/dev v1–v3 and plan v1–v2; unchanged reports add no archive; revert keeps archives and returns revision to `active`; newest-archive detection for second-read, revision-plan-1 and revision-plan-2 (including a task-list-only archive).
+- `src/application/RevisionQueueService.queue.test.ts` — Updated message; new test refusing the archived first-cycle plan as the mechanical fixes plan.
+- `TECHNICAL.md`, `docs/architecture/APPLICATION.md`, `docs/architecture/DOMAIN.md`, `docs/architecture/ARCHITECTURE.md` — Versioned archives, run record, detection rules, new file.
+
+### Fixed
+- `src/application/MultiCallOrchestrator.ts` — Forge's second pass skipped "Build Task List" and overwrote the earlier session prompts; interrupted reads resumed from stale scratch notes.
+- `src/application/PipelineService.ts` — A second Complete Revision replaced the first archived reports; reverting Revision deleted them. Fix Planning wasn't detected when only the task list had an archive.
+
+### Architecture Impact
+- New module: `src/application/archives.ts`, used by `PipelineService`, `MultiCallOrchestrator` and `RevisionQueueService`. No DI, IPC or store changes.
+- New on-disk file: `source/.scratch/<agent>-run.json` (exists only while a multi-call run is unfinished).
+- Archives are now `source/<name>-vN.md` and `source/session-handoffs-vN/`, written only by the app.
+
+### Migration Notes
+- None required. Existing `-v1` archives are read as version 1; the next archive becomes v2.
+- Scratch files from a run interrupted before this change have no run record, so the next run of that agent discards them and starts over.
+- The Reports tab still lists only the `-v1` files; later versions show in the file tree.
+
+---
+
 ## [2026-11-22] — Entry-page check compares file paths; DOMPurify 3.4.18
 
 ### Summary

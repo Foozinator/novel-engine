@@ -284,6 +284,40 @@ export function describeBookTitleConflict(newTitle: string, conflict: BookTitleC
   return `${who} ${name} already exists.${note} Choose another title.`;
 }
 
+// === Text Files ===
+
+/**
+ * Extensions the app opens as text. The Files preview, the editor and
+ * version history offer only these; any other file shows its name, type
+ * and size. Lower case, with the leading dot.
+ */
+export const TEXT_FILE_EXTENSIONS: ReadonlySet<string> = new Set([
+  '.md',
+  '.markdown',
+  '.txt',
+  '.json',
+  '.yaml',
+  '.yml',
+  '.csv',
+  '.tsv',
+  '.html',
+  '.htm',
+  '.xml',
+  '.css',
+]);
+
+/**
+ * True when the path's extension is in TEXT_FILE_EXTENSIONS (any case).
+ * A name with no extension, or a dotfile like `.gitignore`, is not text.
+ * Accepts `/` or `\` separators.
+ */
+export function isTextFilePath(filePath: string): boolean {
+  const name = filePath.split(/[/\\]/).pop() ?? '';
+  const dot = name.lastIndexOf('.');
+  if (dot <= 0) return false;
+  return TEXT_FILE_EXTENSIONS.has(name.slice(dot).toLowerCase());
+}
+
 /** Reserved provider ID for OpenCode CLI (future implementation). */
 export const OPENCODE_CLI_PROVIDER_ID: ProviderId = 'opencode-cli';
 
@@ -1482,7 +1516,7 @@ Also read for context:
 
 Enumerate all chapter directories under chapters/.
 
-If source/project-tasks.md already exists, this is a second revision cycle — execute Report Archival (rename existing files to v1 archives) before proceeding.
+The app has already archived any earlier plan (as source/project-tasks-vN.md, source/revision-prompts-vN.md and source/session-handoffs-vN/). Do not rename, move or delete files yourself.
 
 Produce the complete phased task list following your system prompt instructions:
 - Phase 0: Author Decisions (blockers)

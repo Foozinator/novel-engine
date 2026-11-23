@@ -1,3 +1,4 @@
+import { isTextFilePath } from '@domain/constants';
 import type { IFileSystemService, IFindReplaceService, IVersionService } from '@domain/interfaces';
 import type {
   FindReplaceApplyResult,
@@ -134,6 +135,9 @@ export class FindReplaceService implements IFindReplaceService {
     let totalReplacements = 0;
 
     for (const filePath of filePaths) {
+      // The caller picks the paths; never rewrite an image or other binary file.
+      if (!isTextFilePath(filePath)) continue;
+
       let content: string;
       try {
         content = await this.fs.readFile(bookSlug, filePath);

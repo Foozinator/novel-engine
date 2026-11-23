@@ -20,11 +20,47 @@ import {
   PITCH_ROOM_SLUG,
   bookTitleFromPitch,
   describeBookTitleConflict,
+  isTextFilePath,
   slugifyBookTitle,
 } from '@domain/constants';
 import { resolveBookPath, safeSegment } from './bookPaths';
 
 const VALID_COVER_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
+
+/** Bytes read from an existing file to decide whether it is text (git reads 8000). */
+const TEXT_SNIFF_BYTES = 8192;
+
+/**
+ * True when the file at `absPath` exists and its first bytes hold a NUL or
+ * are not valid UTF-8. Missing files and directories count as not binary.
+ */
+async function looksBinary(absPath: string): Promise<boolean> {
+  let handle: fs.FileHandle;
+  try {
+    handle = await fs.open(absPath, 'r');
+  } catch {
+    return false;
+  }
+  try {
+    const sample = Buffer.alloc(TEXT_SNIFF_BYTES);
+    const { bytesRead } = await handle.read(sample, 0, TEXT_SNIFF_BYTES, 0);
+    const bytes = sample.subarray(0, bytesRead);
+    if (bytes.includes(0)) return true;
+    try {
+      // A full sample may end mid-character; stream mode leaves that tail undecoded.
+      new TextDecoder('utf-8', { fatal: true }).decode(bytes, {
+        stream: bytesRead === TEXT_SNIFF_BYTES,
+      });
+      return false;
+    } catch {
+      return true;
+    }
+  } catch {
+    return false; // EISDIR and the like: let the write itself report it
+  } finally {
+    await handle.close();
+  }
+}
 
 const KNOWN_BOOK_META_KEYS: ReadonlySet<keyof BookMeta> = new Set([
   'slug',
@@ -249,7 +285,11 @@ export class FileSystemService implements IFileSystemService {
     }
   }
 
-  async getBookMeta(slug: string): Promise<BookMeta> {
+  /**
+   * Reads a book's about.json as a plain object, keeping every key. Throws if
+   * the file is missing, isn't valid JSON, or isn't a JSON object.
+   */
+  private async readAboutJson(slug: string): Promise<Record<string, unknown>> {
     const aboutPath = resolveBookPath(this.booksDir, slug, 'about.json');
     let raw: string;
     try {
@@ -258,25 +298,38 @@ export class FileSystemService implements IFileSystemService {
       throw new Error(`Book "${slug}" not found: about.json does not exist at ${aboutPath}`);
     }
 
-    let parsed: Record<string, unknown>;
+    let parsed: unknown;
     try {
-      parsed = JSON.parse(raw) as Record<string, unknown>;
+      parsed = JSON.parse(raw);
     } catch {
       throw new Error(`Book "${slug}" has malformed about.json at ${aboutPath}`);
     }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error(`Book "${slug}" has malformed about.json at ${aboutPath}`);
+    }
+    return parsed as Record<string, unknown>;
+  }
 
+  private toBookMeta(slug: string, about: Record<string, unknown>): BookMeta {
     return {
       slug,
-      title: String(parsed.title ?? ''),
-      author: String(parsed.author ?? ''),
-      status: String(parsed.status ?? 'scaffolded') as BookStatus,
-      created: String(parsed.created ?? ''),
-      coverImage: String(parsed.coverImage ?? ''),
+      title: String(about.title ?? ''),
+      author: String(about.author ?? ''),
+      status: String(about.status ?? 'scaffolded') as BookStatus,
+      created: String(about.created ?? ''),
+      coverImage: String(about.coverImage ?? ''),
     };
   }
 
+  async getBookMeta(slug: string): Promise<BookMeta> {
+    return this.toBookMeta(slug, await this.readAboutJson(slug));
+  }
+
   async updateBookMeta(slug: string, partial: Partial<BookMeta>): Promise<BookMeta> {
-    const existing = await this.getBookMeta(slug);
+    // Keep the whole parsed file: agents add keys BookMeta doesn't model
+    // (genre, subgenre, audience, comp titles) and later agents read them.
+    const about = await this.readAboutJson(slug);
+    const existing = this.toBookMeta(slug, about);
 
     const newSlug = partial.title ? this.slugify(partial.title) : slug;
     let currentSlug = slug;
@@ -311,7 +364,14 @@ export class FileSystemService implements IFileSystemService {
     await fs.writeFile(
       aboutPath,
       JSON.stringify(
-        { title: existing.title, author: existing.author, status: existing.status, created: existing.created, coverImage: existing.coverImage },
+        {
+          ...about,
+          title: existing.title,
+          author: existing.author,
+          status: existing.status,
+          created: existing.created,
+          coverImage: existing.coverImage,
+        },
         null,
         2,
       ),
@@ -430,6 +490,13 @@ export class FileSystemService implements IFileSystemService {
 
   async writeFile(bookSlug: string, relativePath: string, content: string): Promise<void> {
     const filePath = resolveBookPath(this.booksDir, bookSlug, relativePath);
+    // Text written over an image or other binary file destroys it (#83).
+    // Known text types skip the check; new files are always allowed.
+    if (!isTextFilePath(relativePath) && (await looksBinary(filePath))) {
+      throw new Error(
+        `Not a text file: ${relativePath} in book "${bookSlug}" was left unchanged`,
+      );
+    }
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, content, 'utf-8');
   }
@@ -1372,7 +1439,7 @@ export class FileSystemService implements IFileSystemService {
         const children = await this.buildFileTree(basePath, entryRelPath, depth + 1, maxDepth);
         dirs.push({ name, path: entryRelPath, isDirectory: true, children });
       } else {
-        files.push({ name, path: entryRelPath, isDirectory: false });
+        files.push({ name, path: entryRelPath, isDirectory: false, size: stat.size });
       }
     }
 

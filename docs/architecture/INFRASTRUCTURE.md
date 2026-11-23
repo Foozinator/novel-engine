@@ -95,12 +95,15 @@ Key behavior:
 - `FileSystemService` constructor takes `booksDir` and `userDataPath`
 - `createBook` generates slug from title (`slugifyBookTitle`), creates directory structure with `about.json`. It never writes into an existing book (#79): it throws `describeBookTitleConflict()` when `findTitleConflict(title)` finds one, then claims the folder with a non-recursive `mkdir` so a folder that appears after the check fails with `EEXIST`
 - `findTitleConflict(title)` scans `books/` and `books/_archived/`: an entry whose name lowercases to the slug, or whose `about.json` title slugifies to it. Reserved `_`/`.` folders are skipped. It reads every `about.json`, so it is O(books)
-- `updateBookMeta` renames use the same check (live and archived, any case), skipping the book's own folder
+- `getBookMeta` throws when `about.json` is missing, isn't valid JSON, or isn't a JSON object
+- `updateBookMeta` writes the five `BookMeta` fields (`title`, `author`, `status`, `created`, `coverImage`) over the parsed `about.json`. Other keys (genre, subgenre, audience, comp titles written by agents) keep their values and their position. Unknown keys in the `partial` are ignored. A title that changes the slug renames the folder first, after the same check as `createBook` (live and archived, any case), skipping the book's own folder
 - `restorePitch(pitchSlug, title?)` and `promotePitchToBook(conversationId, title?)` take an optional replacement title for when the pitch's own title is taken
 - `reconcileBookSlugs` renames folders whose name no longer matches the slugified title
-- `saveCoverImage` copies image into book directory, updates `about.json`
+- `saveCoverImage` copies image into book directory, updates `about.json` through `updateBookMeta`
 - `archiveBook`/`unarchiveBook` moves books to/from `_archived/` subdirectory; `unarchiveBook` removes the book's `.claude/` folder
 - Every book-relative path goes through `resolveBookPath()` (read/write/delete/rename/exists/list, covers, word counts, manifest). Pitch slugs and draft IDs go through `safeSegment()`. A `coverImage` outside the book reads as no cover
+- `writeFile` refuses to overwrite a binary file (#83). Paths that pass `isTextFilePath()` skip the check. For any other path it reads the first 8192 bytes of the existing file; a NUL or invalid UTF-8 throws `Not a text file: … was left unchanged`. Missing files are created as before
+- `listDirectory` file entries carry `size` (bytes) from the `stat` the tree walk already makes
 - Shelved pitches stored in `books/_pitches/{slug}.md` with YAML front matter
 - Pitch Room drafts stored in `books/__pitch-room__/drafts/{conversationId}/`
 - `BookWatcher.watch(slug)` switches which book directory is being monitored
