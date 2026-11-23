@@ -1,8 +1,9 @@
 import { create } from 'zustand';
 import type { Conversation, Message, StreamEvent } from '@domain/types';
-import { PITCH_ROOM_SLUG } from '@domain/constants';
+import { PITCH_ROOM_SLUG, bookTitleFromPitch } from '@domain/constants';
 import { randomRespondingStatus } from '@domain/statusMessages';
 import { createStreamHandler } from './streamHandler';
+import { findTitleConflictMessage, ipcErrorMessage, type PitchToBookResult } from '../utils/bookTitle';
 
 type PitchRoomState = {
   conversations: Conversation[];
@@ -29,10 +30,11 @@ type PitchRoomState = {
   /** Re-check whether the active conversation's draft contains a pitch. */
   refreshDraftStatus: () => Promise<void>;
   /**
-   * Promote the active draft to a real book via the pitchRoom:promote IPC.
-   * Returns the new book slug, or null on failure.
+   * Promote the active draft to a real book via the pitchRoom:promote IPC,
+   * titled `title` or the pitch's first heading. A taken title (#79) is
+   * reported with `takenTitle` and nothing is created.
    */
-  promoteActivePitch: () => Promise<string | null>;
+  promoteActivePitch: (title?: string) => Promise<PitchToBookResult>;
 
   _activeCallId: string | null;
   _cleanupListener: (() => void) | null;
@@ -232,18 +234,31 @@ export const usePitchRoomStore = create<PitchRoomState>((set, get) => ({
     }
   },
 
-  promoteActivePitch: async () => {
+  promoteActivePitch: async (title?: string) => {
     const { activeConversation, isPromoting } = get();
-    if (!activeConversation || isPromoting) return null;
+    if (!activeConversation) return { ok: false, message: 'No pitch is open' };
+    if (isPromoting) return { ok: false, message: 'Already creating the book' };
     set({ isPromoting: true });
     try {
-      const meta = await window.novelEngine.pitchRoom.promote(activeConversation.id);
+      // Check the title the book would get, so a taken one can be changed first
+      const bookTitle =
+        title?.trim() ||
+        bookTitleFromPitch(await window.novelEngine.pitchRoom.readContent(activeConversation.id));
+      const conflict = await findTitleConflictMessage(bookTitle);
+      if (conflict) {
+        set({ isPromoting: false });
+        return { ok: false, message: conflict, takenTitle: bookTitle };
+      }
+
+      const meta = title?.trim()
+        ? await window.novelEngine.pitchRoom.promote(activeConversation.id, title.trim())
+        : await window.novelEngine.pitchRoom.promote(activeConversation.id);
       set({ isPromoting: false, hasPitch: false });
-      return meta.slug;
+      return { ok: true, slug: meta.slug };
     } catch (error) {
       console.error('Failed to promote pitch to book:', error);
       set({ isPromoting: false });
-      return null;
+      return { ok: false, message: ipcErrorMessage(error, 'Could not create the book') };
     }
   },
 

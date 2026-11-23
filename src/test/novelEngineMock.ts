@@ -308,6 +308,7 @@ export function installNovelEngineMock(overrides: BridgeOverrides = {}): NovelEn
       getActiveSlug: vi.fn(async () => ''),
       setActive: vi.fn(async () => undefined),
       create: vi.fn(async () => makeBookMeta()),
+      findTitleConflict: vi.fn(async () => null),
       getMeta: vi.fn(async () => makeBookMeta()),
       updateMeta: vi.fn(async () => makeBookMeta()),
       wordCount: vi.fn(async () => []),
@@ -337,6 +338,7 @@ export function installNovelEngineMock(overrides: BridgeOverrides = {}): NovelEn
     seriesImport: {
       selectFiles: vi.fn(async () => null),
       preview: notStubbed('seriesImport.preview'),
+      checkTitles: vi.fn(async () => []),
       commit: notStubbed('seriesImport.commit'),
     },
     files: {

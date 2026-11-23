@@ -38,6 +38,109 @@ On Windows, `BookWatcher` passed `fs.watch` names through with `\`, and `buildFi
 - The startup prune (`pruneVersions(slug, 50)` in `src/main/index.ts`) runs right after. A file whose history was split across both forms kept up to 50 versions per form. Now it keeps the newest 50 overall plus the pinned agent baseline. The older versions remain only in the pre-migration backup.
 - A build from before this change refuses history snapshots exported after it (schema v5).
 
+---
+
+## [2026-11-23] — Ghostlight's cold read no longer gets the series bible (#61)
+
+### Summary
+
+On a book in a series, Ghostlight got the series bible twice: `ContextBuilder` added a "Series Context" section to every agent's prompt, and Ghostlight's read guidance listed `series-bible.md` as read-if-relevant. The bible is the author's reference (world rules, timeline, sometimes intent), which no reader of the earlier books has, so the read was neither a new reader's nor a returning reader's. Ghostlight now gets neither the section nor the bible path, in chat and in every multi-call step. Hot take never used `ContextBuilder` and never got it. Other agents are unchanged. Until #62 lands, Ghostlight reads a sequel as a new reader.
+
+### Changed
+- `src/domain/constants.ts` — `AGENT_READ_GUIDANCE.Ghostlight.readIfRelevant` is now empty (was `['series-bible.md']`).
+- `src/application/ContextBuilder.ts` — `build()` drops `seriesBiblePath` unless the private `wantsSeriesBible(agentName)` is true: a creative agent whose guidance lists `series-bible.md` (alwaysRead or readIfRelevant), or an agent without guidance (Wrangler, Helper). The placeholder replacement uses the new `SERIES_BIBLE_FILE` constant.
+- `src/application/ContextBuilder.test.ts` — Ghostlight on a series book: no Series Context section, no bible path, no `series-bible` mention. Every other agent (the six creative agents, Wrangler, Helper) still gets the section with the path.
+- `src/application/MultiCallOrchestrator.test.ts` — `makeOrchestrator()` takes an optional bible path. On a series book, no Ghostlight read or synthesis step carries the bible path or section; Lumen's synthesis still does.
+- `docs/architecture/DOMAIN.md`, `docs/architecture/APPLICATION.md` — Series-bible rule in the read guidance and the context assembly steps; hot take builds its prompt without `ContextBuilder`.
+
+### Architecture Impact
+- None — no wiring changes.
+
+### Migration Notes
+- None.
+
+---
+
+## [2026-11-22] — Refuse book titles that already exist (#79)
+
+### Summary
+
+A book's folder name comes from its title, and `createBook()` never checked whether that folder existed. Creating or importing a book with an existing title rewrote the old book's `about.json`, copyright and dedication files, and the import then wrote its chapters over any with the same names. `createBook()` now refuses a title when a live or archived book has the same folder (in any case) or a title that differs only in case or punctuation. All four callers check the title first and offer another one: New Book (and onboarding's first book), manuscript import, series import, and pitch promotion and restore. Series import refuses the whole batch before creating the series or any volume, and also catches two volumes with the same title. "Import as a new draft of this book" comes with #88.
+
+### Added
+- `src/domain/constants.ts` — `slugifyBookTitle()` (the folder-name rule, moved from `FileSystemService.slugify`), `describeBookTitleConflict()` (one refusal message for main and renderer), `bookTitleFromPitch()` (first `# ` heading, else "Untitled Book").
+- `src/domain/types.ts` — `BookTitleConflict { slug, title, archived }`, `SeriesImportTitleProblem { volumeNumber, message }`.
+- `src/renderer/utils/bookTitle.ts` — `findTitleConflictMessage()`, `ipcErrorMessage()`, `PitchToBookResult`.
+- `src/renderer/components/common/BookTitleModal.tsx` — Title prompt that stays open with the reason. Replaces LibraryView's inline `NewBookModal` and serves as "Choose another title" for pitches.
+- `src/application/bookTitleConflict.test.ts` — Runs every caller (create, manuscript import, series import, promote, restore) against a real temp data folder for a same, case/punctuation and archived title, and checks that the whole folder is byte-identical afterwards.
+- `src/renderer/utils/bookTitle.test.ts`.
+
+### Changed
+- `src/domain/interfaces.ts` — `IFileSystemService.findTitleConflict(title)`; `restorePitch(pitchSlug, title?)`; `promotePitchToBook(conversationId, title?)`; `ISeriesImportService.checkTitles(volumes)`.
+- `src/infrastructure/filesystem/FileSystemService.ts` — `findTitleConflict()` scans `books/` and `books/_archived/` (folder name in any case, or `about.json` title slug). `createBook()` throws `describeBookTitleConflict()` before writing anything, then claims the folder with a non-recursive `mkdir` (`EEXIST` → same refusal). `updateBookMeta()` renames use the same check, skipping the book's own folder. `restorePitch()`/`promotePitchToBook()` accept a replacement title. `slugify()` delegates to `slugifyBookTitle()`.
+- `src/application/SeriesImportService.ts` — Takes `IFileSystemService`. New `checkTitles()`: repeats of an earlier volume's slug, then `findTitleConflict()`. `commit()` throws `Volume N: …` lines before creating the series or any book.
+- `src/main/index.ts` — `new SeriesImportService(manuscriptImport, series, fs)`.
+- `src/main/ipc/handlers.ts` — New `books:findTitleConflict`, `import:seriesCheckTitles`. `pitches:restore` and `pitchRoom:promote` pass an optional string `title`.
+- `src/preload/index.ts` — `books.findTitleConflict`, `seriesImport.checkTitles`; `pitches.restore(slug, title?)`, `pitchRoom.promote(id, title?)`.
+- `src/renderer/stores/importStore.ts` — `titleConflict`: set when the preview loads and on commit (which then stays on the preview); cleared by `updateTitle`. Commit is ignored while `importing`. Errors drop the IPC prefix.
+- `src/renderer/stores/seriesImportStore.ts` — `titleProblems` (by volume index) and `refreshTitleProblems()`, run on preview and after every title edit, skip and move, with a sequence counter against late answers. Commit re-checks and is ignored while `importing`.
+- `src/renderer/stores/pitchRoomStore.ts` — `promoteActivePitch(title?)` returns `PitchToBookResult` and checks the title before promoting.
+- `src/renderer/stores/pitchShelfStore.ts` — `restorePitch(slug, title?)` returns `PitchToBookResult` and checks the title before restoring; no longer throws.
+- `src/renderer/components/Library/LibraryView.tsx` — New Book uses `BookTitleModal`; a taken title or create error keeps the modal open with the reason.
+- `src/renderer/components/Onboarding/OnboardingWizard.tsx` — A taken first-book title keeps the ready step open, before onboarding is marked complete.
+- `src/renderer/components/Import/ImportWizard.tsx` — Shows `titleConflict` under the Title field; Import disabled while set.
+- `src/renderer/components/Import/ImportSeriesWizard.tsx`, `VolumePreviewList.tsx` — Per-volume title problems; Import disabled while an included volume has one.
+- `src/renderer/components/PitchRoom/PitchRoomView.tsx`, `PitchRail.tsx` — A taken pitch title opens `BookTitleModal`, prefilled with that title.
+- `src/test/novelEngineMock.ts`, `src/test/fakes.ts` — Stubs for the new bridge and interface methods.
+- Tests: `FileSystemService.books.test.ts` (the test that recorded the silent reuse now asserts the refusal; `findTitleConflict`, `EEXIST` backstop, archived rename), `FileSystemService.pitches.test.ts` (restore after archive needs a new title), `SeriesImportService.test.ts`, `handlers.test.ts`, `constants.test.ts`, and the store and component tests for each caller.
+- `docs/architecture/{ARCHITECTURE,DOMAIN,INFRASTRUCTURE,APPLICATION,IPC,RENDERER}.md` — Updated for the above. `INFRASTRUCTURE.md` also corrects the shelved-pitch and Pitch Room draft paths (`books/_pitches/`, `books/__pitch-room__/drafts/`).
+
+### Fixed
+- `src/infrastructure/filesystem/FileSystemService.ts` — Creating, importing, promoting or restoring a book with an existing title no longer overwrites that book (#79). Renaming onto an archived book's title is refused, so unarchiving can't collide later. Renaming a folder whose name differs from its slug only in case no longer collides with itself.
+
+### Architecture Impact
+- New dependency: SeriesImportService → IFileSystemService
+- New IPC channels: `books:findTitleConflict`, `import:seriesCheckTitles`
+- Changed IPC channels: `pitches:restore` and `pitchRoom:promote` take an optional `title`
+
+### Migration Notes
+- None. No schema or on-disk format change. Libraries that already hold two books whose titles differ only in case or punctuation keep working; only new books are refused.
+
+---
+
+## [2026-11-22] — Opening or editing a binary file no longer corrupts it (#83)
+
+### Summary
+
+The Explorer offered Edit on every file but Verity's drafts, images included. The editor decoded the file as UTF-8, and a save (or leaving after a change) wrote that text back, which destroyed the file. Text handling is now an allowlist: `isTextFilePath()` in the domain names the extensions the app opens as text. The Explorer preview, its Edit and History buttons and the manuscript editor apply it; any other file shows its name, type and size and is never read. As a backstop, `FileSystemService.writeFile` refuses to overwrite an existing file that isn't a known text type and whose first bytes look binary, which covers every caller of the write path. Find and replace skips non-text paths. Version history already kept only `.md` and `.json` files, so the issue's report of garbled snapshots did not reproduce; a refused write now also takes no snapshot.
+
+### Added
+- `src/test/fixtures/binaryFiles.ts` — PNG, JPEG (JFIF header) and GLB byte fixtures.
+- `src/infrastructure/filesystem/FileSystemService.binary.test.ts` — Each fixture survives a read, edit and write round trip byte for byte, with both writes refused; binary detection by bytes for unlisted extensions; unlisted text files, new files and `.md` files still write; `listDirectory` sizes.
+
+### Changed
+- `src/domain/constants.ts` — `TEXT_FILE_EXTENSIONS` and `isTextFilePath()`.
+- `src/domain/types.ts` — `FileEntry.size?` (bytes, files only).
+- `src/infrastructure/filesystem/FileSystemService.ts` — `buildFileTree` sets `size` on file entries.
+- `src/renderer/components/Files/FileBrowser.tsx` — `onFileSelect(path, entry?)` passes the clicked entry.
+- `src/renderer/components/Workbench/companion/ExplorerTab.tsx` — Non-text files are not read; the preview shows name, type and size, and History and Edit are hidden.
+- `src/renderer/components/Manuscript/ManuscriptView.tsx` — A non-text editor path (Explorer Edit deep link) is not read or opened in `FileEditor`, and file-change signals don't read it.
+- `src/application/FindReplaceService.ts` — `apply` skips paths that fail `isTextFilePath()`.
+- `src/domain/constants.test.ts`, `src/application/FindReplaceService.test.ts`, `src/main/ipc/handlers.test.ts`, `src/renderer/components/Workbench/companion/ExplorerTab.test.tsx`, `src/renderer/components/Manuscript/ManuscriptView.test.tsx`, `src/renderer/components/Files/FileBrowser.test.tsx` — Cases for the above.
+- `docs/architecture/DOMAIN.md`, `docs/architecture/INFRASTRUCTURE.md`, `docs/architecture/APPLICATION.md`, `docs/architecture/IPC.md` — New constant and helper, `FileEntry.size`, the write guard, the find-and-replace skip.
+- `docs/architecture/RENDERER.md` — Rows for `companion/ExplorerTab.tsx` and a `Manuscript/` section, which were missing.
+
+### Fixed
+- `src/infrastructure/filesystem/FileSystemService.ts` — `writeFile` refused nothing, so text from the editor, find and replace or any other caller could overwrite an image or model file. It now throws `Not a text file: … was left unchanged` when the existing target isn't a known text type and its first 8192 bytes hold a NUL or invalid UTF-8.
+
+### Architecture Impact
+- None — no wiring changes. `files:write` can now reject; `files:listDir` entries carry `size`.
+
+### Migration Notes
+- None
+
+---
+
 ## [2026-11-22] — Book status, title and cover changes keep the rest of about.json (#80)
 
 ### Summary

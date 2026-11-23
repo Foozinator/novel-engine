@@ -187,4 +187,29 @@ describe('ImportWizard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Try Again' }));
     await waitFor(() => expect(selectFile).toHaveBeenCalled());
   });
+
+  it('shows a taken title under the Title field and blocks Import until it changes (#79)', () => {
+    renderWizard({
+      stores: [
+        [
+          useImportStore,
+          {
+            step: 'preview',
+            preview: makePreview(),
+            title: 'My Book',
+            titleConflict: 'A book titled "My Book" already exists. Choose another title.',
+            chapters: [chapter(0, 'Chapter One')],
+          },
+        ],
+      ],
+    });
+
+    expect(screen.getByRole('alert')).toHaveTextContent('A book titled "My Book" already exists.');
+    expect(screen.getByDisplayValue('My Book')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('button', { name: 'Import' })).toBeDisabled();
+
+    fireEvent.change(screen.getByDisplayValue('My Book'), { target: { value: 'My Book, Draft Two' } });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Import' })).toBeEnabled();
+  });
 });

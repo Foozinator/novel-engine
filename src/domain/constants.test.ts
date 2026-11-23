@@ -2,12 +2,16 @@ import { describe, expect, it } from 'vitest';
 import type { CreativeAgentName } from '@domain/types';
 import {
   toStoredBookPath,
+  bookTitleFromPitch,
+  describeBookTitleConflict,
+  slugifyBookTitle,
   isVersionAtLeast,
   parseClaudeCliVersion,
   parseClaudeCliVersionError,
   formatModelLabel,
   getModelPricing,
   getPhaseStarterActions,
+  isTextFilePath,
   AGENT_MULTI_CALL_STEPS,
   AGENT_QUICK_ACTIONS,
   AGENT_READ_GUIDANCE,
@@ -479,5 +483,58 @@ describe('toStoredBookPath', () => {
     expect(toStoredBookPath('chapters\\01-one\\draft.md')).toBe('chapters/01-one/draft.md');
     expect(toStoredBookPath('chapters/01-one/draft.md')).toBe('chapters/01-one/draft.md');
     expect(toStoredBookPath('about.json')).toBe('about.json');
+  });
+});
+
+describe('book titles (#79)', () => {
+  it('slugifyBookTitle folds case and punctuation into one folder name', () => {
+    expect(slugifyBookTitle('The Hollow Crown')).toBe('the-hollow-crown');
+    expect(slugifyBookTitle('  THE hollow-crown!! ')).toBe('the-hollow-crown');
+    expect(slugifyBookTitle('Café Überall')).toBe('caf-berall');
+    expect(slugifyBookTitle('!!!')).toBe('');
+  });
+
+  it('describeBookTitleConflict names the book, where it is, and the case/punctuation rule when needed', () => {
+    const live = { slug: 'twin', title: 'Twin', archived: false };
+    expect(describeBookTitleConflict('Twin', live)).toBe('A book titled "Twin" already exists. Choose another title.');
+    expect(describeBookTitleConflict(' Twin ', live)).toBe('A book titled "Twin" already exists. Choose another title.');
+    expect(describeBookTitleConflict('TWIN!', live)).toBe(
+      'A book titled "Twin" already exists. Titles that differ only in case or punctuation count as the same. Choose another title.'
+    );
+    expect(describeBookTitleConflict('Ghost', { slug: 'ghost', title: 'Ghost', archived: true })).toBe(
+      'An archived book titled "Ghost" already exists. Choose another title.'
+    );
+    expect(describeBookTitleConflict('Odd', { slug: 'odd', title: '', archived: false })).toBe(
+      'A book in folder "odd" already exists. Titles that differ only in case or punctuation count as the same. Choose another title.'
+    );
+  });
+
+  it('bookTitleFromPitch takes the first # heading, else "Untitled Book"', () => {
+    expect(bookTitleFromPitch('intro\n# The Hollow Crown \n\n# Later')).toBe('The Hollow Crown');
+    expect(bookTitleFromPitch('## Not a title\nprose')).toBe('Untitled Book');
+    expect(bookTitleFromPitch('')).toBe('Untitled Book');
+  });
+});
+
+describe('isTextFilePath', () => {
+  it('accepts known text extensions in any case and any folder', () => {
+    expect(isTextFilePath('chapters/01-opening/draft.md')).toBe(true);
+    expect(isTextFilePath('about.json')).toBe(true);
+    expect(isTextFilePath('source/NOTES.TXT')).toBe(true);
+    expect(isTextFilePath('dist\\book.html')).toBe(true);
+  });
+
+  it('rejects images, models, exports and unknown types', () => {
+    for (const p of ['assets/cover.png', 'assets/photo.JPG', 'assets/model.glb', 'dist/book.epub', 'dist/book.docx', 'dist/book.pdf']) {
+      expect(isTextFilePath(p)).toBe(false);
+    }
+  });
+
+  it('rejects names without an extension and bare dotfiles', () => {
+    expect(isTextFilePath('LICENSE')).toBe(false);
+    expect(isTextFilePath('.gitignore')).toBe(false);
+    expect(isTextFilePath('.md')).toBe(false);
+    expect(isTextFilePath('notes.md/cover')).toBe(false);
+    expect(isTextFilePath('')).toBe(false);
   });
 });

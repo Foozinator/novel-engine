@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
 import type { ShelvedPitchMeta } from '@domain/types';
+import { slugifyBookTitle } from '@domain/constants';
 import { PitchRail } from './PitchRail';
 import { usePitchRoomStore } from '../../stores/pitchRoomStore';
 import { usePitchShelfStore } from '../../stores/pitchShelfStore';
@@ -86,6 +87,35 @@ describe('PitchRail', () => {
     // Restored meta's slug becomes the active book and we land in the workspace
     await waitFor(() => expect(bridge.books.setActive).toHaveBeenCalledWith('test-book'));
     expect(useViewStore.getState().currentView).toBe('workspace');
+  });
+
+  it('a taken pitch title opens the retitle modal instead of restoring (#79)', async () => {
+    const findTitleConflict = vi.fn(async (title: string) =>
+      slugifyBookTitle(title) === 'space-heist' ? { slug: 'space-heist', title: 'Space Heist', archived: false } : null,
+    );
+    const { bridge } = renderRail([], {
+      pitches: { list: vi.fn(async () => [PITCH]) },
+      books: { findTitleConflict },
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Restore' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Yes' }));
+
+    await screen.findByRole('dialog', { name: 'Choose another title' });
+    expect(screen.getByRole('alert')).toHaveTextContent('A book titled "Space Heist" already exists.');
+    expect(bridge.pitches.restore).not.toHaveBeenCalled();
+
+    // A second taken title keeps the modal open with the new reason
+    const input = screen.getByPlaceholderText('Book Title');
+    fireEvent.change(input, { target: { value: 'space heist!' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create Book' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Titles that differ only in case or punctuation');
+    expect(findTitleConflict).toHaveBeenLastCalledWith('space heist!');
+
+    // Cancel closes it without restoring
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(bridge.pitches.restore).not.toHaveBeenCalled();
   });
 
   it('deletes a shelved pitch after confirmation', async () => {

@@ -2,8 +2,10 @@ import { create } from 'zustand';
 import type {
   SeriesImportPreview,
   SeriesImportResult,
+  SeriesImportTitleProblem,
   SeriesImportVolume,
 } from '@domain/types';
+import { ipcErrorMessage } from '../utils/bookTitle';
 
 type SeriesImportStep =
   | 'idle'
@@ -24,9 +26,16 @@ type SeriesImportState = {
   author: string;
   volumes: SeriesImportVolume[];
   existingSeriesSlug: string | null;
+  /**
+   * Why a volume's title can't be used, keyed by `SeriesImportVolume.index`:
+   * it matches an existing book or an earlier volume (#79).
+   */
+  titleProblems: Record<number, string>;
 
   // Actions
   startImport: () => Promise<void>;
+  /** Re-check every included volume's title; returns the problems found. */
+  refreshTitleProblems: () => Promise<SeriesImportTitleProblem[]>;
   updateSeriesName: (name: string) => void;
   updateAuthor: (author: string) => void;
   updateVolumeTitle: (index: number, title: string) => void;
@@ -47,7 +56,16 @@ const initialState = {
   author: '',
   volumes: [] as SeriesImportVolume[],
   existingSeriesSlug: null as string | null,
+  titleProblems: {} as Record<number, string>,
 };
+
+/** The title a volume is imported under (same fallback as commitImport). */
+function volumeTitle(v: SeriesImportVolume): string {
+  return v.preview.detectedTitle || `Volume ${v.volumeNumber}`;
+}
+
+/** Bumped per title check, so a slow, older answer can't overwrite a newer one. */
+let titleCheckSeq = 0;
 
 export const useSeriesImportStore = create<SeriesImportState>((set, get) => ({
   ...initialState,
@@ -75,11 +93,39 @@ export const useSeriesImportStore = create<SeriesImportState>((set, get) => ({
         author: detectedAuthor || settingsAuthor || '',
         volumes: [...preview.volumes],
         existingSeriesSlug: null,
+        titleProblems: {},
       });
+      await get().refreshTitleProblems();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       set({ step: 'error', error: message });
     }
+  },
+
+  refreshTitleProblems: async () => {
+    const seq = ++titleCheckSeq;
+    const active = get().volumes.filter((v) => !v.skipped);
+    let problems: SeriesImportTitleProblem[];
+    try {
+      problems = await window.novelEngine.seriesImport.checkTitles(
+        active.map((v) => ({ volumeNumber: v.volumeNumber, title: volumeTitle(v) })),
+      );
+    } catch (err) {
+      // The commit re-checks in the main process, so a failed lookup isn't fatal
+      console.error('Failed to check volume titles:', err);
+      problems = [];
+    }
+
+    const step = get().step;
+    if (seq === titleCheckSeq && (step === 'preview' || step === 'importing')) {
+      const titleProblems: Record<number, string> = {};
+      for (const problem of problems) {
+        const vol = active.find((v) => v.volumeNumber === problem.volumeNumber);
+        if (vol) titleProblems[vol.index] = problem.message;
+      }
+      set({ titleProblems });
+    }
+    return problems;
   },
 
   updateSeriesName: (seriesName) => set({ seriesName }),
@@ -96,6 +142,7 @@ export const useSeriesImportStore = create<SeriesImportState>((set, get) => ({
       detectedTitle: title,
     };
     set({ volumes });
+    void get().refreshTitleProblems();
   },
 
   toggleVolumeSkip: (index) => {
@@ -112,6 +159,7 @@ export const useSeriesImportStore = create<SeriesImportState>((set, get) => ({
       }
     }
     set({ volumes });
+    void get().refreshTitleProblems();
   },
 
   moveVolumeUp: (index) => {
@@ -129,6 +177,7 @@ export const useSeriesImportStore = create<SeriesImportState>((set, get) => ({
       }
     }
     set({ volumes });
+    void get().refreshTitleProblems();
   },
 
   moveVolumeDown: (index) => {
@@ -146,6 +195,7 @@ export const useSeriesImportStore = create<SeriesImportState>((set, get) => ({
       }
     }
     set({ volumes });
+    void get().refreshTitleProblems();
   },
 
   selectExistingSeries: (slug) => {
@@ -156,9 +206,17 @@ export const useSeriesImportStore = create<SeriesImportState>((set, get) => ({
     const { seriesName, author, volumes, existingSeriesSlug } = get();
     const activeVolumes = volumes.filter((v) => !v.skipped);
 
-    if (activeVolumes.length === 0) return;
+    if (activeVolumes.length === 0 || get().step === 'importing') return;
 
+    // 'importing' first, so a second click can't start a second commit
     set({ step: 'importing', error: '' });
+
+    // Back to the preview so the user can choose other titles (#79)
+    const problems = await get().refreshTitleProblems();
+    if (problems.length > 0) {
+      set({ step: 'preview' });
+      return;
+    }
 
     try {
       const result = await window.novelEngine.seriesImport.commit({
@@ -167,15 +225,14 @@ export const useSeriesImportStore = create<SeriesImportState>((set, get) => ({
         author,
         volumes: activeVolumes.map((v) => ({
           volumeNumber: v.volumeNumber,
-          title: v.preview.detectedTitle || `Volume ${v.volumeNumber}`,
+          title: volumeTitle(v),
           chapters: v.preview.chapters,
         })),
       });
 
       set({ step: 'success', result });
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      set({ step: 'error', error: message });
+      set({ step: 'error', error: ipcErrorMessage(err, 'Import failed') });
     }
   },
 

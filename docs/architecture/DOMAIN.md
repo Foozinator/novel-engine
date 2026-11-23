@@ -1,6 +1,6 @@
 # Domain — Types, Interfaces, Constants
 
-> Last updated: 2026-11-22 (#81)
+> Last updated: 2026-11-23 (#61)
 
 Everything in `src/domain/`. Pure TypeScript declarations — zero imports from other layers.
 
@@ -24,6 +24,7 @@ Everything in `src/domain/`. Pure TypeScript declarations — zero imports from 
 | `BookStatus` | `'scaffolded' \| 'outlining' \| 'first-draft' \| 'revision-1' \| 'revision-2' \| 'copy-edit' \| 'final' \| 'published'` | Pipeline, BookSelector |
 | `BookMeta` | `{ slug, title, author, status, created, coverImage }` | FileSystemService |
 | `BookSummary` | `BookMeta & { wordCount, isActive }` | Book list UI |
+| `BookTitleConflict` | `{ slug, title, archived }` | `IFileSystemService.findTitleConflict()`, `describeBookTitleConflict()`, `books:findTitleConflict` (#79) |
 
 ### Series
 
@@ -149,7 +150,7 @@ Everything in `src/domain/`. Pure TypeScript declarations — zero imports from 
 
 | Type | Shape | Used By |
 |------|-------|---------|
-| `FileEntry` | `{ name, path, isDirectory, children? }` | FileTree, FileBrowser |
+| `FileEntry` | `{ name, path, isDirectory, children?, size? }` (`size` in bytes, files only) | FileBrowser, ExplorerTab |
 
 ### Data Folder & Prompt Sync
 
@@ -218,6 +219,7 @@ Everything in `src/domain/`. Pure TypeScript declarations — zero imports from 
 | `SeriesImportVolume` | `{ index, preview: ImportPreview, volumeNumber, skipped }` | SeriesImportService, seriesImportStore |
 | `SeriesImportPreview` | `{ seriesName, volumes, totalWordCount, totalChapterCount }` | ImportSeriesWizard |
 | `SeriesImportCommitConfig` | `{ seriesName, existingSeriesSlug, author, volumes[] }` | SeriesImportService.commit() |
+| `SeriesImportTitleProblem` | `{ volumeNumber, message }` | SeriesImportService.checkTitles(), seriesImportStore (#79) |
 | `SeriesImportResult` | `{ seriesSlug, seriesName, volumeResults, totalBooks, totalChapters, totalWordCount }` | ImportSeriesWizard success step |
 
 ### Data Folder Import (#37)
@@ -376,17 +378,18 @@ Implemented by: `FileSystemService` (`src/infrastructure/filesystem/`)
 | `listBooks` | `() => Promise<BookSummary[]>` | All books with word counts |
 | `getActiveBookSlug` | `() => Promise<string>` | Current active book slug |
 | `setActiveBook` | `(slug) => Promise<void>` | Writes active-book.json |
-| `createBook` | `(title, author?) => Promise<BookMeta>` | Creates book directory |
+| `createBook` | `(title, author?) => Promise<BookMeta>` | Creates book directory. Throws without writing when `findTitleConflict(title)` finds a book |
+| `findTitleConflict` | `(title) => Promise<BookTitleConflict \| null>` | Live or archived book with the same folder (any case) or a title that differs only in case or punctuation; null when free |
 | `getBookMeta` | `(slug) => Promise<BookMeta>` | Reads about.json |
 | `updateBookMeta` | `(slug, partial) => Promise<BookMeta>` | Merges known fields into about.json; keeps all other keys |
 | `getProjectManifest` | `(slug) => Promise<ProjectManifest>` | File listing with word counts |
 | `readFile` | `(bookSlug, relativePath) => Promise<string>` | File contents |
-| `writeFile` | `(bookSlug, relativePath, content) => Promise<void>` | — |
+| `writeFile` | `(bookSlug, relativePath, content) => Promise<void>` | Throws when an existing file that isn't a known text type looks binary; the file is left unchanged |
 | `deleteFile` | `(bookSlug, relativePath) => Promise<void>` | — |
 | `deletePath` | `(bookSlug, relativePath) => Promise<void>` | Recursive delete |
 | `renameFile` | `(bookSlug, oldPath, newPath) => Promise<void>` | — |
 | `fileExists` | `(bookSlug, relativePath) => Promise<boolean>` | — |
-| `listDirectory` | `(bookSlug, relativePath?) => Promise<FileEntry[]>` | Directory tree |
+| `listDirectory` | `(bookSlug, relativePath?) => Promise<FileEntry[]>` | Directory tree; files carry `size` |
 | `countWords` | `(bookSlug) => Promise<number>` | Total manuscript words |
 | `countWordsPerChapter` | `(bookSlug) => Promise<{slug, wordCount}[]>` | Per-chapter counts |
 | `saveCoverImage` | `(bookSlug, sourcePath) => Promise<string>` | Relative path to saved image |
@@ -401,12 +404,12 @@ Implemented by: `FileSystemService` (`src/infrastructure/filesystem/`)
 | `readShelvedPitch` | `(slug) => Promise<ShelvedPitch>` | Full pitch content |
 | `deleteShelvedPitch` | `(slug) => Promise<void>` | — |
 | `shelvePitch` | `(bookSlug, logline?) => Promise<ShelvedPitchMeta>` | Shelves from book |
-| `restorePitch` | `(pitchSlug) => Promise<BookMeta>` | Creates book from pitch |
+| `restorePitch` | `(pitchSlug, title?) => Promise<BookMeta>` | Creates book from pitch; `title` overrides the pitch's title |
 | `listPitchDrafts` | `() => Promise<PitchDraft[]>` | Pitch Room drafts |
 | `getPitchDraft` | `(conversationId) => Promise<PitchDraft \| null>` | Single draft |
 | `readPitchDraftContent` | `(conversationId) => Promise<string>` | Draft content |
 | `deletePitchDraft` | `(conversationId) => Promise<void>` | — |
-| `promotePitchToBook` | `(conversationId) => Promise<BookMeta>` | Creates book from draft |
+| `promotePitchToBook` | `(conversationId, title?) => Promise<BookMeta>` | Creates book from draft; `title` overrides `bookTitleFromPitch()` |
 | `shelvePitchDraft` | `(conversationId, logline?) => Promise<ShelvedPitchMeta>` | Shelves pitch room draft |
 | `getPitchDraftPath` | `(conversationId) => string` | Absolute path for Spark working dir |
 
@@ -629,7 +632,8 @@ Implemented by: `SeriesImportService` (`src/application/`)
 | Method | Signature | Returns |
 |--------|-----------|---------|
 | `preview` | `(filePaths: string[]) => Promise<SeriesImportPreview>` | Batch-preview multiple files, detect series name |
-| `commit` | `(config: SeriesImportCommitConfig) => Promise<SeriesImportResult>` | Create books sequentially, create/attach series, link volumes |
+| `checkTitles` | `(volumes: { volumeNumber, title }[]) => Promise<SeriesImportTitleProblem[]>` | Volumes whose title matches a live or archived book, or an earlier volume (#79) |
+| `commit` | `(config: SeriesImportCommitConfig) => Promise<SeriesImportResult>` | Throws before creating anything when `checkTitles` reports a problem; otherwise creates books sequentially, creates/attaches the series, links volumes |
 
 ### IHelperService
 
@@ -704,7 +708,7 @@ Implemented by: `QueryService` (`src/application/QueryService.ts`)
 
 ### AGENT_READ_GUIDANCE
 
-`Record<CreativeAgentName, ReadGuidance>` — per-agent file access rules (alwaysRead, readIfRelevant, neverRead, optional readAfter). `readAfter` files are read only after the agent's main pass; multi-call read steps treat them as never-read. Ghostlight: `readAfter: ['source/voice-profile.md']` (the author's stated intent, compared against the reader experience after the read). Entries are exact paths, directory prefixes (trailing `/`), or `*` single-segment patterns.
+`Record<CreativeAgentName, ReadGuidance>` — per-agent file access rules (alwaysRead, readIfRelevant, neverRead, optional readAfter). `readAfter` files are read only after the agent's main pass; multi-call read steps treat them as never-read. Ghostlight: `readAfter: ['source/voice-profile.md']` (the author's stated intent, compared against the reader experience after the read). Every creative agent except Ghostlight lists `series-bible.md` in `readIfRelevant`; Ghostlight's `readIfRelevant` is empty, so its read of a series book stays cold (#61). Entries are exact paths, directory prefixes (trailing `/`), or `*` single-segment patterns.
 
 `CHAPTER_NOTES_PATTERN` (`'chapters/*/notes.md'`) — per-chapter author notes. In Ghostlight's `neverRead` (a cold reader never sees them); in Lumen's and Sable's `readIfRelevant`. The multi-call read steps use it to decide whether to list each chapter's notes next to its draft.
 
@@ -750,6 +754,11 @@ Implemented by: `QueryService` (`src/application/QueryService.ts`)
 | `buildClaudeCliAllowedTools(options)` | `({ scopes: string[]; webFetch: boolean }) => string` | `--allowedTools` value. `Read`/`Write`/`Edit` once per scope (absolute path, `/**` for a tree), never bare; `LS Glob Grep WebSearch Task TodoWrite`; `WebFetch` only when `webFetch`; `Bash(<cmd>:*)` per allowed command. Replaces `CLAUDE_CLI_ALLOWED_TOOLS`. |
 | `toClaudeCliRulePath(absPath)` | `(string) => string` | Absolute path in CLI permission-rule form: `//home/u/…`, Windows `C:\…` → `//c/…` (a single leading slash is project-relative) |
 | `isSafePathSegment(value)` | `(unknown) => value is string` | True for one folder/file name: non-empty, not `.`/`..`, no `/` `\` `:` or NUL. Used for book slugs, pitch slugs and draft IDs |
+| `slugifyBookTitle(title)` | `(string) => string` | Book folder name: lowercase ASCII letters and digits, other runs → `-`, trimmed. Titles that differ only in case or punctuation share a folder (#79). Used by `FileSystemService.slugify()`, `SeriesImportService.checkTitles()` |
+| `describeBookTitleConflict(newTitle, conflict)` | `(string, BookTitleConflict) => string` | User-facing refusal, e.g. `A book titled "X" already exists. Choose another title.` Adds the case/punctuation note when the titles differ. Shared by `createBook`, rename, series import and the renderer |
+| `bookTitleFromPitch(content)` | `(string) => string` | First `# ` heading of a Pitch Room draft, else `'Untitled Book'`. Used by `promotePitchToBook` and `pitchRoomStore` |
+| `TEXT_FILE_EXTENSIONS` | `ReadonlySet<string>` (`.md .markdown .txt .json .yaml .yml .csv .tsv .html .htm .xml .css`) | Extensions opened as text by the Files preview, the editor and find-and-replace |
+| `isTextFilePath(filePath)` | `(string) => boolean` | True when the extension (any case) is in `TEXT_FILE_EXTENSIONS`. No extension or a bare dotfile is not text. Used by ExplorerTab, ManuscriptView, FindReplaceService and `FileSystemService.writeFile` |
 | `CLAUDE_PROJECT_CONFIG_DIR` | `'.claude'` | Claude CLI project-config folder; removed from books on unarchive and data-folder import |
 | `OPENCODE_CLI_PROVIDER_ID` | `'opencode-cli'` | Reserved for future OpenCode CLI provider |
 | `OLLAMA_CLI_PROVIDER_ID` | `'ollama-cli'` | Built-in Ollama provider ID |

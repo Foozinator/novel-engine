@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { IManuscriptImportService, ISeriesService } from '@domain/interfaces';
+import type { IFileSystemService, IManuscriptImportService, ISeriesService } from '@domain/interfaces';
 import type { ImportPreview } from '@domain/types';
 import { SeriesImportService } from './SeriesImportService';
 
@@ -27,6 +27,7 @@ let series: {
   getSeries: ReturnType<typeof vi.fn>;
   addVolume: ReturnType<typeof vi.fn>;
 };
+let fileSystem: { findTitleConflict: ReturnType<typeof vi.fn> };
 let service: SeriesImportService;
 
 beforeEach(() => {
@@ -44,9 +45,11 @@ beforeEach(() => {
     getSeries: vi.fn(async () => null),
     addVolume: vi.fn(async () => ({})),
   };
+  fileSystem = { findTitleConflict: vi.fn(async () => null) };
   service = new SeriesImportService(
     manuscriptImport as unknown as IManuscriptImportService,
-    series as unknown as ISeriesService
+    series as unknown as ISeriesService,
+    fileSystem as unknown as IFileSystemService
   );
 });
 
@@ -139,5 +142,43 @@ describe('commit', () => {
     // Volume 1 was fully imported and linked before the failure — partial state persists
     expect(series.addVolume).toHaveBeenCalledTimes(1);
     expect(series.addVolume).toHaveBeenCalledWith('the-saga', 'saga-one', 1);
+  });
+
+  it('refuses the whole batch before creating anything when a title is taken (#79)', async () => {
+    fileSystem.findTitleConflict.mockImplementation(async (title: string) =>
+      title === 'Saga Two' ? { slug: 'saga-two', title: 'Saga Two', archived: true } : null
+    );
+
+    await expect(service.commit({ seriesName: 'The Saga', existingSeriesSlug: null, author: 'A', volumes })).rejects.toThrow(
+      /Volume 2: An archived book titled "Saga Two" already exists/
+    );
+    expect(series.createSeries).not.toHaveBeenCalled();
+    expect(manuscriptImport.commit).not.toHaveBeenCalled();
+    expect(series.addVolume).not.toHaveBeenCalled();
+  });
+});
+
+describe('checkTitles', () => {
+  it('returns [] when every title is free', async () => {
+    expect(await service.checkTitles([{ volumeNumber: 1, title: 'One' }, { volumeNumber: 2, title: 'Two' }])).toEqual([]);
+  });
+
+  it('reports existing books and volumes that repeat an earlier title in any case or punctuation', async () => {
+    fileSystem.findTitleConflict.mockImplementation(async (title: string) =>
+      title === 'Taken' ? { slug: 'taken', title: 'Taken', archived: false } : null
+    );
+
+    const problems = await service.checkTitles([
+      { volumeNumber: 1, title: 'Book One' },
+      { volumeNumber: 2, title: 'BOOK one!' },
+      { volumeNumber: 3, title: 'Taken' },
+    ]);
+
+    expect(problems).toEqual([
+      { volumeNumber: 2, message: expect.stringMatching(/^Volume 1 has the same title\./) },
+      { volumeNumber: 3, message: 'A book titled "Taken" already exists. Choose another title.' },
+    ]);
+    // The repeated title is reported without a second filesystem lookup
+    expect(fileSystem.findTitleConflict.mock.calls.map((c) => c[0])).toEqual(['Book One', 'Taken']);
   });
 });

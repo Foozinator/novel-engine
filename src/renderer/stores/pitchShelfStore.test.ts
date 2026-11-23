@@ -68,12 +68,45 @@ describe('pitchShelfStore', () => {
     usePitchShelfStore.setState({ pitches: [makePitchMeta()], previewPitch: fullPitch });
     mock.pitches.restore.mockResolvedValue(makeBookMeta({ slug: 'storm-book' }));
 
-    const slug = await usePitchShelfStore.getState().restorePitch('storm-pitch');
+    const result = await usePitchShelfStore.getState().restorePitch('storm-pitch');
 
-    expect(slug).toBe('storm-book');
+    expect(result).toEqual({ ok: true, slug: 'storm-book' });
+    expect(mock.books.findTitleConflict).toHaveBeenCalledWith('Storm Pitch');
     expect(mock.pitches.restore).toHaveBeenCalledWith('storm-pitch');
     expect(usePitchShelfStore.getState().pitches).toEqual([]);
     expect(usePitchShelfStore.getState().previewPitch).toBeNull();
+  });
+
+  it('restorePitch reports a taken title without restoring, then restores under a new title (#79)', async () => {
+    usePitchShelfStore.setState({ pitches: [makePitchMeta()] });
+    mock.books.findTitleConflict.mockImplementation(async (title: string) =>
+      title === 'Storm Pitch' ? { slug: 'storm-pitch', title: 'Storm Pitch', archived: true } : null,
+    );
+
+    expect(await usePitchShelfStore.getState().restorePitch('storm-pitch')).toEqual({
+      ok: false,
+      message: 'An archived book titled "Storm Pitch" already exists. Choose another title.',
+      takenTitle: 'Storm Pitch',
+    });
+    expect(mock.pitches.restore).not.toHaveBeenCalled();
+    expect(usePitchShelfStore.getState().pitches).toHaveLength(1);
+
+    mock.pitches.restore.mockResolvedValue(makeBookMeta({ slug: 'storm-returns' }));
+    expect(await usePitchShelfStore.getState().restorePitch('storm-pitch', ' Storm Returns ')).toEqual({
+      ok: true,
+      slug: 'storm-returns',
+    });
+    expect(mock.pitches.restore).toHaveBeenCalledWith('storm-pitch', 'Storm Returns');
+  });
+
+  it('restorePitch reads the pitch title when the shelf is not loaded, and reports failures', async () => {
+    mock.pitches.read.mockResolvedValue(fullPitch);
+    mock.pitches.restore.mockRejectedValue(
+      new Error("Error invoking remote method 'pitches:restore': Error: disk full"),
+    );
+
+    expect(await usePitchShelfStore.getState().restorePitch('storm-pitch')).toEqual({ ok: false, message: 'disk full' });
+    expect(mock.books.findTitleConflict).toHaveBeenCalledWith('Storm Pitch');
   });
 
   it('deletePitch removes the pitch from the shelf', async () => {

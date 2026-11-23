@@ -157,6 +157,56 @@ describe('importStore', () => {
       expect(useImportStore.getState().step).toBe('error');
       expect(useImportStore.getState().error).toBe('slug collision');
     });
+
+    it('a taken title keeps the preview open with the reason; editing clears it (#79)', async () => {
+      mock.books.findTitleConflict.mockImplementation(async (title: string) =>
+        title === 'Detected Title' ? { slug: 'detected-title', title: 'Detected Title', archived: false } : null,
+      );
+      mock.import.selectFile.mockResolvedValue('/tmp/manuscript.md');
+      mock.import.preview.mockResolvedValue(makePreview());
+
+      await useImportStore.getState().startImport();
+
+      // Flagged as soon as the preview loads
+      expect(useImportStore.getState().step).toBe('preview');
+      expect(useImportStore.getState().titleConflict).toBe(
+        'A book titled "Detected Title" already exists. Choose another title.',
+      );
+
+      // Editing clears the flag; committing the same title again re-checks and stays on the preview
+      useImportStore.getState().updateTitle('Detected Title');
+      expect(useImportStore.getState().titleConflict).toBe('');
+      await useImportStore.getState().commitImport();
+      expect(useImportStore.getState().step).toBe('preview');
+      expect(useImportStore.getState().titleConflict).toMatch(/already exists/);
+      expect(mock.import.commit).not.toHaveBeenCalled();
+
+      // A free title imports
+      mock.import.commit.mockResolvedValue(importResult);
+      useImportStore.getState().updateTitle('Detected Title, Second Draft');
+      await useImportStore.getState().commitImport();
+      expect(useImportStore.getState().step).toBe('success');
+    });
+
+    it('a second click while importing does not start a second commit', async () => {
+      mock.import.commit.mockResolvedValue(importResult);
+      useImportStore.setState({ step: 'preview', title: 'Once' });
+
+      await Promise.all([useImportStore.getState().commitImport(), useImportStore.getState().commitImport()]);
+
+      expect(mock.import.commit).toHaveBeenCalledTimes(1);
+      expect(useImportStore.getState().step).toBe('success');
+    });
+
+    it('strips the IPC prefix from a commit failure', async () => {
+      mock.import.commit.mockRejectedValue(
+        new Error("Error invoking remote method 'import:commit': Error: A book in folder \"x\" already exists."),
+      );
+
+      await useImportStore.getState().commitImport();
+
+      expect(useImportStore.getState().error).toBe('A book in folder "x" already exists.');
+    });
   });
 
   describe('startGeneration', () => {

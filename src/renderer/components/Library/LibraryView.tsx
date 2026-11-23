@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { BookSummary } from '@domain/types';
 import { useBookStore } from '../../stores/bookStore';
 import { usePipelineStore } from '../../stores/pipelineStore';
@@ -13,7 +13,9 @@ import { usePitchShelfStore } from '../../stores/pitchShelfStore';
 import { ImportChoiceModal } from '../Sidebar/ImportChoiceModal';
 import { AboutJsonViewer, useOpenSpark } from '../Files/AboutJsonViewer';
 import { Icon, type IconName } from '../common/Icon';
+import { BookTitleModal } from '../common/BookTitleModal';
 import { BookCard } from './BookCard';
+import { findTitleConflictMessage, ipcErrorMessage } from '../../utils/bookTitle';
 
 // ─── Palette registration (S04 registry) ────────────────────────────────────
 // LibraryView is always mounted (hidden-unless-active), so these callbacks are
@@ -105,63 +107,6 @@ function HeaderAction({
       <Icon name={icon} size={14} />
       {label}
     </button>
-  );
-}
-
-function NewBookModal({
-  onClose,
-  onCreate,
-}: {
-  onClose: () => void;
-  onCreate: (title: string) => void;
-}): React.ReactElement {
-  const [title, setTitle] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = title.trim();
-    if (trimmed) {
-      onCreate(trimmed);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-80 rounded-[13px] border border-ne-line bg-ne-bg1 p-5 shadow-xl">
-        <h3 className="mb-4 text-sm font-semibold text-ne-ink">New Book</h3>
-        <form onSubmit={handleSubmit}>
-          <input
-            ref={inputRef}
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Book Title"
-            className="no-drag mb-4 w-full rounded-md border border-ne-line bg-ne-bg2 px-3 py-2 text-sm text-ne-ink placeholder-ne-ink-faint outline-none focus:border-ne-brass"
-          />
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="no-drag rounded-md px-3 py-1.5 text-sm text-ne-ink-dim hover:text-ne-ink"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={!title.trim()}
-              className="no-drag rounded-md bg-ne-brass px-3 py-1.5 text-sm font-medium text-ne-bg0 hover:bg-ne-brass-hi disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Create
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
   );
 }
 
@@ -467,14 +412,18 @@ export function LibraryView(): React.ReactElement {
     navigate('workspace');
   };
 
-  const handleCreateBook = async (title: string) => {
-    setShowNewBookModal(false);
+  const handleCreateBook = async (title: string): Promise<string | null> => {
+    // Keep the modal open on a taken title so the user can choose another (#79)
+    const conflict = await findTitleConflictMessage(title);
+    if (conflict) return conflict;
     try {
       const slug = await createBook(title);
+      setShowNewBookModal(false);
       await setActiveBook(slug);
       navigate('workspace');
-    } catch {
-      // Error already logged in store
+      return null;
+    } catch (err) {
+      return ipcErrorMessage(err, 'Could not create the book');
     }
   };
 
@@ -595,7 +544,12 @@ export function LibraryView(): React.ReactElement {
       {/* Modals — SeriesModal and the Import/Series wizards are mounted
           globally in AppLayout; the store actions above open them. */}
       {showNewBookModal && (
-        <NewBookModal onClose={() => setShowNewBookModal(false)} onCreate={handleCreateBook} />
+        <BookTitleModal
+          heading="New Book"
+          submitLabel="Create"
+          onClose={() => setShowNewBookModal(false)}
+          onSubmit={handleCreateBook}
+        />
       )}
       {archiveTarget && (
         <ArchiveConfirmModal

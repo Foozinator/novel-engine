@@ -3,7 +3,7 @@
  * (value imports, not type-only). Permitted for pure data constants
  * with zero Node.js dependencies. See docs/architecture/ARCHITECTURE.md.
  */
-import type { AgentName, AgentMeta, AuditSeverity, CreativeAgentName, PipelinePhaseId, AppSettings, ProseFontId, ProviderId, ProviderConfig, ModelInfo } from './types';
+import type { AgentName, AgentMeta, AuditSeverity, BookTitleConflict, CreativeAgentName, PipelinePhaseId, AppSettings, ProseFontId, ProviderId, ProviderConfig, ModelInfo } from './types';
 
 // === Product Identity ===
 
@@ -56,9 +56,11 @@ export const AGENT_READ_GUIDANCE: Record<CreativeAgentName, ReadGuidance> = {
     readIfRelevant: ['source/pitch.md', 'source/scene-outline.md', 'source/story-bible.md', 'author-profile.md', 'source/revision-prompts.md', 'series-bible.md'],
     neverRead: ['source/reader-report.md', 'source/dev-report.md', 'source/audit-report.md'],
   },
+  // No series bible: it is the author's reference, which no reader has, so
+  // Ghostlight's read of a series book stays cold (#61).
   Ghostlight: {
     alwaysRead: [],
-    readIfRelevant: ['series-bible.md'],
+    readIfRelevant: [],
     neverRead: ['source/pitch.md', 'source/scene-outline.md', 'source/story-bible.md', 'author-profile.md', 'source/dev-report.md', CHAPTER_NOTES_PATTERN],
     readAfter: ['source/voice-profile.md'],
   },
@@ -263,6 +265,69 @@ export function isSafePathSegment(slug: unknown): slug is string {
     && slug !== '.'
     && slug !== '..'
     && !/[/\\:\0]/.test(slug);
+}
+
+/**
+ * Folder name for a book title: lowercase ASCII letters and digits, with each
+ * run of anything else turned into one `-`. Titles that differ only in case or
+ * punctuation share a folder, so they count as the same title (#79).
+ */
+export function slugifyBookTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+/** Title of the book a Pitch Room draft becomes: its first `# ` heading, else "Untitled Book". */
+export function bookTitleFromPitch(content: string): string {
+  return content.match(/^#\s+(.+)$/m)?.[1]?.trim() || 'Untitled Book';
+}
+
+/**
+ * User-facing message for a refused title (#79). Shared by the main process
+ * and the renderer so every caller words the conflict the same way.
+ */
+export function describeBookTitleConflict(newTitle: string, conflict: BookTitleConflict): string {
+  const who = conflict.archived ? 'An archived book' : 'A book';
+  const name = conflict.title ? `titled "${conflict.title}"` : `in folder "${conflict.slug}"`;
+  const sameText = conflict.title !== '' && conflict.title.trim() === newTitle.trim();
+  const note = sameText ? '' : ' Titles that differ only in case or punctuation count as the same.';
+  return `${who} ${name} already exists.${note} Choose another title.`;
+}
+
+// === Text Files ===
+
+/**
+ * Extensions the app opens as text. The Files preview, the editor and
+ * version history offer only these; any other file shows its name, type
+ * and size. Lower case, with the leading dot.
+ */
+export const TEXT_FILE_EXTENSIONS: ReadonlySet<string> = new Set([
+  '.md',
+  '.markdown',
+  '.txt',
+  '.json',
+  '.yaml',
+  '.yml',
+  '.csv',
+  '.tsv',
+  '.html',
+  '.htm',
+  '.xml',
+  '.css',
+]);
+
+/**
+ * True when the path's extension is in TEXT_FILE_EXTENSIONS (any case).
+ * A name with no extension, or a dotfile like `.gitignore`, is not text.
+ * Accepts `/` or `\` separators.
+ */
+export function isTextFilePath(filePath: string): boolean {
+  const name = filePath.split(/[/\\]/).pop() ?? '';
+  const dot = name.lastIndexOf('.');
+  if (dot <= 0) return false;
+  return TEXT_FILE_EXTENSIONS.has(name.slice(dot).toLowerCase());
 }
 
 /** Reserved provider ID for OpenCode CLI (future implementation). */

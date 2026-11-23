@@ -105,6 +105,24 @@ describe('ImportSeriesWizard', () => {
     expect(screen.getByRole('button', { name: 'Import 1 Volume' })).toBeInTheDocument();
   });
 
+  it('blocks the import while an included volume has a taken title (#79)', () => {
+    const problem = 'A book titled "Book B" already exists. Choose another title.';
+    const { unmount } = renderWizard({ stores: seedPreview({ titleProblems: { 1: problem } }) });
+
+    expect(screen.getByRole('alert')).toHaveTextContent(problem);
+    expect(screen.getByRole('button', { name: 'Import 2 Volumes' })).toBeDisabled();
+    unmount();
+
+    // Skipping that volume lifts the block
+    renderWizard({
+      stores: seedPreview({
+        volumes: [volume(0, 'Book A'), volume(1, 'Book B', true)],
+        titleProblems: { 1: problem },
+      }),
+    });
+    expect(screen.getByRole('button', { name: 'Import 1 Volume' })).toBeEnabled();
+  });
+
   it('commits active volumes and shows the per-volume success summary', async () => {
     const commit = vi.fn(async () => RESULT);
     renderWizard({ bridge: { seriesImport: { commit } }, stores: seedPreview() });

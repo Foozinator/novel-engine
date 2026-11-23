@@ -36,6 +36,12 @@ const TREE: FileEntry[] = [
       },
     ],
   },
+  {
+    name: 'assets',
+    path: 'assets',
+    isDirectory: true,
+    children: [{ name: 'cover.png', path: 'assets/cover.png', isDirectory: false, size: 2048 }],
+  },
   { name: 'about.json', path: 'about.json', isDirectory: false },
 ];
 
@@ -109,5 +115,21 @@ describe('ExplorerTab', () => {
     fireEvent.click(await screen.findByTitle('Edit pitch.md in the manuscript editor'));
 
     expect(useViewStore.getState().currentView).toBe('manuscript');
+  });
+
+  it('shows name, type and size for a non-text file without reading it (#83)', async () => {
+    const { bridge } = renderExplorer();
+
+    fireEvent.click(await screen.findByText('assets'));
+    fireEvent.click(await screen.findByText('cover.png'));
+
+    expect(
+      await screen.findByText("This isn't a text file, so it can't be previewed or edited here."),
+    ).toBeInTheDocument();
+    expect(screen.getByText('PNG file · 2.0 KB')).toBeInTheDocument();
+    expect(screen.queryByTitle('Version history')).toBeNull();
+    expect(screen.queryByTitle(/in the manuscript editor/)).toBeNull();
+    expect(bridge.files.read).not.toHaveBeenCalledWith('book-a', 'assets/cover.png');
+    expect(bridge.files.write).not.toHaveBeenCalled();
   });
 });

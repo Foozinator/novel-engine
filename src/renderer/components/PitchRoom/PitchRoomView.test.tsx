@@ -75,7 +75,7 @@ describe('PitchRoomView', () => {
   });
 
   it('Promote to Book appears with a pitch and activates the new book', async () => {
-    const promoteActivePitch = vi.fn(async () => 'new-book');
+    const promoteActivePitch = vi.fn(async () => ({ ok: true as const, slug: 'new-book' }));
     const { bridge } = renderView([
       [
         usePitchRoomStore,
@@ -92,6 +92,40 @@ describe('PitchRoomView', () => {
 
     await waitFor(() => expect(promoteActivePitch).toHaveBeenCalled());
     await waitFor(() => expect(bridge.books.setActive).toHaveBeenCalledWith('new-book'));
+  });
+
+  it('a taken pitch title opens the retitle modal, which promotes under the new title (#79)', async () => {
+    const promoteActivePitch = vi.fn(async (title?: string) =>
+      title
+        ? { ok: true as const, slug: 'heist-two' }
+        : { ok: false as const, message: 'A book titled "Heist" already exists. Choose another title.', takenTitle: 'Heist' },
+    );
+    const { bridge } = renderView([
+      [
+        usePitchRoomStore,
+        {
+          hasPitch: true,
+          activeConversation: makeConversation(),
+          ensureConversation: vi.fn(async () => undefined),
+          promoteActivePitch,
+        },
+      ],
+    ]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Promote to Book →' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Choose another title' });
+    expect(screen.getByRole('alert')).toHaveTextContent('A book titled "Heist" already exists.');
+    const input = screen.getByPlaceholderText('Book Title');
+    expect(input).toHaveValue('Heist');
+    expect(bridge.books.setActive).not.toHaveBeenCalled();
+
+    fireEvent.change(input, { target: { value: 'Heist Two' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create Book' }));
+
+    await waitFor(() => expect(promoteActivePitch).toHaveBeenLastCalledWith('Heist Two'));
+    await waitFor(() => expect(bridge.books.setActive).toHaveBeenCalledWith('heist-two'));
+    expect(dialog).not.toBeInTheDocument();
   });
 
   it('shows the streamed response while Spark is answering', () => {

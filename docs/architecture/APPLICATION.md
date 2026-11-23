@@ -1,6 +1,6 @@
 # Application — Services & Orchestration
 
-> Last updated: 2026-11-22 (#81)
+> Last updated: 2026-11-23 (#61)
 
 Everything in `src/application/`. Business logic that orchestrates infrastructure through injected interfaces.
 
@@ -68,7 +68,7 @@ Dependencies: `IAgentService`, `IProviderRegistry`, `IDatabaseService`, `IFileSy
 
 Implements: `IHotTakeService`
 
-Handles Ghostlight "hot take" conversations. Always uses Opus (`HOT_TAKE_MODEL`). Cold-reads the full manuscript and delivers a gut reaction. No files written.
+Handles Ghostlight "hot take" conversations. Always uses Opus (`HOT_TAKE_MODEL`). Cold-reads the full manuscript and delivers a gut reaction. No files written. Builds its own system prompt (Ghostlight prompt + `HOT-TAKE.md` + chapter list) without `ContextBuilder`, so it never gets the series bible.
 
 | Method | What It Does |
 |--------|-------------|
@@ -176,9 +176,9 @@ Dependencies: `ISettingsService`, `IAgentService`, `IDatabaseService`, `IFileSys
 1. Load the agent's system prompt
 2. Build project manifest (file listing with token estimates)
 3. Apply `AGENT_READ_GUIDANCE` to determine which files to include
-4. Replace `series-bible.md` placeholder with absolute path in guidance (when book is in a series)
+4. Series bible: only for agents that want it (`ContextBuilder.wantsSeriesBible(agentName)`, private): a creative agent whose guidance lists `series-bible.md`, or an agent without guidance (Wrangler, Helper). Ghostlight's guidance doesn't list it, so `seriesBiblePath` is dropped for Ghostlight and its prompt carries neither the path nor the Series Context block (#61). For the rest, replace the `series-bible.md` placeholder with the absolute path in the guidance (when the book is in a series)
 5. Author profile: when the caller passes `authorProfileContent` and the agent's guidance asks for the profile (`ContextBuilder.wantsAuthorProfile(agentName)` — Spark, Verity, Quill), inline it as `## Author Profile` (capped at `AUTHOR_PROFILE_MAX_WORDS` = 4000) and list it in the guidance as "included below". Empty content drops it from the guidance; undefined content keeps the absolute-path substitution. `ChatService` reads the file with `readAuthorProfile()` (`src/application/context/readAuthorProfile.ts`)
-6. Add "Series Context" block to system prompt with bible path (when applicable)
+6. Add "Series Context" block to system prompt with bible path (when the book is in a series and step 4 kept the path)
 7. Append manifest section to system prompt showing available files
 8. Append `## File Writing` then `## Tool Use` (batch independent calls in one turn, read files whole and once, make all Edits to one file in one turn, no scripts)
 9. Compact conversation history using `TURN_BUDGET_THRESHOLDS`:
@@ -420,7 +420,7 @@ Dependencies: `IFileSystemService`, `pandocPath: string`
 | Method | What It Does |
 |--------|-------------|
 | `preview(filePath)` | Reads file, converts DOCX via Pandoc if needed, runs chapter detection, returns `ImportPreview` |
-| `commit(config)` | Creates book via `IFileSystemService.createBook()`, writes each chapter as `chapters/{slug}/draft.md`, updates status to `first-draft` |
+| `commit(config)` | Creates book via `IFileSystemService.createBook()`, writes each chapter as `chapters/{slug}/draft.md`, updates status to `first-draft`. A taken title (#79) makes `createBook` throw before any chapter is written |
 
 **Key behaviors:**
 - Accepts `.md`, `.markdown`, `.txt` (as markdown) and `.docx` files
@@ -456,17 +456,19 @@ Pure utility — no class, no dependencies. Exports three functions.
 
 File: `src/application/SeriesImportService.ts`
 
-Dependencies: `IManuscriptImportService`, `ISeriesService`
+Dependencies: `IManuscriptImportService`, `ISeriesService`, `IFileSystemService`
 
 | Method | What It Does |
 |--------|-------------|
 | `preview(filePaths)` | Previews each file via `IManuscriptImportService.preview()`, wraps as `SeriesImportVolume[]`, detects common series name |
-| `commit(config)` | Creates/resolves series, imports each volume sequentially via `IManuscriptImportService.commit()`, links to series via `ISeriesService.addVolume()` |
+| `checkTitles(volumes)` | For each volume in order: a problem when its slug repeats an earlier volume's, else when `IFileSystemService.findTitleConflict()` finds a book. Messages come from `describeBookTitleConflict()` (#79) |
+| `commit(config)` | Runs `checkTitles` and throws (`Volume N: …` per line) before creating anything. Then creates/resolves series, imports each volume sequentially via `IManuscriptImportService.commit()`, links to series via `ISeriesService.addVolume()` |
 
 **Key behaviors:**
 - Series name detection: longest-common-prefix of detected titles → strip trailing noise (Book/Vol/numbers) → fallback to common parent directory → "Imported Series"
 - Sequential import: books created one at a time to avoid filesystem contention
-- No rollback on partial failure: previously imported books remain if a later one fails
+- No rollback on partial failure: previously imported books remain if a later one fails. Title conflicts are caught up front, so they never cause a partial import
+- Bypassing `checkTitles`, a taken title still can't overwrite a book: `createBook` refuses it
 - Volumes sorted by `volumeNumber` before import to ensure correct series ordering
 
 ### DataFolderImportService
@@ -549,6 +551,7 @@ Key behaviors:
 - `regex.lastIndex` is reset to `0` before every reuse of the same RegExp object
 - Zero-length match guard increments `lastIndex` to prevent infinite loops
 - Files missing between preview and apply are silently skipped (not counted in result)
+- `apply` skips paths that fail `isTextFilePath()` without reading them (the renderer supplies the path list)
 - No AI calls, no database writes, no Electron APIs
 
 ### QueryService
