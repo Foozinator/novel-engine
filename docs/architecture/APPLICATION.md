@@ -1,6 +1,6 @@
 # Application — Services & Orchestration
 
-> Last updated: 2026-11-22 (#81)
+> Last updated: 2026-11-22 (#83)
 
 Everything in `src/application/`. Business logic that orchestrates infrastructure through injected interfaces.
 
@@ -548,6 +548,7 @@ Key behaviors:
 - `regex.lastIndex` is reset to `0` before every reuse of the same RegExp object
 - Zero-length match guard increments `lastIndex` to prevent infinite loops
 - Files missing between preview and apply are silently skipped (not counted in result)
+- `apply` skips paths that fail `isTextFilePath()` without reading them (the renderer supplies the path list)
 - No AI calls, no database writes, no Electron APIs
 
 ### QueryService

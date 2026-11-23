@@ -14,10 +14,45 @@ import type {
   ShelvedPitch,
   ShelvedPitchMeta,
 } from '@domain/types';
-import { CLAUDE_PROJECT_CONFIG_DIR, PITCH_ROOM_SLUG } from '@domain/constants';
+import { CLAUDE_PROJECT_CONFIG_DIR, PITCH_ROOM_SLUG, isTextFilePath } from '@domain/constants';
 import { resolveBookPath, safeSegment } from './bookPaths';
 
 const VALID_COVER_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
+
+/** Bytes read from an existing file to decide whether it is text (git reads 8000). */
+const TEXT_SNIFF_BYTES = 8192;
+
+/**
+ * True when the file at `absPath` exists and its first bytes hold a NUL or
+ * are not valid UTF-8. Missing files and directories count as not binary.
+ */
+async function looksBinary(absPath: string): Promise<boolean> {
+  let handle: fs.FileHandle;
+  try {
+    handle = await fs.open(absPath, 'r');
+  } catch {
+    return false;
+  }
+  try {
+    const sample = Buffer.alloc(TEXT_SNIFF_BYTES);
+    const { bytesRead } = await handle.read(sample, 0, TEXT_SNIFF_BYTES, 0);
+    const bytes = sample.subarray(0, bytesRead);
+    if (bytes.includes(0)) return true;
+    try {
+      // A full sample may end mid-character; stream mode leaves that tail undecoded.
+      new TextDecoder('utf-8', { fatal: true }).decode(bytes, {
+        stream: bytesRead === TEXT_SNIFF_BYTES,
+      });
+      return false;
+    } catch {
+      return true;
+    }
+  } catch {
+    return false; // EISDIR and the like: let the write itself report it
+  } finally {
+    await handle.close();
+  }
+}
 
 const KNOWN_BOOK_META_KEYS: ReadonlySet<keyof BookMeta> = new Set([
   'slug',
@@ -381,6 +416,13 @@ export class FileSystemService implements IFileSystemService {
 
   async writeFile(bookSlug: string, relativePath: string, content: string): Promise<void> {
     const filePath = resolveBookPath(this.booksDir, bookSlug, relativePath);
+    // Text written over an image or other binary file destroys it (#83).
+    // Known text types skip the check; new files are always allowed.
+    if (!isTextFilePath(relativePath) && (await looksBinary(filePath))) {
+      throw new Error(
+        `Not a text file: ${relativePath} in book "${bookSlug}" was left unchanged`,
+      );
+    }
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, content, 'utf-8');
   }
@@ -1325,7 +1367,7 @@ export class FileSystemService implements IFileSystemService {
         const children = await this.buildFileTree(basePath, entryRelPath, depth + 1, maxDepth);
         dirs.push({ name, path: entryRelPath, isDirectory: true, children });
       } else {
-        files.push({ name, path: entryRelPath, isDirectory: false });
+        files.push({ name, path: entryRelPath, isDirectory: false, size: stat.size });
       }
     }
 

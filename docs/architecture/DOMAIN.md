@@ -1,6 +1,6 @@
 # Domain — Types, Interfaces, Constants
 
-> Last updated: 2026-11-22 (#81)
+> Last updated: 2026-11-22 (#83)
 
 Everything in `src/domain/`. Pure TypeScript declarations — zero imports from other layers.
 
@@ -149,7 +149,7 @@ Everything in `src/domain/`. Pure TypeScript declarations — zero imports from 
 
 | Type | Shape | Used By |
 |------|-------|---------|
-| `FileEntry` | `{ name, path, isDirectory, children? }` | FileTree, FileBrowser |
+| `FileEntry` | `{ name, path, isDirectory, children?, size? }` (`size` in bytes, files only) | FileBrowser, ExplorerTab |
 
 ### Data Folder & Prompt Sync
 
@@ -381,12 +381,12 @@ Implemented by: `FileSystemService` (`src/infrastructure/filesystem/`)
 | `updateBookMeta` | `(slug, partial) => Promise<BookMeta>` | Merges known fields into about.json; keeps all other keys |
 | `getProjectManifest` | `(slug) => Promise<ProjectManifest>` | File listing with word counts |
 | `readFile` | `(bookSlug, relativePath) => Promise<string>` | File contents |
-| `writeFile` | `(bookSlug, relativePath, content) => Promise<void>` | — |
+| `writeFile` | `(bookSlug, relativePath, content) => Promise<void>` | Throws when an existing file that isn't a known text type looks binary; the file is left unchanged |
 | `deleteFile` | `(bookSlug, relativePath) => Promise<void>` | — |
 | `deletePath` | `(bookSlug, relativePath) => Promise<void>` | Recursive delete |
 | `renameFile` | `(bookSlug, oldPath, newPath) => Promise<void>` | — |
 | `fileExists` | `(bookSlug, relativePath) => Promise<boolean>` | — |
-| `listDirectory` | `(bookSlug, relativePath?) => Promise<FileEntry[]>` | Directory tree |
+| `listDirectory` | `(bookSlug, relativePath?) => Promise<FileEntry[]>` | Directory tree; files carry `size` |
 | `countWords` | `(bookSlug) => Promise<number>` | Total manuscript words |
 | `countWordsPerChapter` | `(bookSlug) => Promise<{slug, wordCount}[]>` | Per-chapter counts |
 | `saveCoverImage` | `(bookSlug, sourcePath) => Promise<string>` | Relative path to saved image |
@@ -749,6 +749,8 @@ Implemented by: `QueryService` (`src/application/QueryService.ts`)
 | `buildClaudeCliAllowedTools(options)` | `({ scopes: string[]; webFetch: boolean }) => string` | `--allowedTools` value. `Read`/`Write`/`Edit` once per scope (absolute path, `/**` for a tree), never bare; `LS Glob Grep WebSearch Task TodoWrite`; `WebFetch` only when `webFetch`; `Bash(<cmd>:*)` per allowed command. Replaces `CLAUDE_CLI_ALLOWED_TOOLS`. |
 | `toClaudeCliRulePath(absPath)` | `(string) => string` | Absolute path in CLI permission-rule form: `//home/u/…`, Windows `C:\…` → `//c/…` (a single leading slash is project-relative) |
 | `isSafePathSegment(value)` | `(unknown) => value is string` | True for one folder/file name: non-empty, not `.`/`..`, no `/` `\` `:` or NUL. Used for book slugs, pitch slugs and draft IDs |
+| `TEXT_FILE_EXTENSIONS` | `ReadonlySet<string>` (`.md .markdown .txt .json .yaml .yml .csv .tsv .html .htm .xml .css`) | Extensions opened as text by the Files preview, the editor and find-and-replace |
+| `isTextFilePath(filePath)` | `(string) => boolean` | True when the extension (any case) is in `TEXT_FILE_EXTENSIONS`. No extension or a bare dotfile is not text. Used by ExplorerTab, ManuscriptView, FindReplaceService and `FileSystemService.writeFile` |
 | `CLAUDE_PROJECT_CONFIG_DIR` | `'.claude'` | Claude CLI project-config folder; removed from books on unarchive and data-folder import |
 | `OPENCODE_CLI_PROVIDER_ID` | `'opencode-cli'` | Reserved for future OpenCode CLI provider |
 | `OLLAMA_CLI_PROVIDER_ID` | `'ollama-cli'` | Built-in Ollama provider ID |

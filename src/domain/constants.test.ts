@@ -7,6 +7,7 @@ import {
   formatModelLabel,
   getModelPricing,
   getPhaseStarterActions,
+  isTextFilePath,
   AGENT_MULTI_CALL_STEPS,
   AGENT_QUICK_ACTIONS,
   AGENT_READ_GUIDANCE,
@@ -470,5 +471,28 @@ describe('reading font helpers', () => {
   it('defaults the reading font to Fraunces', () => {
     expect(DEFAULT_SETTINGS.proseFont).toBe('fraunces');
     expect(DEFAULT_SETTINGS.proseFontCustom).toBe('');
+  });
+});
+
+describe('isTextFilePath', () => {
+  it('accepts known text extensions in any case and any folder', () => {
+    expect(isTextFilePath('chapters/01-opening/draft.md')).toBe(true);
+    expect(isTextFilePath('about.json')).toBe(true);
+    expect(isTextFilePath('source/NOTES.TXT')).toBe(true);
+    expect(isTextFilePath('dist\\book.html')).toBe(true);
+  });
+
+  it('rejects images, models, exports and unknown types', () => {
+    for (const p of ['assets/cover.png', 'assets/photo.JPG', 'assets/model.glb', 'dist/book.epub', 'dist/book.docx', 'dist/book.pdf']) {
+      expect(isTextFilePath(p)).toBe(false);
+    }
+  });
+
+  it('rejects names without an extension and bare dotfiles', () => {
+    expect(isTextFilePath('LICENSE')).toBe(false);
+    expect(isTextFilePath('.gitignore')).toBe(false);
+    expect(isTextFilePath('.md')).toBe(false);
+    expect(isTextFilePath('notes.md/cover')).toBe(false);
+    expect(isTextFilePath('')).toBe(false);
   });
 });

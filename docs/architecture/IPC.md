@@ -1,6 +1,6 @@
 # IPC — Channels, Preload Bridge, Handler Registry
 
-> Last updated: 2026-11-22 (#43)
+> Last updated: 2026-11-22 (#83)
 
 Everything in `src/main/ipc/` and `src/preload/`. Thin adapter layer between application services and the renderer.
 
@@ -97,9 +97,9 @@ Everything in `src/main/ipc/` and `src/preload/`. Thin adapter layer between app
 | Channel | Direction | Handler | Returns |
 |---------|-----------|---------|---------|
 | `files:read` | invoke | `fs.readFile(bookSlug, path)` | `string` |
-| `files:write` | invoke | `fs.writeFile(bookSlug, path, content)` + auto-snapshot via `version.snapshotContent(source='user')` | `void` |
+| `files:write` | invoke | `fs.writeFile(bookSlug, path, content)` + auto-snapshot via `version.snapshotContent(source='user')`. Rejects, with no snapshot, when the target is an existing binary file | `void` |
 | `files:exists` | invoke | `fs.fileExists(bookSlug, path)` | `boolean` |
-| `files:listDir` | invoke | `fs.listDirectory(bookSlug, path?)` | `FileEntry[]` |
+| `files:listDir` | invoke | `fs.listDirectory(bookSlug, path?)` | `FileEntry[]` (files include `size`) |
 | `files:delete` | invoke | `fs.deletePath(bookSlug, relativePath)` | `void` |
 
 ### versions:*
