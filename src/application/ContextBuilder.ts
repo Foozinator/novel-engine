@@ -22,6 +22,9 @@ import { TokenEstimator } from './context/TokenEstimator';
 /** Guidance name of the app-level author profile. */
 const AUTHOR_PROFILE_FILE = 'author-profile.md';
 
+/** Guidance name of the series bible, replaced by its absolute path at build time. */
+const SERIES_BIBLE_FILE = 'series-bible.md';
+
 /** Cap on the inlined author profile, so a runaway file can't crowd out the context. */
 export const AUTHOR_PROFILE_MAX_WORDS = 4000;
 
@@ -62,7 +65,10 @@ export class ContextBuilder {
     maxContextTokens?: number;
     authorEditsSection?: string;
   }): AssembledContext {
-    const { agentName, agentSystemPrompt, manifest, messages, purposeInstructions, thinkingBudget, authorProfilePath, authorProfileContent, seriesBiblePath, maxContextTokens, authorEditsSection } = params;
+    const { agentName, agentSystemPrompt, manifest, messages, purposeInstructions, thinkingBudget, authorProfilePath, authorProfileContent, maxContextTokens, authorEditsSection } = params;
+    // Agents whose read guidance leaves out the series bible (Ghostlight)
+    // get neither its path nor the Series Context section.
+    const seriesBiblePath = ContextBuilder.wantsSeriesBible(agentName) ? params.seriesBiblePath : undefined;
 
     // 1. Build file manifest section
     const manifestSection = this.buildManifestSection(manifest);
@@ -85,7 +91,7 @@ export class ContextBuilder {
 
     // Replace placeholder 'series-bible.md' with absolute path so the agent can find it
     if (guidanceSection && seriesBiblePath) {
-      guidanceSection = guidanceSection.replace(/`series-bible\.md`/g, `\`${seriesBiblePath}\``);
+      guidanceSection = guidanceSection.replaceAll(`\`${SERIES_BIBLE_FILE}\``, `\`${seriesBiblePath}\``);
     }
 
     // 3. Build file-writing and tool-use instructions
@@ -219,6 +225,18 @@ export class ContextBuilder {
     if (!CREATIVE_AGENT_NAMES.includes(agentName as CreativeAgentName)) return false;
     const guidance = AGENT_READ_GUIDANCE[agentName as CreativeAgentName];
     return guidance.alwaysRead.includes(AUTHOR_PROFILE_FILE) || guidance.readIfRelevant.includes(AUTHOR_PROFILE_FILE);
+  }
+
+  /**
+   * Whether this agent gets the series bible on a series book. A creative
+   * agent gets it only when its read guidance lists it. Ghostlight's doesn't,
+   * because the bible is the author's reference and its read must be cold
+   * (#61). Agents without read guidance (Wrangler, Helper) still get it.
+   */
+  private static wantsSeriesBible(agentName: AgentName): boolean {
+    if (!CREATIVE_AGENT_NAMES.includes(agentName as CreativeAgentName)) return true;
+    const guidance = AGENT_READ_GUIDANCE[agentName as CreativeAgentName];
+    return guidance.alwaysRead.includes(SERIES_BIBLE_FILE) || guidance.readIfRelevant.includes(SERIES_BIBLE_FILE);
   }
 
   /** The author profile, inlined. Long profiles are cut at AUTHOR_PROFILE_MAX_WORDS. */

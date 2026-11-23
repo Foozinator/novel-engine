@@ -4,6 +4,27 @@ All notable changes to Novel Engine Spur are documented here.
 
 ---
 
+## [2026-11-23] — Ghostlight's cold read no longer gets the series bible (#61)
+
+### Summary
+
+On a book in a series, Ghostlight got the series bible twice: `ContextBuilder` added a "Series Context" section to every agent's prompt, and Ghostlight's read guidance listed `series-bible.md` as read-if-relevant. The bible is the author's reference (world rules, timeline, sometimes intent), which no reader of the earlier books has, so the read was neither a new reader's nor a returning reader's. Ghostlight now gets neither the section nor the bible path, in chat and in every multi-call step. Hot take never used `ContextBuilder` and never got it. Other agents are unchanged. Until #62 lands, Ghostlight reads a sequel as a new reader.
+
+### Changed
+- `src/domain/constants.ts` — `AGENT_READ_GUIDANCE.Ghostlight.readIfRelevant` is now empty (was `['series-bible.md']`).
+- `src/application/ContextBuilder.ts` — `build()` drops `seriesBiblePath` unless the private `wantsSeriesBible(agentName)` is true: a creative agent whose guidance lists `series-bible.md` (alwaysRead or readIfRelevant), or an agent without guidance (Wrangler, Helper). The placeholder replacement uses the new `SERIES_BIBLE_FILE` constant.
+- `src/application/ContextBuilder.test.ts` — Ghostlight on a series book: no Series Context section, no bible path, no `series-bible` mention. Every other agent (the six creative agents, Wrangler, Helper) still gets the section with the path.
+- `src/application/MultiCallOrchestrator.test.ts` — `makeOrchestrator()` takes an optional bible path. On a series book, no Ghostlight read or synthesis step carries the bible path or section; Lumen's synthesis still does.
+- `docs/architecture/DOMAIN.md`, `docs/architecture/APPLICATION.md` — Series-bible rule in the read guidance and the context assembly steps; hot take builds its prompt without `ContextBuilder`.
+
+### Architecture Impact
+- None — no wiring changes.
+
+### Migration Notes
+- None.
+
+---
+
 ## [2026-11-22] — Refuse book titles that already exist (#79)
 
 ### Summary

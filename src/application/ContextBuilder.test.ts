@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { Message, ProjectManifest } from '@domain/types';
+import type { AgentName, Message, ProjectManifest } from '@domain/types';
+import { CREATIVE_AGENT_NAMES } from '@domain/constants';
 import { AUTHOR_PROFILE_MAX_WORDS, ContextBuilder } from './ContextBuilder';
 
 function makeManifest(files: { path: string; wordCount: number }[] = []): ProjectManifest {
@@ -156,6 +157,35 @@ describe('system prompt assembly', () => {
       expect(ContextBuilder.wantsAuthorProfile('Quill')).toBe(true);
       expect(ContextBuilder.wantsAuthorProfile('Ghostlight')).toBe(false);
       expect(ContextBuilder.wantsAuthorProfile('Wrangler')).toBe(false);
+    });
+  });
+
+  describe('series bible (#61)', () => {
+    const biblePath = '/abs/series/saga/series-bible.md';
+    const buildOnSeriesBook = (agentName: AgentName) =>
+      builder.build({
+        agentName,
+        agentSystemPrompt: 'p',
+        manifest: makeManifest([{ path: 'chapters/01-ch/draft.md', wordCount: 100 }]),
+        messages: [],
+        purposeInstructions: 'PURPOSE',
+        authorProfilePath: '/abs/author-profile.md',
+        seriesBiblePath: biblePath,
+      }).systemPrompt;
+
+    it('gives Ghostlight no series section and no bible path, so its read stays cold', () => {
+      const sp = buildOnSeriesBook('Ghostlight');
+      expect(sp).not.toContain('### Series Context');
+      expect(sp).not.toContain(biblePath);
+      expect(sp).not.toContain('series-bible');
+      expect(sp).toContain('## Context Loading Guidance'); // the rest of the guidance is intact
+    });
+
+    it.each(
+      [...CREATIVE_AGENT_NAMES.filter((a) => a !== 'Ghostlight'), 'Wrangler', 'Helper'] as AgentName[],
+    )('still gives %s the series section and the bible path', (agentName) => {
+      const sp = buildOnSeriesBook(agentName);
+      expect(sp).toContain(`### Series Context\nThis book is part of a series. The shared series bible is at: \`${biblePath}\``);
     });
   });
 
