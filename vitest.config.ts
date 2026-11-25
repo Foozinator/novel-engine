@@ -43,6 +43,7 @@ export default defineConfig({
         // the composition root (window/protocol wiring, covered by `npm start`
         // boot checks — SESSION-21) and the ReactDOM bootstrap (SESSION-28).
         'src/main/index.ts',
+        'src/main/electron/main.ts',
         'src/renderer/main.tsx',
       ],
       // Enforced floors (SESSION-29). Achieved at gate time:

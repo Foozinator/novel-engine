@@ -46,7 +46,7 @@ Key behavior:
 - `updateBookSlug` migrates conversation references on slug rename. It does not rewrite `file_versions`, `word_count_snapshots` or `stream_sessions` (known gap, spike #36).
 
 Pre-migration snapshot (`backup.ts`, #58):
-- `new DatabaseService(dbPath, { migrationBackupDir })` calls `backupBeforeMigrations` on the fresh connection, before `initializeSchema`. Only `src/main/index.ts` passes the option (`{userData}/backups`). Tests and the `SourceDataFolder` temp copy don't.
+- `new DatabaseService(dbPath, { migrationBackupDir })` calls `backupBeforeMigrations` on the fresh connection, before `initializeSchema`. Only `src/main/composition.ts` passes the option (`{userData}/backups`). Tests and the `SourceDataFolder` temp copy don't.
 - Skipped when `readAppliedVersion(db) >= APP_SCHEMA_VERSION`, or when the DB has no tables (a new file).
 - Writes `novel-engine-pre-v<from>-to-v<to>-<ISO timestamp, ':' and '.' → '-'>.db` with `VACUUM INTO`. `from` is `unversioned` for a DB without `schema_version`. The copy is one file and includes WAL pages from other connections.
 - Then keeps the newest `MIGRATION_BACKUPS_KEPT` (3) by the timestamp in the name. Other files in the folder are left alone. A failed prune only logs a warning.
@@ -154,7 +154,7 @@ Key behavior:
 Key behavior:
 - Exposes `providerId` as `'codex-cli'` and capabilities: `text-completion`, `streaming`, `tool-use`, `thinking`
 - `isAvailable()` caches a non-interactive `codex --version` check with a 10s timeout
-- Startup registration in `src/main/index.ts` enables Codex when `CodexCliClient.isAvailable()` succeeds and persists `hasCodexCli`
+- Startup registration in `src/main/composition.ts` enables Codex when `CodexCliClient.isAvailable()` succeeds and persists `hasCodexCli`
 - Model discovery reads `~/.codex/models_cache.json` defensively, then falls back to built-in `gpt-5.3-codex`
 - Builds an explicit workspace plan before spawn: active-book `cwd` for book conversations, `booksDir` for root calls, or the caller-provided `workingDir`
 - Validates the planned working directory exists before spawning `codex`; missing paths emit an `error` stream event and abort launch
@@ -198,7 +198,7 @@ Key behavior:
 - `OllamaCliRunner.showModelContext()` tries `ollama show <model> --json`, then falls back to defensive text parsing for context length patterns.
 - `OllamaCliRunner.startServe()` spawns `ollama serve` once and warns, rather than throwing, if the process exits because the service is already running.
 - `OllamaCliRunner.runSmokeTest()` pipes a prompt into `ollama run <model>` with a timeout and boolean result.
-- Startup model discovery in `src/main/index.ts` uses `OllamaCliRunner.listModels()` and `showModelContext()` for local endpoints, and preserves API discovery for configured remote endpoints.
+- Startup model discovery (`src/main/modelDiscovery.ts`, called from `composition.ts`) uses `OllamaCliRunner.listModels()` and `showModelContext()` for local endpoints, and preserves API discovery for configured remote endpoints.
 - Max-turns signaling: tracks `exitReason` (`'natural' | 'context-ceiling' | 'max-turns'`) in the agent loop. Sets `isMaxTurns: exitReason === 'max-turns'` on the `done` StreamEvent. Natural completion (no tool calls) and context-ceiling exits do NOT set `isMaxTurns`.
 - Phantom empty turn detection (added 2026-07-23): a turn with 0 content text AND 0 tool calls is a phantom (the Ollama server returned a 0-token `done` chunk — model OOM, GPU throw, etc.). The agent loop emits a `warning` event and retries the same turn index via `turn--; continue` up to `MAX_CONSECUTIVE_EMPTY_TURNS = 3` times. Exceeding the bound sets `exitReason = 'max-turns'` so the `done` event carries `isMaxTurns: true` — the outer `AutoTurnResumer` can react. Natural finish (content > 0) is unchanged.
 
@@ -407,7 +407,7 @@ On startup, `ChatService.recoverOrphanedSessions()` checks `stream_sessions` for
 
 - Watches: single book directory (switchable via `watch(slug)`)
 - Events: file change/add/delete within the book. Paths are book-relative with `/` (Windows `fs.watch` names are converted)
-- Consumer: `chat:filesChanged` IPC event → renderer; also `VersionService.snapshotFile(activeSlug, path, 'agent')` in `src/main/index.ts`
+- Consumer: `chat:filesChanged` IPC event → renderer; also `VersionService.snapshotFile(activeSlug, path, 'agent')` in `src/main/composition.ts`
 - Debounced to avoid flooding during rapid writes
 
 ### BooksDirWatcher

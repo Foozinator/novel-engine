@@ -1,4 +1,3 @@
-import { ipcMain, BrowserWindow, dialog, nativeTheme, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
 import * as fsPromises from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
@@ -67,20 +66,12 @@ import type {
   PromptSyncStatus,
 } from '@domain/types';
 import type { NotificationManager } from '../notifications';
-import { chooseDataFolder, relaunch, resetDataFolder } from '../dataFolderDialogs';
+import { chooseDataFolder, resetDataFolder } from '../dataFolderDialogs';
+import type { EventSink, HostAdapter } from '../host';
+import type { IpcRouter } from './router';
 
-/**
- * Check whether a BrowserWindow's webContents is still alive and sendable.
- * Windows can exist (not destroyed) while their render frame is disposed
- * (e.g. during a renderer refresh or OOM crash). This guard prevents
- * hundreds of "Render frame was disposed" log lines when the main process
- * keeps streaming to a dead renderer.
- */
-function isWebContentsAlive(w: BrowserWindow): boolean {
-  return !w.isDestroyed() && !w.webContents.isDestroyed();
-}
-
-export function registerIpcHandlers(services: {
+/** Every service the handlers delegate to. Built by `composeApp`. */
+export interface IpcServices {
   settings: ISettingsService;
   agents: IAgentService;
   db: IDatabaseService;
@@ -107,30 +98,37 @@ export function registerIpcHandlers(services: {
   query: IQueryService;
   claudeCliUpdate: IClaudeCliUpdateService;
   fableAccess: IFableAccessService;
-}, paths: {
+}
+
+export interface IpcPaths {
   userDataPath: string;
   booksDir: string;
   dataFolder: DataFolderInfo;
   promptSync: PromptSyncResult;
-  /** True only for the app's own page (see `createAppUrlMatcher`). */
-  isAppUrl: (url: string) => boolean;
-}, hooks?: {
-  onActiveBookChanged?: (slug: string) => void;
-}): void {
+}
 
-  /**
-   * Register an invoke handler that serves only the app's own page. Calls
-   * from any other frame (another URL, or a destroyed frame) are refused.
-   */
-  const handle = (channel: string, listener: Parameters<typeof ipcMain.handle>[1]): void => {
-    ipcMain.handle(channel, (event, ...args) => {
-      const senderUrl = event.senderFrame?.url;
-      if (typeof senderUrl !== 'string' || !paths.isAppUrl(senderUrl)) {
-        throw new Error(`Refused ${channel}: the call did not come from the app window`);
-      }
-      return listener(event, ...args);
-    });
-  };
+/**
+ * Register every request channel into `router`. Electron-free (#72): dialogs,
+ * shell, theme and relaunch go through `host`; push events go through `events`.
+ * The transport (Electron `ipcMain`) enforces who may call.
+ */
+export function registerIpcHandlers(
+  router: IpcRouter,
+  host: HostAdapter,
+  events: EventSink,
+  services: IpcServices,
+  paths: IpcPaths,
+  hooks?: { onActiveBookChanged?: (slug: string) => void },
+): void {
+
+  const handle = router.handle.bind(router);
+
+  // === Window controls (custom title bar) — no-ops on a host without windows ===
+
+  router.on('window:minimize', (ctx) => host.windowControl('minimize', ctx));
+  router.on('window:maximize', (ctx) => host.windowControl('maximize', ctx));
+  router.on('window:close', (ctx) => host.windowControl('close', ctx));
+  handle('window:isMaximized', (ctx) => host.isWindowMaximized(ctx));
 
   /** Files the user picked in a save dialog this session; shell:openPath may open them. */
   const savedExportPaths = new Set<string>();
@@ -177,9 +175,9 @@ export function registerIpcHandlers(services: {
   handle('settings:update', async (_, partial: Partial<AppSettings>) => {
     await services.settings.update(partial);
 
-    // Sync Electron's native theme when the user changes the appearance setting
+    // Sync the host's native theme when the user changes the appearance setting
     if (partial.theme !== undefined) {
-      nativeTheme.themeSource = partial.theme === 'system' ? 'system' : partial.theme;
+      host.setTheme(partial.theme === 'system' ? 'system' : partial.theme);
     }
   });
 
@@ -249,23 +247,21 @@ export function registerIpcHandlers(services: {
   handle('dataFolder:get', (): DataFolderInfo => paths.dataFolder);
 
   /** Pick a folder, confirm, write the pointer and restart. False if cancelled. */
-  handle('dataFolder:change', async (event): Promise<boolean> => {
+  handle('dataFolder:change', async (ctx): Promise<boolean> => {
     const { source, defaultDir, current } = paths.dataFolder;
     if (source === 'flag' || source === 'env') return false; // overrides always win
-    const win = BrowserWindow.fromWebContents(event.sender);
-    const chosen = await chooseDataFolder(win, defaultDir, current);
+    const chosen = await chooseDataFolder(host, ctx, defaultDir, current);
     if (!chosen) return false;
-    relaunch();
+    host.relaunch();
     return true;
   });
 
   /** Point back at the default folder and restart. False if cancelled. */
-  handle('dataFolder:reset', async (event): Promise<boolean> => {
+  handle('dataFolder:reset', async (ctx): Promise<boolean> => {
     const { source, defaultDir } = paths.dataFolder;
     if (source !== 'pointer') return false; // already default, or overridden
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (!(await resetDataFolder(win, defaultDir))) return false;
-    relaunch();
+    if (!(await resetDataFolder(host, ctx, defaultDir))) return false;
+    host.relaunch();
     return true;
   });
 
@@ -304,15 +300,12 @@ export function registerIpcHandlers(services: {
 
   handle('books:wordCount', (_, slug: string) => services.fs.countWordsPerChapter(slug));
 
-  handle('books:uploadCover', async (event, bookSlug: string) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (!win) throw new Error('No window found');
-    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+  handle('books:uploadCover', async (ctx, bookSlug: string) => {
+    const filePaths = await host.pickFiles({
       title: 'Select Cover Image',
       filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif'] }],
-      properties: ['openFile'],
-    });
-    if (canceled || filePaths.length === 0) return null;
+    }, ctx);
+    if (!filePaths || filePaths.length === 0) return null;
     return services.fs.saveCoverImage(bookSlug, filePaths[0]);
   });
 
@@ -342,21 +335,17 @@ export function registerIpcHandlers(services: {
 
   // === Manuscript Import ===
 
-  handle('import:selectFile', async (event) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (!win) throw new Error('No window found');
-
-    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+  handle('import:selectFile', async (ctx) => {
+    const filePaths = await host.pickFiles({
       title: 'Import Manuscript',
       filters: [
         { name: 'Manuscripts', extensions: ['md', 'markdown', 'docx'] },
         { name: 'Markdown', extensions: ['md', 'markdown'] },
         { name: 'Word Document', extensions: ['docx'] },
       ],
-      properties: ['openFile'],
-    });
+    }, ctx);
 
-    if (canceled || filePaths.length === 0) return null;
+    if (!filePaths || filePaths.length === 0) return null;
     return filePaths[0];
   });
 
@@ -372,26 +361,16 @@ export function registerIpcHandlers(services: {
 
   handle('import:generateSources', async (_, bookSlug: string) => {
     const broadcastGenProgress = (genEvent: SourceGenerationEvent) => {
-      for (const w of BrowserWindow.getAllWindows()) {
-        if (!isWebContentsAlive(w)) continue;
-        try {
-          w.webContents.send('import:generationProgress', genEvent);
-        } catch { /* window closing */ }
-      }
+      events.broadcast('import:generationProgress', genEvent);
     };
 
     const broadcastStreamEvent = (streamEvent: StreamEvent) => {
-      for (const w of BrowserWindow.getAllWindows()) {
-        if (!isWebContentsAlive(w)) continue;
-        try {
-          w.webContents.send('chat:streamEvent', {
+      events.broadcast('chat:streamEvent', {
             ...streamEvent,
             callId: `source-gen:${bookSlug}`,
             conversationId: `source-gen:${bookSlug}`,
             source: 'chat',
           });
-        } catch { /* window closing */ }
-      }
     };
 
     await services.sourceGeneration.generate({
@@ -403,17 +382,14 @@ export function registerIpcHandlers(services: {
 
   // ── Import from another data folder (#37) ─────────────────────────
 
-  handle('import:selectDataFolder', async (event) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (!win) throw new Error('No window found');
-
-    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+  handle('import:selectDataFolder', async (ctx) => {
+    const filePaths = await host.pickFiles({
       title: 'Import from another Novel Engine folder',
       buttonLabel: 'Choose folder',
-      properties: ['openDirectory'],
-    });
+      directory: true,
+    }, ctx);
 
-    if (canceled || filePaths.length === 0) return null;
+    if (!filePaths || filePaths.length === 0) return null;
     return filePaths[0];
   });
 
@@ -427,21 +403,18 @@ export function registerIpcHandlers(services: {
 
   // ── Series Import ──────────────────────────────────────────────────
 
-  handle('import:selectFiles', async (event) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (!win) throw new Error('No window found');
-
-    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+  handle('import:selectFiles', async (ctx) => {
+    const filePaths = await host.pickFiles({
       title: 'Import Series — Select Manuscripts',
       filters: [
         { name: 'Manuscripts', extensions: ['md', 'markdown', 'docx'] },
         { name: 'Markdown', extensions: ['md', 'markdown'] },
         { name: 'Word Document', extensions: ['docx'] },
       ],
-      properties: ['openFile', 'multiSelections'],
-    });
+      multiple: true,
+    }, ctx);
 
-    if (canceled || filePaths.length === 0) return null;
+    if (!filePaths || filePaths.length === 0) return null;
     return filePaths;
   });
 
@@ -507,14 +480,7 @@ export function registerIpcHandlers(services: {
   handle('versions:revert', async (_, bookSlug: string, filePath: string, versionId: number) => {
     const result = await services.version.revertToVersion(bookSlug, filePath, versionId);
     // Notify renderer that a file was changed (revert is a write)
-    for (const w of BrowserWindow.getAllWindows()) {
-      if (!isWebContentsAlive(w)) continue;
-      try {
-        w.webContents.send('chat:filesChanged', [filePath], bookSlug);
-      } catch {
-        // Window may be closing
-      }
-    }
+    events.broadcast('chat:filesChanged', [filePath], bookSlug);
     return result;
   });
 
@@ -565,9 +531,7 @@ export function registerIpcHandlers(services: {
 
   // === Chat (streaming) ===
 
-  handle('chat:send', async (event, params: SendMessageParams) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (!win) throw new Error('No window found');
+  handle('chat:send', async (ctx, params: SendMessageParams) => {
 
     // Use the renderer-provided callId if available, otherwise generate one.
     // Renderer-generated IDs let stores filter events to their own call,
@@ -588,14 +552,7 @@ export function registerIpcHandlers(services: {
      * receives events — enabling true live re-subscription.
      */
     const broadcastStreamEvent = (streamEvent: StreamEvent & { callId: string; conversationId: string; source?: StreamEventSource }) => {
-      for (const w of BrowserWindow.getAllWindows()) {
-        if (!isWebContentsAlive(w)) continue;
-        try {
-          w.webContents.send('chat:streamEvent', streamEvent);
-        } catch {
-          // Window may be closing or destroyed — skip silently
-        }
-      }
+      events.broadcast('chat:streamEvent', streamEvent);
     };
 
     const result = await services.chat.sendMessage({
@@ -629,14 +586,7 @@ export function registerIpcHandlers(services: {
     // Broadcast to all windows so refreshed renderers also receive the notification.
     const changedFiles = result.changedFiles;
     if (changedFiles.length > 0) {
-      for (const w of BrowserWindow.getAllWindows()) {
-        if (!isWebContentsAlive(w)) continue;
-        try {
-          w.webContents.send('chat:filesChanged', changedFiles, params.bookSlug);
-        } catch {
-          // Window may be closing — skip
-        }
-      }
+      events.broadcast('chat:filesChanged', changedFiles, params.bookSlug);
       // Snapshot agent-written files (uses params.bookSlug — correct for any book, not just active)
       snapshotChangedFiles(params.bookSlug, changedFiles);
 
@@ -673,10 +623,9 @@ export function registerIpcHandlers(services: {
 
   // === Build ===
 
-  handle('build:run', async (event, bookSlug: string) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
+  handle('build:run', async (ctx, bookSlug: string) => {
     const result = await services.build.build(bookSlug, (message) => {
-      win?.webContents.send('build:progress', message);
+      ctx.reply('build:progress', message);
     });
 
     // Fire OS notification for build completion
@@ -693,21 +642,18 @@ export function registerIpcHandlers(services: {
 
   handle('build:isPandocAvailable', () => services.build.isPandocAvailable());
 
-  handle('build:exportZip', async (event, bookSlug: string) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (!win) throw new Error('No window found');
-
+  handle('build:exportZip', async (ctx, bookSlug: string) => {
     const distDir = services.fs.getAbsolutePath(bookSlug, 'dist');
     const meta = await services.fs.getBookMeta(bookSlug);
     const slug = meta.title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 
-    const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    const filePath = await host.saveFile({
       title: 'Export Build Artifacts',
       defaultPath: `${slug}-build.zip`,
       filters: [{ name: 'ZIP Archive', extensions: ['zip'] }],
-    });
+    }, ctx);
 
-    if (canceled || !filePath) return null;
+    if (!filePath) return null;
     savedExportPaths.add(path.resolve(filePath));
 
     return new Promise<string>((resolve, reject) => {
@@ -725,19 +671,16 @@ export function registerIpcHandlers(services: {
 
   // === Catalog Export ===
 
-  handle('catalog:exportZip', async (event) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (!win) throw new Error('No window found');
-
+  handle('catalog:exportZip', async (ctx) => {
     const dateStr = new Date().toISOString().slice(0, 10);
 
-    const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    const filePath = await host.saveFile({
       title: 'Export Book Catalog',
       defaultPath: `novel-engine-catalog-${dateStr}.zip`,
       filters: [{ name: 'ZIP Archive', extensions: ['zip'] }],
-    });
+    }, ctx);
 
-    if (canceled || !filePath) return null;
+    if (!filePath) return null;
     savedExportPaths.add(path.resolve(filePath));
 
     return new Promise<string>((resolve, reject) => {
@@ -779,15 +722,10 @@ export function registerIpcHandlers(services: {
     services.chat.getRecoveredOrphans()
   );
 
-  handle('chat:deepDive', async (event, params: { bookSlug: string; chapterSlug: string; conversationId?: string; callId?: string }) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (!win) throw new Error('No window found');
+  handle('chat:deepDive', async (ctx, params: { bookSlug: string; chapterSlug: string; conversationId?: string; callId?: string }) => {
     const callId = params.callId ?? randomUUID();
     const broadcastStreamEvent = (streamEvent: StreamEvent & { callId: string; conversationId?: string; source?: string }) => {
-      for (const w of BrowserWindow.getAllWindows()) {
-        if (!isWebContentsAlive(w)) continue;
-        try { w.webContents.send('chat:streamEvent', streamEvent); } catch { /* skip */ }
-      }
+      events.broadcast('chat:streamEvent', streamEvent);
     };
     return services.chat.deepDive({
       ...params,
@@ -827,7 +765,7 @@ export function registerIpcHandlers(services: {
     if (protocol !== 'https:' && protocol !== 'mailto:') {
       throw new Error(`shell:openExternal opens only https: and mailto: links (got ${protocol})`);
     }
-    return shell.openExternal(url);
+    return host.openExternal(url);
   });
 
   // Opens a book file or folder, or an export the user saved this session.
@@ -838,7 +776,7 @@ export function registerIpcHandlers(services: {
     if (!isInBooksDir(absolutePath) && !savedExportPaths.has(path.resolve(absolutePath))) {
       throw new Error('shell:openPath opens only files in the books folder or exports saved this session');
     }
-    return shell.openPath(absolutePath);
+    return host.openPath(absolutePath);
   });
 
   // === Shelved Pitches ===
@@ -888,10 +826,7 @@ export function registerIpcHandlers(services: {
 
   // === Hot Take ===
 
-  handle('hot-take:start', async (event, bookSlug: string) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (!win) throw new Error('No window found');
-
+  handle('hot-take:start', async (ctx, bookSlug: string) => {
     const dateStr = new Date().toLocaleDateString('en-US', {
       month: 'short', day: 'numeric', year: 'numeric',
     });
@@ -908,14 +843,7 @@ export function registerIpcHandlers(services: {
     const callId = randomUUID();
 
     const broadcastStreamEvent = (streamEvent: StreamEvent & { callId: string; conversationId: string; source?: StreamEventSource }) => {
-      for (const w of BrowserWindow.getAllWindows()) {
-        if (!isWebContentsAlive(w)) continue;
-        try {
-          w.webContents.send('chat:streamEvent', streamEvent);
-        } catch {
-          // Window may be closing
-        }
-      }
+      events.broadcast('chat:streamEvent', streamEvent);
     };
 
     let hotTakeChangedFiles: string[] = [];
@@ -945,9 +873,7 @@ export function registerIpcHandlers(services: {
 
   // === Ad Hoc Revision ===
 
-  handle('adhoc-revision:start', async (event, bookSlug: string, description: string) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    if (!win) throw new Error('No window found');
+  handle('adhoc-revision:start', async (ctx, bookSlug: string, description: string) => {
 
     const dateStr = new Date().toLocaleDateString('en-US', {
       month: 'short', day: 'numeric', year: 'numeric',
@@ -965,14 +891,7 @@ export function registerIpcHandlers(services: {
     const callId = randomUUID();
 
     const broadcastStreamEvent = (streamEvent: StreamEvent & { callId: string; conversationId: string; source?: StreamEventSource }) => {
-      for (const w of BrowserWindow.getAllWindows()) {
-        if (!isWebContentsAlive(w)) continue;
-        try {
-          w.webContents.send('chat:streamEvent', streamEvent);
-        } catch {
-          // Window may be closing
-        }
-      }
+      events.broadcast('chat:streamEvent', streamEvent);
     };
 
     let adhocChangedFiles: string[] = [];
@@ -992,14 +911,7 @@ export function registerIpcHandlers(services: {
 
         if (streamEvent.type === 'done' || streamEvent.type === 'error') {
           if (adhocChangedFiles.length > 0) {
-            for (const w of BrowserWindow.getAllWindows()) {
-              if (!isWebContentsAlive(w)) continue;
-              try {
-                w.webContents.send('chat:filesChanged', adhocChangedFiles, bookSlug);
-              } catch {
-                // Window may be closing
-              }
-            }
+            events.broadcast('chat:filesChanged', adhocChangedFiles, bookSlug);
             // Snapshot agent-written files for this book
             snapshotChangedFiles(bookSlug, adhocChangedFiles);
           }
@@ -1018,23 +930,13 @@ export function registerIpcHandlers(services: {
   const broadcastVerityEvent = (callId: string, conversationId: string, source: StreamEventSource) =>
     (streamEvent: StreamEvent) => {
       const tagged = { ...streamEvent, callId, conversationId, source };
-      for (const w of BrowserWindow.getAllWindows()) {
-        if (!isWebContentsAlive(w)) continue;
-        try {
-          w.webContents.send('chat:streamEvent', tagged);
-        } catch {
-          // Window may be closing — skip silently
-        }
-      }
+      events.broadcast('chat:streamEvent', tagged);
     };
 
   /** Emit a synthetic callStart so audit/fix calls appear in the CLI Activity Monitor. */
   const emitVerityCallStart = (callId: string, conversationId: string, bookSlug: string) => {
     const callStartEvent = { type: 'callStart' as const, callId, conversationId, agentName: 'Verity', model: 'unknown', bookSlug };
-    for (const w of BrowserWindow.getAllWindows()) {
-      if (!isWebContentsAlive(w)) continue;
-      try { w.webContents.send('chat:streamEvent', callStartEvent); } catch { /* window closing */ }
-    }
+    events.broadcast('chat:streamEvent', callStartEvent);
   };
 
   handle('verity:auditChapter', async (_, bookSlug: string, chapterSlug: string, rendererCallId?: string, rendererConversationId?: string) => {
@@ -1162,20 +1064,16 @@ export function registerIpcHandlers(services: {
 
   // Forward revision queue events to all renderer windows + fire OS notifications
   services.revisionQueue.onEvent((event) => {
-    const wins = BrowserWindow.getAllWindows();
-    for (const win of wins) {
-      if (!isWebContentsAlive(win)) continue;
-      win.webContents.send('revision:event', event);
+    events.broadcast('revision:event', event);
 
-      if (event.type === 'session:streamEvent') {
-        // Use sessionId as callId so the renderer groups events per revision session
-        win.webContents.send('chat:streamEvent', {
-          ...event.event,
-          callId: `rev:${event.sessionId}`,
-          conversationId: event.conversationId ?? event.sessionId,
-          source: 'revision' as StreamEventSource,
-        });
-      }
+    if (event.type === 'session:streamEvent') {
+      // Use sessionId as callId so the renderer groups events per revision session
+      events.broadcast('chat:streamEvent', {
+        ...event.event,
+        callId: `rev:${event.sessionId}`,
+        conversationId: event.conversationId ?? event.sessionId,
+        source: 'revision' as StreamEventSource,
+      });
     }
 
     // Snapshot files changed during revision sessions
@@ -1247,17 +1145,12 @@ export function registerIpcHandlers(services: {
       conversationId,
       callId: resolvedCallId,
       onEvent: (event) => {
-        for (const w of BrowserWindow.getAllWindows()) {
-          if (!isWebContentsAlive(w)) continue;
-          try {
-            w.webContents.send('chat:streamEvent', {
+        events.broadcast('chat:streamEvent', {
               ...event,
               callId: resolvedCallId,
               conversationId,
               source: 'chat' as StreamEventSource,
             });
-          } catch { /* window closing */ }
-        }
       },
     });
   });
@@ -1325,11 +1218,8 @@ export function registerIpcHandlers(services: {
   );
 
   const broadcastQueryStreamEvent = (streamEvent: StreamEvent, callId: string) => {
-    for (const w of BrowserWindow.getAllWindows()) {
-      if (!isWebContentsAlive(w)) continue;
-      try { w.webContents.send('query:onStream', streamEvent); } catch { /* skip */ }
-      try { w.webContents.send('chat:streamEvent', { ...streamEvent, callId, conversationId: callId, source: 'query' as StreamEventSource }); } catch { /* skip */ }
-    }
+    events.broadcast('query:onStream', streamEvent);
+    events.broadcast('chat:streamEvent', { ...streamEvent, callId, conversationId: callId, source: 'query' as StreamEventSource });
   };
 
   handle('query:generateLetter', async (_event, bookSlug: string, targetId: string) => {

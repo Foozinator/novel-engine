@@ -385,7 +385,7 @@ Dependencies: `IFileSystemService`, `IProviderRegistry`
 
 **Schema normalization (CLI):** Agents write the motif ledger with arbitrary field names, nested objects where flat strings are expected, and missing fields. `isCanonicalShape()` checks the first entry in `systems`, `entries`, `foreshadows`, and `structuralDevices` for known non-canonical patterns (e.g. `associatedCharacters` on systems, object-typed `firstAppearance` on entries, `plant`/`payoff` on foreshadows). If non-canonical, `normalizeViaCli()` sends the raw JSON to a Sonnet CLI call with a structured prompt containing the full target schema and field mapping rules. The CLI returns canonical JSON which is parsed, validated, saved back to disk (so normalization only fires once per malformed file), and returned to the caller. If CLI normalization fails, falls back to a best-effort `parseLedgerFromCanonical()` which fills missing fields with defaults.
 
-**Normalization callback:** The composition root (`src/main/index.ts`) registers a callback via `setNormalizationCallback()` that broadcasts `motifLedger:normalizing` events to all renderer windows. The `MotifLedgerView` subscribes to these events and shows a spinner during normalization.
+**Normalization callback:** The composition root (`composeApp()` in `src/main/composition.ts`) registers a callback via `setNormalizationCallback()` that broadcasts `motifLedger:normalizing` through the `EventSink`. The `MotifLedgerView` subscribes to these events and shows a spinner during normalization.
 
 ### VersionService
 
