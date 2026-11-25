@@ -4,6 +4,25 @@ All notable changes to Novel Engine Spur are documented here.
 
 ---
 
+## [2026-11-25] — Update Electron 33.4.0 to 33.4.11 (#96)
+
+### Summary
+
+Pinned `electron` to 33.4.11, the last release on the 33 line. Nothing else was upgraded. This doesn't make Electron 33 supported; the move to 45 is #42 and #43.
+
+### Changed
+- `package.json` — `electron` `33.4.0` → `33.4.11`
+- `package-lock.json` — Lockfile follows the new pin
+- `docs/architecture/ARCHITECTURE.md` — Technology stack table shows 33.4.11
+
+### Architecture Impact
+- None — no wiring changes
+
+### Migration Notes
+- None
+
+---
+
 ## [2026-11-25] — Refuse a data folder another instance has open (#75)
 
 ### Summary
