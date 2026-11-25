@@ -42,6 +42,9 @@ src/
 │   │   ├── SettingsService.ts               # CLI detection, preferences, JSON persistence
 │   │   ├── claudeModelMigration.ts          # One-time dated-ID → CLI alias settings migration
 │   │   └── index.ts
+│   ├── lock/
+│   │   ├── DataFolderLock.ts                # acquireDataFolderLock(): exclusive SQLite transaction on {dataDir}/instance.lock
+│   │   └── index.ts
 │   ├── database/
 │   │   ├── schema.ts                        # SQLite CREATE TABLE statements, WAL mode, foreign keys
 │   │   ├── DatabaseService.ts               # Conversations, messages, usage, stream events repos
@@ -133,6 +136,7 @@ src/
 │   ├── bootstrap.ts                         # First-run directory/file creation; ensureAgents() bundled-prompt sync
 │   ├── dataLocation.ts                      # Resolves the data folder (flag › env › pointer › default); pointer I/O
 │   ├── dataFolderDialogs.ts                 # Data-folder dialogs through HostAdapter: startup checks, change/reset from Settings
+│   ├── dataFolderLock.ts                    # acquireFolderLockOrAsk(): takes the folder lock; Quit / Use another folder dialog
 │   ├── notifications.ts                     # Notification manager (HostAdapter.notify)
 │   ├── appUrl.ts                            # createAppUrlMatcher(): the app's own page, for the window lock and IPC sender check
 │   └── ipc/

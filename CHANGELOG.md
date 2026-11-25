@@ -4,6 +4,29 @@ All notable changes to Novel Engine Spur are documented here.
 
 ---
 
+## [2026-11-25] — Refuse a data folder another instance has open (#75)
+
+### Summary
+
+Nothing stopped two processes from opening one data folder. The app now takes an exclusive SQLite transaction on `{dataDir}/instance.lock` at startup and holds it until exit. The OS drops it when the process dies, so a crash leaves no stale lock. A second instance gets a dialog offering Quit or Use another folder. App name, host, PID and start time go in `instance.lock.json`, for the message only. Limits: upstream builds don't take the lock, and file locks may not work across VM or network file shares. The headless server (later) can call `acquireDataFolderLock()` and log the holder.
+
+### Added
+- `src/infrastructure/lock/DataFolderLock.ts`, `src/infrastructure/lock/index.ts` — `acquireDataFolderLock()`, `readHolderInfo()`, `describeHolder()`.
+- `src/infrastructure/lock/DataFolderLock.test.ts` — Second holder refused, re-acquire after release, refusal across processes and success after the holder is SIGKILLed.
+- `src/main/dataFolderLock.ts` — `acquireFolderLockOrAsk(host, …)` (through `HostAdapter`, no `electron` import): Quit / Use another folder dialog.
+
+### Changed
+- `src/main/electron/main.ts` — `initializeApp()` takes the lock after the startup data-folder checks. `before-quit` releases it.
+- `docs/architecture/ARCHITECTURE.md`, `docs/architecture/INFRASTRUCTURE.md`, `docs/architecture/IPC.md` — New module, new file, startup step.
+
+### Architecture Impact
+- New infrastructure module: `lock/`. No new IPC channels, stores or schema changes.
+
+### Migration Notes
+- None. Two new files appear in the data folder: `instance.lock` and `instance.lock.json`.
+
+---
+
 ## [2026-11-25] — Separate the composition root and IPC handlers from Electron (#72)
 
 ### Summary

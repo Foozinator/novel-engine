@@ -25,6 +25,19 @@ Key behavior:
 - Settings merged with `DEFAULT_SETTINGS` on load (forward-compatible)
 - On load, `migrateClaudeModelAliases()` runs. If the saved claude-cli provider lists none of `opus`/`sonnet`/`haiku`, it drops `LEGACY_CLAUDE_CLI_MODEL_IDS` from that provider, prepends the aliases, keeps user-added IDs, and moves `model`/`secondaryModel`/`defaultModel` to `opus`/`sonnet` only where they still name a legacy ID. The migrated settings are written back once. A failed write is logged and retried on the next load.
 
+### lock/ — Data Folder Lock (#75)
+
+| File | Purpose |
+|------|---------|
+| `DataFolderLock.ts` | `acquireDataFolderLock(dir, appName)`, `readHolderInfo()`, `describeHolder()` |
+| `index.ts` | Barrel export |
+
+Key behavior:
+- Holds `BEGIN EXCLUSIVE` on `{dataDir}/instance.lock` (a small SQLite file, `timeout: 0`) for the life of the process. The OS drops the lock when the process dies, so a crash or force-removed container leaves nothing to clear.
+- `{dataDir}/instance.lock.json` holds app name, host, PID and start time. It is used only for the "folder in use" message, never to decide whether the folder is free (a recreated container has a new hostname and often the same PID).
+- Returns `{ acquired: true, release }` or `{ acquired: false, holder }`. Other errors throw.
+- Limits: upstream builds don't take the lock, and file locks may not work across VM or network file shares. A lock failure other than BUSY is logged and startup continues.
+
 ### database/ — SQLite Persistence
 
 | File | Purpose |

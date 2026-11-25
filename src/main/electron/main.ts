@@ -53,6 +53,7 @@ if (squirrelStartup) {
 // Chromium's sessionData follows, so renderer localStorage is per folder too.
 import { LEGACY_DATA_FOLDER_NAME, resolveDataDir } from '../dataLocation';
 import { runStartupDataFolderChecks } from '../dataFolderDialogs';
+import { acquireFolderLockOrAsk } from '../dataFolderLock';
 import { createAppUrlMatcher } from '../appUrl';
 // Default is `{appData}/Novel Engine Spur` (from package.json productName).
 // The pre-rename `{appData}/Novel Engine` is offered for import on first launch.
@@ -85,6 +86,7 @@ const events = new ElectronEventSink();
 
 // Module-level references for lifecycle cleanup
 let composition: Composition | null = null;
+let releaseDataFolderLock: (() => void) | null = null;
 let mainWindow: BrowserWindow | null = null;
 
 /** The renderer's entry page, packaged builds. */
@@ -167,6 +169,10 @@ async function initializeApp(): Promise<void> {
   if (await runStartupDataFolderChecks(host, defaultDataDir, legacyDataDir, dataResolution)) return;
 
   const userDataPath = app.getPath('userData');
+
+  // 0b. Refuse a data folder another instance has open (#75).
+  releaseDataFolderLock = await acquireFolderLockOrAsk(host, defaultDataDir, userDataPath);
+  if (!releaseDataFolderLock) return;
 
   // In dev mode with Electron Forge + Vite, `__dirname` resolves to the Vite
   // output directory (`.vite/build/`), not the project root. `app.getAppPath()`
@@ -276,4 +282,5 @@ app.on('activate', () => {
 // Clean up database connection and file watchers on quit
 app.on('before-quit', () => {
   composition?.dispose();
+  releaseDataFolderLock?.();
 });
