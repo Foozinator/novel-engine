@@ -431,7 +431,7 @@ The fork ships as **Novel Engine Spur** (`APP_NAME` in `src/domain/constants.ts`
 
 | Layer | Technology | Version |
 |-------|-----------|---------|
-| Shell | Electron | 33.4.0 |
+| Shell | Electron | 33.4.11 |
 | Bundler | Vite (via Electron Forge) | ^5.4.21 |
 | Framework | React | ^18.3.0 |
 | Language | TypeScript | ~5.5.0 |
