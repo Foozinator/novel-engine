@@ -686,6 +686,13 @@ Implemented by: `QueryService` (`src/application/QueryService.ts`)
 | `APP_REPO_URL` | `'https://github.com/Foozinator/novel-engine'` | Settings → About |
 | `UPSTREAM_REPO_URL` | `'https://github.com/john-paul-ruf/novel-engine'` | Settings → About credit |
 
+### Push channels (`src/domain/channels.ts`)
+
+| Export | Shape | Used By |
+|--------|-------|---------|
+| `PUSH_CHANNELS` | `readonly ['books:changed', 'import:generationProgress', 'chat:streamEvent', 'chat:filesChanged', 'build:progress', 'revision:event', 'motifLedger:normalizing', 'window:maximized', 'window:unmaximized', 'query:onStream']` | `EventSink.broadcast`, preload subscription check in `handlers.test.ts` |
+| `PushChannel` | `(typeof PUSH_CHANNELS)[number]` | `EventSink`, `CallContext.reply`, `ElectronEventSink` |
+
 ### AGENT_REGISTRY
 
 `Record<AgentName, Omit<AgentMeta, 'name'>>` — metadata for all 9 agents.

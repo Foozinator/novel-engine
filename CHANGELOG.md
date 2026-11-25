@@ -13,10 +13,10 @@ Nothing stopped two processes from opening one data folder. The app now takes an
 ### Added
 - `src/infrastructure/lock/DataFolderLock.ts`, `src/infrastructure/lock/index.ts` — `acquireDataFolderLock()`, `readHolderInfo()`, `describeHolder()`.
 - `src/infrastructure/lock/DataFolderLock.test.ts` — Second holder refused, re-acquire after release, refusal across processes and success after the holder is SIGKILLed.
-- `src/main/dataFolderLock.ts` — `acquireFolderLockOrAsk()`: Quit / Use another folder dialog.
+- `src/main/dataFolderLock.ts` — `acquireFolderLockOrAsk(host, …)` (through `HostAdapter`, no `electron` import): Quit / Use another folder dialog.
 
 ### Changed
-- `src/main/index.ts` — `initializeApp()` takes the lock after the startup data-folder checks. `before-quit` releases it.
+- `src/main/electron/main.ts` — `initializeApp()` takes the lock after the startup data-folder checks. `before-quit` releases it.
 - `docs/architecture/ARCHITECTURE.md`, `docs/architecture/INFRASTRUCTURE.md`, `docs/architecture/IPC.md` — New module, new file, startup step.
 
 ### Architecture Impact
@@ -24,6 +24,42 @@ Nothing stopped two processes from opening one data folder. The app now takes an
 
 ### Migration Notes
 - None. Two new files appear in the data folder: `instance.lock` and `instance.lock.json`.
+
+---
+
+## [2026-11-25] — Separate the composition root and IPC handlers from Electron (#72)
+
+### Summary
+
+Only `src/main/electron/` and `src/preload/` import `electron` now. `initializeApp()` used to build every service and `registerIpcHandlers` bound about 150 channels straight to `ipcMain`, with `BrowserWindow.getAllWindows()…webContents.send` at about 20 call sites and dialogs, `shell`, `nativeTheme`, notifications and relaunch called inline. Service construction moved to `composeApp()`, which takes resolved paths, a `HostAdapter` and an `EventSink`. Handlers register into a transport-neutral `ChannelRouter`, and an Electron binding attaches the router to `ipcMain` with the same sender check as before. This is the prerequisite for the headless server (#73). The desktop app behaves the same, apart from two small differences listed under Changed.
+
+### Added
+- `src/main/host.ts` — `HostAdapter` (pickFiles, saveFile, confirm, showError, openExternal, openPath, notify, isFocused, notificationsSupported, focusApp, setTheme, relaunch, exit, windowControl, isWindowMaximized), `EventSink`, `CallContext`.
+- `src/main/composition.ts` — `composeApp()`: bootstrap, service construction, provider registration, startup recovery and pruning, theme sync, file watchers. Returns services, `booksDir`, `promptSync`, `onActiveBookChanged` and `dispose()`.
+- `src/main/modelDiscovery.ts` — Codex, Ollama and llama-server model discovery, moved out of `index.ts`.
+- `src/main/ipc/router.ts` — `ChannelRouter` (`handle`, `on`, `table`, `has`, `dispatch`) and the `IpcRouter` interface.
+- `src/main/electron/main.ts` — app lifecycle, window, `novel-asset` protocol, startup wiring (the old body of `index.ts`).
+- `src/main/electron/ElectronHost.ts`, `ElectronEventSink.ts`, `ipcBinding.ts` — the Electron implementations of `HostAdapter` and `EventSink`, and the router-to-`ipcMain` binding with the sender check.
+- `src/domain/channels.ts` — `PUSH_CHANNELS` and `PushChannel`: the main-to-renderer event names.
+- `src/test/fakeHost.ts` — fake `HostAdapter`, `EventSink` and `CallContext` for tests.
+- `src/main/electronIsolation.test.ts`, `src/main/ipc/router.test.ts`, `src/main/electron/ipcBinding.test.ts`, `src/main/electron/ElectronHost.test.ts` — new tests.
+
+### Changed
+- `src/main/index.ts` — now only `import './electron/main'`. It stays the Forge entry, so the build output name does not change.
+- `src/main/ipc/handlers.ts` — `registerIpcHandlers(router, host, events, services, paths, hooks?)`. No `electron` import. Dialogs, shell, theme and relaunch go through `host`. Every `webContents.send` loop is `events.broadcast`. `window:*` channels are registered here and delegate to `host`. New exports `IpcServices` and `IpcPaths`. `paths.isAppUrl` is gone; the sender check moved to `ipcBinding.ts`.
+- `src/main/notifications.ts` — `NotificationManager(settings, host)` uses `host.notify`, `isFocused` and `notificationsSupported`. No `electron` import.
+- `src/main/dataFolderDialogs.ts` — all dialogs through `HostAdapter`. `chooseDataFolder(host, ctx, …)`, `resetDataFolder(host, ctx, …)` and `runStartupDataFolderChecks(host, …)` take the host. The local `relaunch()` is gone; `host.relaunch()` replaces it.
+- `src/main/ipc/handlers.test.ts`, `src/main/notifications.test.ts`, `src/main/dataFolderDialogs.test.ts` — run on fake host and sink. The channel-completeness test now compares the router table with the preload's invoke, send and subscribe channels in both directions.
+- `vitest.config.ts` — coverage excludes `src/main/electron/main.ts`.
+- Behavior: a dialog opened with no caller window is now shown unparented instead of throwing `No window found`. `ipcMain.on` channels (`window:minimize`, `window:maximize`, `window:close`) now get the same sender check as invoke channels; a refused call is logged and dropped.
+
+### Architecture Impact
+- New dependency: `composeApp()` ← `src/main/electron/main.ts`. `NotificationManager` and the data-folder dialogs → `HostAdapter`.
+- New interfaces: `HostAdapter`, `EventSink`, `CallContext`, `IpcRouter`.
+- No new IPC channels. `window:*` registration moved from `index.ts` into `handlers.ts`.
+
+### Migration Notes
+None. No schema, settings or channel changes.
 
 ---
 

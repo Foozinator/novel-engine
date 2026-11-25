@@ -1,14 +1,18 @@
-import { app, dialog } from 'electron';
 import { APP_NAME } from '@domain/constants';
 import { acquireDataFolderLock, describeHolder } from '@infra/lock';
-import { chooseDataFolder, relaunch } from './dataFolderDialogs';
+import { chooseDataFolder } from './dataFolderDialogs';
+import type { HostAdapter } from './host';
 
 /**
  * Take the data-folder lock (#75). If another instance holds it, offer to quit
  * or pick another folder. Returns the release function, or `null` when the app
  * is relaunching or quitting and initialisation must stop.
  */
-export async function acquireFolderLockOrAsk(defaultDir: string, dir: string): Promise<(() => void) | null> {
+export async function acquireFolderLockOrAsk(
+  host: HostAdapter,
+  defaultDir: string,
+  dir: string,
+): Promise<(() => void) | null> {
   for (;;) {
     let result;
     try {
@@ -20,23 +24,22 @@ export async function acquireFolderLockOrAsk(defaultDir: string, dir: string): P
     }
     if (result.acquired) return result.release;
 
-    const buttons = ['Use another folder…', 'Quit'];
-    const { response } = await dialog.showMessageBox({
+    const response = await host.confirm({
       type: 'error',
       message: 'This data folder is already in use.',
       detail:
         `${dir}\n\nIt is open in ${describeHolder(result.holder)}. ` +
         'Two instances writing to one folder would corrupt it. Close the other one, or use a different folder.',
-      buttons,
+      buttons: ['Use another folder…', 'Quit'],
       defaultId: 0,
       cancelId: 1,
     });
     if (response === 1) {
-      app.exit(0);
+      host.exit(0);
       return null;
     }
-    if (await chooseDataFolder(null, defaultDir, dir)) {
-      relaunch();
+    if (await chooseDataFolder(host, null, defaultDir, dir)) {
+      host.relaunch();
       return null;
     }
   }

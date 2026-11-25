@@ -1,6 +1,6 @@
 # Architecture — Novel Engine Spur
 
-> Last updated: 2026-11-22 (#79)
+> Last updated: 2026-11-25 (#72)
 
 Electron + React 18 + TypeScript 5 + Tailwind v4 + Zustand + better-sqlite3 + Claude Code CLI + Codex CLI + Ollama CLI + Pandoc
 
@@ -124,15 +124,24 @@ src/
 │   └── index.ts                             # Barrel export
 │
 ├── main/                                    # LAYER 4: Electron main process
-│   ├── index.ts                             # COMPOSITION ROOT — instantiates everything
+│   ├── index.ts                             # Electron entry point: imports electron/main
+│   ├── composition.ts                       # COMPOSITION ROOT (Electron-free) — composeApp() builds every service
+│   ├── host.ts                              # HostAdapter, EventSink, CallContext: what the platform must provide
+│   ├── modelDiscovery.ts                    # Startup model discovery for Codex, Ollama and llama-server
+│   ├── electron/                            # The only place in src/main that imports `electron`
+│   │   ├── main.ts                          # App lifecycle, window, novel-asset protocol, startup wiring
+│   │   ├── ElectronHost.ts                  # HostAdapter: dialogs, shell, theme, notifications, relaunch, window controls
+│   │   ├── ElectronEventSink.ts             # EventSink: webContents.send to every live window
+│   │   └── ipcBinding.ts                    # Binds the ChannelRouter to ipcMain; the sender check lives here
 │   ├── bootstrap.ts                         # First-run directory/file creation; ensureAgents() bundled-prompt sync
 │   ├── dataLocation.ts                      # Resolves the data folder (flag › env › pointer › default); pointer I/O
-│   ├── dataFolderDialogs.ts                 # Native dialogs: startup data-folder checks, change/reset from Settings
+│   ├── dataFolderDialogs.ts                 # Data-folder dialogs through HostAdapter: startup checks, change/reset from Settings
 │   ├── dataFolderLock.ts                    # acquireFolderLockOrAsk(): takes the folder lock; Quit / Use another folder dialog
-│   ├── notifications.ts                     # OS notification manager
+│   ├── notifications.ts                     # Notification manager (HostAdapter.notify)
 │   ├── appUrl.ts                            # createAppUrlMatcher(): the app's own page, for the window lock and IPC sender check
 │   └── ipc/
-│       └── handlers.ts                      # Thin adapter: IPC channel → service call
+│       ├── router.ts                        # ChannelRouter: transport-neutral channel → handler table
+│       └── handlers.ts                      # Thin adapter: channel → service call, registered into a router
 │
 ├── preload/
 │   └── index.ts                             # contextBridge: typed API for renderer
@@ -201,7 +210,7 @@ src/
 
 ## Service Dependencies
 
-Composition root: `src/main/index.ts`
+Composition root: `composeApp()` in `src/main/composition.ts` (Electron-free). `src/main/electron/main.ts` calls it with an `ElectronHost` and an `ElectronEventSink`.
 
 ```
 SettingsService(userDataPath)
@@ -293,7 +302,8 @@ QueryService
 └── IChatService (ChatService)
 
 NotificationManager
-└── ISettingsService (SettingsService)
+├── ISettingsService (SettingsService)
+└── HostAdapter (ElectronHost)
 
 FableAccessService
 ├── ISettingsService (SettingsService)
@@ -351,7 +361,8 @@ The renderer layer normally uses `import type` only from domain. However, **pure
 - `nodeIntegration: false` — always
 - `sandbox: true` — set explicitly on the main window
 - Window lock: `will-navigate`/`will-redirect` keep the main window on the app's entry page (`createAppUrlMatcher`, `src/main/appUrl.ts`; file URLs are compared as decoded paths); `https:` links open in the system browser, other targets are dropped, and `setWindowOpenHandler` denies new windows
-- IPC sender check: every `ipcMain.handle` channel in `handlers.ts` serves only calls whose `senderFrame.url` is the app's entry page
+- IPC sender check: `bindRouterToIpcMain()` (`src/main/electron/ipcBinding.ts`) serves only calls whose `senderFrame.url` is the app's entry page, for invoke and send channels
+- Electron isolation (#72): only `src/main/electron/` and `src/preload/` import `electron`. A test (`electronIsolation.test.ts`) fails otherwise. Everything else takes a `HostAdapter` and an `EventSink`, so a headless server can reuse the composition root and the handlers
 - Rendered markdown: every `dangerouslySetInnerHTML` sink goes through `renderMarkdown()`/`sanitizeHtml()` (`src/renderer/utils/markdown.ts`, DOMPurify)
 - CSP (`index.html`): `script-src 'self'`, plus `form-action 'none'`, `base-uri 'none'`, `object-src 'none'`
 - Book paths: `resolveBookPath()` checks the slug is one folder name and the path stays in the book; pitch slugs and draft IDs are checked the same way
@@ -363,7 +374,7 @@ The renderer layer normally uses `import type` only from domain. However, **pure
 
 ### Data Folder
 
-`{userData}` below is the **data folder**. All app data derives from it. `src/main/index.ts` resolves it before `app.whenReady()` with `resolveDataDir()` (`src/main/dataLocation.ts`) and calls `app.setPath('userData', …)` when it differs from Electron's default. Priority:
+`{userData}` below is the **data folder**. All app data derives from it. `src/main/electron/main.ts` resolves it before `app.whenReady()` with `resolveDataDir()` (`src/main/dataLocation.ts`) and calls `app.setPath('userData', …)` when it differs from Electron's default. Priority:
 
 1. `--data-dir=<absolute path>` command-line flag
 2. `NOVEL_ENGINE_DATA_DIR` environment variable

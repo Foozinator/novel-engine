@@ -240,17 +240,17 @@ Everything in `src/main/ipc/` and `src/preload/`. Thin adapter layer between app
 
 | Channel | Direction | Handler | Returns |
 |---------|-----------|---------|---------|
-| `shell:openExternal` | invoke | `shell.openExternal(url)` for `https:` and `mailto:` URLs; throws otherwise | `void` |
-| `shell:openPath` | invoke | `shell.openPath(absolutePath)` for an absolute path in the books folder, or a file saved through the `build:exportZip`/`catalog:exportZip` save dialog this session; throws otherwise | `string` |
+| `shell:openExternal` | invoke | `host.openExternal(url)` for `https:` and `mailto:` URLs; throws otherwise | `void` |
+| `shell:openPath` | invoke | `host.openPath(absolutePath)` for an absolute path in the books folder, or a file saved through the `build:exportZip`/`catalog:exportZip` save dialog this session; throws otherwise | `string` |
 
 ### window:*
 
 | Channel | Direction | Handler | Returns |
 |---------|-----------|---------|---------|
-| `window:minimize` | send (fire-and-forget) | `win.minimize()` | — |
-| `window:maximize` | send (fire-and-forget) | `win.isMaximized() ? unmaximize() : maximize()` | — |
-| `window:close` | send (fire-and-forget) | `win.close()` | — |
-| `window:isMaximized` | invoke | `win.isMaximized()` | `boolean` |
+| `window:minimize` | send (fire-and-forget) | `host.windowControl('minimize', ctx)` | — |
+| `window:maximize` | send (fire-and-forget) | `host.windowControl('maximize', ctx)` (toggles) | — |
+| `window:close` | send (fire-and-forget) | `host.windowControl('close', ctx)` | — |
+| `window:isMaximized` | invoke | `host.isWindowMaximized(ctx)` | `boolean` |
 
 ### series:*
 
@@ -572,11 +572,24 @@ window.novelEngine: {
 
 ## Handler Registration
 
-`registerIpcHandlers(services, paths, hooks)` in `src/main/ipc/handlers.ts`:
+`registerIpcHandlers(router, host, events, services, paths, hooks?)` in `src/main/ipc/handlers.ts`. Electron-free (#72):
 
-- **services**: all service instances (settings, agents, db, fs, chat, pipeline, build, usage, revisionQueue, motifLedger, notifications, version, providerRegistry, manuscriptImport, sourceGeneration, series, seriesImport, dataFolderImport, helper, findReplace, dashboard, statistics, query)
+- **router**: an `IpcRouter` (`handle` for request/response, `on` for fire-and-forget). `ChannelRouter` (`src/main/ipc/router.ts`) is the implementation. `table()` lists `{ channel, kind }`; `dispatch(channel, ctx, args)` runs a handler.
+- **host**: `HostAdapter` (`src/main/host.ts`): `pickFiles`, `saveFile`, `confirm`, `showError`, `openExternal`, `openPath`, `notify`, `isFocused`, `notificationsSupported`, `focusApp`, `setTheme`, `relaunch`, `exit`, `windowControl`, `isWindowMaximized`.
+- **events**: `EventSink.broadcast(channel, ...args)`. `channel` is a `PushChannel` from `PUSH_CHANNELS` (`src/domain/channels.ts`). The sink skips dead windows.
+- **services**: `IpcServices`, the object `composeApp()` returns as `services`.
 - **paths**: `{ userDataPath, booksDir, dataFolder: DataFolderInfo, promptSync: PromptSyncResult }`
 - **hooks**: `{ onActiveBookChanged(slug) }` — triggers BookWatcher switch
+
+Handlers receive `(ctx: CallContext, ...args)`. `ctx.sender` is opaque to handlers (Electron: the sender's `WebContents`); `ctx.reply(channel, ...args)` pushes to the caller only (`build:progress`). Dialogs take `ctx` so the host can parent them to the caller's window.
+
+### Electron binding
+
+`bindRouterToIpcMain(router, isAppUrl)` in `src/main/electron/ipcBinding.ts` walks `router.table()` and registers each channel on `ipcMain.handle` or `ipcMain.on`. It refuses any call whose `senderFrame.url` is not the app's page (invoke throws; send logs and drops). `src/main/electron/main.ts` calls it after `registerIpcHandlers`.
+
+### Channel table checks
+
+`handlers.test.ts` fails when the router's invoke routes differ from the preload's `ipcRenderer.invoke` channels, when its send routes differ from `ipcRenderer.send`, or when the preload's `ipcRenderer.on` channels differ from `PUSH_CHANNELS`. `electronIsolation.test.ts` fails when a file outside `src/main/electron/` and `src/preload/` imports `electron`.
 
 Revision queue events are forwarded to renderer via `revisionQueue.onEvent()` listener registered at the bottom of `registerIpcHandlers`. Also forwards `session:streamEvent` sub-events to `chat:streamEvent` channel with `rev:` prefixed callId, `conversationId` (falls back to `sessionId` if absent), and `source: 'revision'`.
 
@@ -592,14 +605,14 @@ Verity pipeline handlers (`verity:auditChapter`, `verity:fixChapter`, `verity:fi
 
 File: `src/main/notifications.ts`
 
-Fires OS-level notifications (Electron `Notification` API) when:
+Fires OS-level notifications through `HostAdapter.notify()` (Electron: the `Notification` API). It asks the host `notificationsSupported()` and `isFocused()` first. Fires when:
 1. Agent call completes (if window unfocused + notifications enabled)
 2. Agent call errors
 3. Revision session completes
 4. Revision queue finishes
 5. Build completes
 
-Clicking a notification brings the window to front.
+Clicking a notification brings the window to front (`ElectronHost.focusApp()`).
 
 ### Bootstrap
 
@@ -623,10 +636,10 @@ First-run initialization:
 
 Files: `src/main/dataLocation.ts`, `src/main/dataFolderDialogs.ts`
 
-- `resolveDataDir({ defaultDir, argv, env })` runs at module top level in `index.ts`, before `whenReady`. Priority: `--data-dir=` › `NOVEL_ENGINE_DATA_DIR` › pointer `data-location.json` in the default folder › default. Returns `{ dir, source, confirmed, problem?, requested? }`. On a problem, `dir` is the default.
-- `runStartupDataFolderChecks(defaultDir, legacyDir, resolved)` runs first in `initializeApp()`. An unusable folder gets [Choose another folder… / Use default folder this session / Quit] (no choice under a flag/env override). First launch with app data only in the pre-rename `{appData}/Novel Engine` folder (`needsLegacyImport()`) gets [Copy it here / Use the old folder in place / Start fresh]. Copy runs `copyAppData()` (skips Chromium profile entries, `Singleton*` and the pointer; never overwrites; removes partial copies on failure, then offers Try again / Start fresh / Quit). Every answer writes the pointer, so the question is asked once. Returns `true` when relaunching or quitting.
-- `acquireFolderLockOrAsk(defaultDir, dir)` (`src/main/dataFolderLock.ts`) runs next in `initializeApp()`, once the folder is final. If another instance holds the folder lock (`src/infrastructure/lock/`), it shows [Use another folder… / Quit]. Choosing a folder writes the pointer and relaunches. Returns the release function, called from `before-quit`, or `null` when quitting or relaunching.
-- `chooseDataFolder()` classifies the picked folder (`empty` / `novel-engine` / `other`) for the confirm text, then writes the pointer atomically. Nothing is copied or moved.
+- `resolveDataDir({ defaultDir, argv, env })` runs at module top level in `src/main/electron/main.ts`, before `whenReady`. Priority: `--data-dir=` › `NOVEL_ENGINE_DATA_DIR` › pointer `data-location.json` in the default folder › default. Returns `{ dir, source, confirmed, problem?, requested? }`. On a problem, `dir` is the default.
+- `runStartupDataFolderChecks(host, defaultDir, legacyDir, resolved)` runs first in `initializeApp()`. An unusable folder gets [Choose another folder… / Use default folder this session / Quit] (no choice under a flag/env override). First launch with app data only in the pre-rename `{appData}/Novel Engine` folder (`needsLegacyImport()`) gets [Copy it here / Use the old folder in place / Start fresh]. Copy runs `copyAppData()` (skips Chromium profile entries, `Singleton*` and the pointer; never overwrites; removes partial copies on failure, then offers Try again / Start fresh / Quit). Every answer writes the pointer, so the question is asked once. Returns `true` when relaunching or quitting.
+- `chooseDataFolder(host, ctx, defaultDir, currentDir)` and `resetDataFolder(host, ctx, defaultDir)` show their dialogs through the `HostAdapter`. `chooseDataFolder()` classifies the picked folder (`empty` / `novel-engine` / `other`) for the confirm text, then writes the pointer atomically. Nothing is copied or moved.
+- `acquireFolderLockOrAsk(host, defaultDir, dir)` (`src/main/dataFolderLock.ts`) runs next in `initializeApp()`, once the folder is final. If another instance holds the folder lock (`src/infrastructure/lock/`), it shows [Use another folder… / Quit] through the `HostAdapter`. Choosing a folder writes the pointer and relaunches. Returns the release function, called from `before-quit`, or `null` when quitting or relaunching.
 
 ### Custom Protocol
 
