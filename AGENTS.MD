@@ -15,8 +15,10 @@ After completing any code change — feature, fix, refactor, deletion, schema ch
 5. `docs/architecture/APPLICATION.md` — services, orchestration, business logic
 6. `docs/architecture/IPC.md` — channels, preload bridge, handler registry
 7. `docs/architecture/RENDERER.md` — stores, components, views, routing
+8. `docs/USER_GUIDE.md` — the author's guide. Update it for any change a user can see: UI, settings, workflow or file layout.
+9. `agents/HELPER.md` — Helper's app map and FAQ. Update it when the change affects them.
 
-Only update the docs that are affected by the current session's changes. If you changed a type in `src/domain/types.ts`, update `docs/architecture/DOMAIN.md`. If you added an IPC channel, update `docs/architecture/IPC.md`. If nothing in a domain changed, don't touch its doc.
+Only update the docs that are affected by the current session's changes. If you changed a type in `src/domain/types.ts`, update `docs/architecture/DOMAIN.md`. If you added an IPC channel, update `docs/architecture/IPC.md`. If you renamed a button, update `docs/USER_GUIDE.md`. If nothing in a domain changed, don't touch its doc.
 
 The changelog entry is always mandatory regardless of what changed.
 
@@ -517,6 +519,26 @@ Major component groups with their files and responsibilities.
 
 ---
 
+## docs/USER_GUIDE.md — Author's Guide
+
+How to use the app, written for the author. The Helper agent gets the whole guide in its system prompt, and the app copies it into the data folder on every launch. Agents repeat what it says, so a wrong guide is worse than a missing section.
+
+### Rules
+
+1. Describe what the code does now. Check each claim in the code (labels, menus, settings, file paths). Don't copy it from a changelog, a plan or an older version of the guide.
+2. Name on-screen labels exactly as the UI shows them, in bold: **Confirm & advance**, **Settings → Writing → Web Access**.
+3. Say what the user does and sees, not how it's built. No store, service or IPC names.
+4. When a feature is removed or renamed, remove or rename it in the guide too. No ghosts.
+5. If the app lists something it doesn't do (a format it doesn't build, a button with no effect), say so plainly.
+6. Update `> Last updated:` to today.
+7. Keep it short. Every word goes into every Helper call.
+
+### agents/HELPER.md
+
+Its Application Map and Common Questions repeat parts of the guide as a quick index. When a change touches anything they mention (a phase, a view, a button, a file path), update them to match the guide. After editing any file under `agents/`, run `npm run agent-hashes`; a test fails otherwise.
+
+---
+
 ## Workflow
 
 At the end of every session that changes code:
@@ -530,11 +552,13 @@ At the end of every session that changes code:
     - `src/main/*`, `src/preload/*` → `docs/architecture/IPC.md`
     - `src/renderer/*` → `docs/architecture/RENDERER.md`
     - Cross-cutting (DI wiring, conventions) → `docs/architecture/ARCHITECTURE.md`
+    - Anything a user can see (UI, settings, workflow, file layout) → `docs/USER_GUIDE.md`, plus `agents/HELPER.md` if its map or FAQ mentions it
 4. **Check wiring if needed.** If you touched infra, application, IPC, or preload, re-read `src/main/index.ts`, `handlers.ts`, and `preload/index.ts`.
 5. **Append to CHANGELOG.md.**
 6. **Update affected domain docs only.** Leave the rest untouched.
 7. **Update master `docs/architecture/ARCHITECTURE.md`** if source tree, dependency graph, or conventions changed.
-8. **Verify.** Every path exists. Every type exists. Dependency graph matches composition root. IPC table matches handlers + preload.
+8. **Update `docs/USER_GUIDE.md` and `agents/HELPER.md`** if the change is user-visible.
+9. **Verify.** Every path exists. Every type exists. Dependency graph matches composition root. IPC table matches handlers + preload. Every label and path the guide names exists in the code.
 
 ---
 

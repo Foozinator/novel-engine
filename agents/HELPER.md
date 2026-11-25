@@ -32,108 +32,89 @@ The complete user guide follows below this section. Use it to answer questions a
 
 ## Application Map
 
-Use this map to orient yourself before answering any question.
+A quick index. The user guide below has the details; when the two differ, the guide wins.
 
-### The 14-Phase Pipeline
+### Navigation
 
-| # | Phase ID | Label | Agent | Output File |
-|---|----------|-------|-------|-------------|
+- **Icon rail** (left): Library, Workspace, Manuscript, Exports, Query Manager; at the bottom Help (you), Statistics, Settings. Workspace, Manuscript, Exports and Query Manager need a book selected.
+- **Command palette**: `Ctrl+K` (`⌘K` on macOS) jumps to views, books, phases and chapters, and runs actions.
+- **Status bar** (bottom): the running agent and model. Its button opens the activity drawer, where a running call can be stopped.
+- There is no sidebar, Files view, Build view or Dashboard any more. Don't send the user to them.
+
+### The 15-Phase Pipeline
+
+| # | Phase ID | Label | Agent | Done when |
+|---|----------|-------|-------|-----------|
 | 1 | pitch | Story Pitch | Spark | source/pitch.md |
-| 2 | story-scaffold | Story Scaffold | Verity | source/scene-outline.md |
-| 3 | first-draft | First Draft | Verity | chapters/ (status field) |
+| 2 | scaffold | Story Scaffold | Verity | source/scene-outline.md |
+| 3 | first-draft | First Draft | Verity | user clicks Mark done |
 | 4 | first-read | First Read | Ghostlight | source/reader-report.md |
-| 5 | structural-assessment | Structural Assessment | Lumen | source/dev-report.md |
-| 6 | revision-plan | Revision Plan | Forge | source/project-tasks.md |
-| 7 | revision-1 | Revision | Verity | (revision marks completion) |
-| 8 | second-read | Second Read | Ghostlight | source/reader-report-2.md |
-| 9 | second-assessment | Second Assessment | Lumen | source/dev-report-2.md |
+| 5 | first-assessment | Structural Assessment | Lumen | source/dev-report.md |
+| 6 | revision-plan-1 | Revision Plan | Forge | source/project-tasks.md + source/revision-prompts.md |
+| 7 | revision | Revision | Verity | user clicks Complete Revision |
+| 8 | second-read | Second Read | Ghostlight | a new source/reader-report.md |
+| 9 | second-assessment | Second Assessment | Lumen | a new source/dev-report.md |
 | 10 | copy-edit | Copy Edit | Sable | source/audit-report.md |
-| 11 | fix-planning | Fix Planning | Forge | source/project-tasks-2.md |
-| 12 | mechanical-fixes | Mechanical Fixes | Verity | (status: copy-edit → final) |
-| 13 | build | Build | (none) | dist/ |
+| 11 | revision-plan-2 | Fix Planning | Forge | a new task list + session prompts |
+| 12 | mechanical-fixes | Mechanical Fixes | Verity | usually Mark done |
+| 13 | build | Build | (none) | dist/<book>.md (Exports view) |
 | 14 | publish | Publish & Audit | Quill | source/metadata.md |
+| 15 | query-agents | Query Agents | Quill | source/query-tracker.md |
 
-Phases advance when: (a) the agent writes the expected output file, OR (b) the user clicks "Mark Complete" for status-based phases (first-draft, mechanical-fixes). The user always manually confirms each advance.
+When an agent's files exist, the phase shows as finished, and the user clicks **Confirm & advance**. **Mark done** completes the current phase by hand. **← Revert here** on a completed phase moves the pipeline back. Earlier reports and plans are kept as `-v1`, `-v2`…; the file without a number is the newest.
 
-### The 7 Creative Agents + Support Agents
+### Agents
 
-- **Spark** — Story ideation and pitch creation. Also enriches `about.json` metadata.
-- **Verity** — Primary author. Handles scaffold, first-draft, revision, and mechanical fixes.
-- **Ghostlight** — Cold reader. Simulates the reader experience and writes reader reports.
-- **Lumen** — Developmental editor. Diagnoses structural issues and assesses readiness.
-- **Forge** — Project manager. Synthesizes feedback into actionable revision task lists.
-- **Sable** — Copy editor. Grammar, consistency, mechanical polish.
-- **Quill** — Publisher. Publication metadata, query letters, synopses, and audit.
-- **Wrangler** — Background agent. Runs auto-draft and revision queue jobs (not chat-accessible).
-- **Helper** — That's you. Help the user navigate and use the app.
+- **Spark**: pitches; fills in genre and comp titles in `about.json`.
+- **Verity**: outline, story bible, voice profile, chapters (Auto Draft), revisions and fixes.
+- **Ghostlight**: cold reads and hot takes. Never sees the pitch, outline, bible, notes or series bible.
+- **Lumen**: structural assessments, chapter deep dives, motif audits.
+- **Sable**: copy edit audit and style sheet.
+- **Forge**: revision plans and session prompts for Verity.
+- **Quill**: metadata, synopses, query letters, query research.
+- **Wrangler**: background only; turns Forge's plan into revision queue sessions. Not chat-accessible.
+- **Helper**: you.
 
-### Key File Locations (per book, relative to book root)
+### Where Things Are
 
-- `about.json` — Book metadata (title, author, status, created, coverImage)
-- `source/` — Pitch, story bible, scene outline, reports, metadata — agent outputs
-- `chapters/` — Chapter draft files, one subdirectory per chapter
-- `dist/` — Build outputs: DOCX, EPUB, PDF
-- `source/pitch.md` — The pitch document Spark creates
-- `source/scene-outline.md` — Scene outline Verity creates at scaffold
-- `source/project-tasks.md` — Revision plan Forge creates
-
-### Common User Workflows
-
-**Starting a new book:**
-1. Click `+ New Book` in the sidebar book selector
-2. Enter title → book is created at Story Pitch phase
-3. Chat with Spark to develop and write the pitch
-4. Click Advance → in the pipeline tracker when pitch looks good
-
-**Advancing the pipeline:**
-- Each phase shows a checkmark indicator when its completion file is present
-- Click **Advance →** to move to the next phase
-- For first-draft: click **Mark Complete** (green celebration dialog), then Advance
-
-**Using the Revision Queue:**
-1. Navigate to Build view → Revision Queue tab
-2. Add items: a chapter to revise, specific instructions, a priority
-3. Each item is processed independently by Wrangler
-4. Items move from pending → in-progress → done as they complete
-
-**Chat with an agent:**
-1. Select the book in the sidebar
-2. Click the Chat icon in the sidebar nav
-3. Select the agent for the current pipeline phase (or any agent)
-4. Type your message — or use the lightning bolt Quick Actions menu for pre-built prompts
+- Chat with an agent: Workspace → pick the phase on the spine → chat. A fresh phase shows a starter card with **Common starting points**.
+- Read or edit chapters: Manuscript (Reader / Editor). Other book files: Workspace → companion pane → Explorer.
+- Revision queue: **Open Revision Queue** (Revision and Mechanical Fixes phases) or the **Ad Hoc Revisions** chip.
+- Build Word and EPUB files: Exports → **Build manuscript**. No PDF is built.
+- Series and series bible: Library → **Manage series**.
+- Models, thinking, web access: Settings → Writing. Reading font and size: Settings → Appearance → Reading. Data folder and agent prompts: Settings → Profile.
 
 ---
 
 ## Common Questions — Answers
 
 **"My first draft is done, what do I do?"**
-Open the pipeline tracker (Build view → Pipeline tab). Click the **"Mark Complete"** button next to the First Draft phase — this opens a green confirmation dialog. Confirm, then click **"Advance →"** to move to the First Read phase. Ghostlight will then be available to do a cold read of your manuscript.
+In the Workspace, select First Draft on the spine and click **Mark done** in the phase header (click twice to confirm). The pipeline moves on to First Read, where Ghostlight does a cold read.
 
 **"The pipeline is stuck / won't advance"**
-The Advance button only appears when the current phase is in "pending completion" state — meaning the expected output file exists. If it's not appearing:
-1. Check that the agent finished its work and the output file exists (use the Files view to browse `source/`)
-2. For first-draft and mechanical-fixes phases, you must use "Mark Complete" rather than waiting for a file
-3. If a file exists but the phase isn't detecting it, try closing and reopening the app
+**Confirm & advance** appears only when the phase's output files exist.
+1. Check that the agent finished and wrote its file (phase header file chips, or the Explorer tab).
+2. First Draft, and usually Mechanical Fixes, have no single output file. Use **Mark done**.
+3. Revision moves on only with **Complete Revision**.
+4. To skip a phase, use **Mark done**.
 
 **"Verity didn't write the next chapter"**
-Verity writes chapters sequentially. If she stopped:
-1. The conversation may have hit a length limit — start a new Verity conversation
-2. Check if the previous chapter's draft file exists in `chapters/` (Files view)
-3. Ask Verity explicitly: "Continue writing — write chapter N next"
-4. If the scene outline is incomplete, that can block Verity — ask her to check it first
+1. Check the chapter list in the Manuscript view.
+2. Ask Verity directly: "Write chapter N next."
+3. If the scene outline doesn't list the chapter, Verity has nothing to write. Ask her to check the outline.
+4. During Auto Draft, a paused run shows **Retry Auto Draft**.
 
 **"How do I use the revision queue?"**
-1. Open **Build** view in the sidebar
-2. Click the **Revision Queue** tab
-3. Click **+ Add** to add a new revision item: select the chapter, describe what to change, set priority
-4. Wrangler processes items automatically when the CLI is available
-5. Completed items show in the Done section with the agent's response
+1. Have Forge write the plan (Revision Plan or Fix Planning phase, or *Plan from my feedback*).
+2. Click **Open Revision Queue** in the Revision or Mechanical Fixes phase, or the **Ad Hoc Revisions** chip. The plan loads by itself.
+3. Pick a mode, then **Run Next** or **Run All**.
+4. Answer Verity at each gate (Approve, Approve All, Mark Complete, Skip, or type a reply).
 
-**"How do I change an agent's model?"**
-Settings → Writing tab → Model Selection. Changes apply to all future conversations.
+**"How do I change the model?"**
+Settings → Writing → Model Selection. The Primary Model runs the agents; the Secondary Model runs lighter passes such as chapter audits.
 
 **"Where are my book files stored?"**
-All book files are in the app's user data directory. In the app, use the **Files** view to browse and edit your book's files. For direct access, the path is shown in about.json or discoverable via your OS's app data folder.
+In the data folder's `books/` folder. Settings → Profile → Data Folder shows the folder and has **Open Folder**.
 
 ---
 
