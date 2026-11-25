@@ -4,6 +4,26 @@ All notable changes to Novel Engine Spur are documented here.
 
 ---
 
+## [2026-11-25] — User guide rewritten for the current UI; docs rule covers it (#67, step 1)
+
+### Summary
+
+`docs/USER_GUIDE.md` was last rewritten on 2026-03-28 and still described the sidebar UI that upstream replaced on 2026-07-07 (icon rail, Library, Workspace, Manuscript, Exports, Query Manager, Statistics, command palette). Helper gets the whole guide in its system prompt, so it was giving directions to views that no longer exist. The guide is rewritten against the code. It also covers every user-visible fork change since 2026-11-04: model aliases, the CLI update banner, the on-demand Fable check, the phase starter card (#6), reading font, size and line numbers (#35), import from another data folder (#37), Web Access and agent file scope (#63), refused duplicate titles (#79), report and plan archives (#81), non-text files in the Explorer (#83), the series bible rule (#61), pre-migration backups (#58) and the data-folder lock (#75). `AGENTS.MD` now lists the guide, and `agents/HELPER.md` where affected, as docs to update for user-visible changes. While checking the guide against the code, the app turned out to differ from its own labels in a few places. The guide describes what the code does, and the differences are listed here for follow-up: the build makes no PDF although Exports and the Build phase list one (`BuildService` runs only DOCX and EPUB); the Reports tab labels `reader-report-v1.md` "Reader Report v2 / Post-revision read", but since #81 `-v1` is the earliest report; edited prompts in `custom-agents/` apply only after a restart, because `AgentService` caches them for the whole session; the Settings tour list says "All 14 phases"; the thinking help text gives Spark 8K, but the registry has 4,000; and `isVerityDraft()` treats only chapters numbered 02 and up as Verity's, so chapter 01 gets no tracked-edit bar.
+
+### Changed
+- `docs/USER_GUIDE.md` — Rewritten. 15 phases with their completion rules and controls (Confirm & advance, Mark done, Revert here, Complete Revision, Auto Draft). New sections: Workspace, Manuscript view, Exports, Publishing and Querying, Version History, Statistics, Files and Folders. Library, Pitch Room, Series, Revision Queue, Settings and Troubleshooting redone for the current UI. Bug reports go to the fork's issues instead of upstream's. Removed claims that no longer hold: PDF builds, deleting conversations, "Load Plan", drag-and-drop covers, prompt edits applying on the next conversation.
+- `agents/HELPER.md` — Application Map and Common Questions redone for the current UI: navigation, 15 phases with correct phase IDs and outputs (no `reader-report-2.md` or `project-tasks-2.md`), where things are, and FAQ answers that use today's buttons. The map defers to the guide when they differ.
+- `agents/prompt-history.json` — Regenerated (`npm run agent-hashes`) for the new `HELPER.md`.
+- `AGENTS.MD` — `docs/USER_GUIDE.md` (any user-visible change) and `agents/HELPER.md` (when its map or FAQ is affected) added to the docs to update. New "docs/USER_GUIDE.md — Author's Guide" section with rules: check claims in code, exact labels, no internals, no ghosts, say plainly when the app lists something it doesn't do, keep it short. The workflow's mapping and verify steps include the guide.
+
+### Architecture Impact
+- None — no code or wiring changes. Helper's system prompt grows with the guide, from about 4,000 to about 5,600 words.
+
+### Migration Notes
+- None. The new guide reaches existing installs on the next launch (`ensureUserGuide` copies it every time). The new `HELPER.md` replaces unedited copies in `custom-agents/` on the next launch. Edited copies keep the old map and FAQ and are listed under Settings → Profile → Agent Prompts.
+
+---
+
 ## [2026-11-25] — Update Electron 33.4.0 to 33.4.11 (#96)
 
 ### Summary
