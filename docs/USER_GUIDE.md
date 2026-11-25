@@ -461,7 +461,7 @@ Agents keep working notes in `source/.scratch/` while a long read is running.
 
 ### Customizing Agent Prompts
 
-The agents' prompts are the `.md` files in `custom-agents/`. You can edit them. The app reads them once per launch, so restart it after an edit.
+The agents' prompts are the `.md` files in `custom-agents/`. You can edit them. Most prompts are read once per launch, so restart the app after an edit.
 
 When you install a new version, prompts you haven't edited are updated to the new version. Prompts you have edited are left alone and listed under **Settings → Profile → Agent Prompts**. To get the new version of an edited prompt, merge the changes by hand, or delete your copy and restart the app. **Open Prompts Folder** opens `custom-agents/`.
 
