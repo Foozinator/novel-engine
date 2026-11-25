@@ -1,55 +1,43 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { BrowserWindow, Notification } from 'electron';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { NotificationManager } from './notifications';
 import { makeFakeSettings } from '../test/fakes';
+import { makeFakeHost, type FakeHost } from '../test/fakeHost';
 
-vi.mock('electron', () => import('../test/mocks/electron'));
-
-// The mock class tracks constructed instances
-const MockNotification = Notification as unknown as {
-  isSupported: ReturnType<typeof vi.fn>;
-  instances: { options: { title?: string; body?: string }; show: ReturnType<typeof vi.fn>; on: ReturnType<typeof vi.fn> }[];
-};
-const MockBrowserWindow = BrowserWindow as unknown as {
-  getFocusedWindow: ReturnType<typeof vi.fn>;
-  getAllWindows: ReturnType<typeof vi.fn>;
-};
+let host: FakeHost;
 
 function makeManager(enableNotifications = true): NotificationManager {
-  return new NotificationManager(makeFakeSettings({ enableNotifications }));
+  return new NotificationManager(makeFakeSettings({ enableNotifications }), host);
 }
 
+/** Every notification the host was asked to show, in order. */
+const shown = () => host.notify.mock.calls.map(([title, body]) => ({ title, body }));
+
 beforeEach(() => {
-  vi.clearAllMocks();
-  MockNotification.instances.length = 0;
-  MockNotification.isSupported.mockReturnValue(true);
-  MockBrowserWindow.getFocusedWindow.mockReturnValue(null);
-  MockBrowserWindow.getAllWindows.mockReturnValue([]);
+  host = makeFakeHost();
 });
 
 describe('suppression rules', () => {
   it('shows a notification when enabled, supported, and the window is unfocused', async () => {
     await makeManager().notifyChatComplete('Spark');
 
-    expect(MockNotification.instances).toHaveLength(1);
-    expect(MockNotification.instances[0].show).toHaveBeenCalledTimes(1);
+    expect(host.notify).toHaveBeenCalledTimes(1);
   });
 
   it('suppresses when notifications are disabled in settings', async () => {
     await makeManager(false).notifyChatComplete('Spark');
-    expect(MockNotification.instances).toHaveLength(0);
+    expect(host.notify).not.toHaveBeenCalled();
   });
 
   it('suppresses when the OS does not support notifications', async () => {
-    MockNotification.isSupported.mockReturnValue(false);
+    host.notificationsSupported.mockReturnValue(false);
     await makeManager().notifyChatComplete('Spark');
-    expect(MockNotification.instances).toHaveLength(0);
+    expect(host.notify).not.toHaveBeenCalled();
   });
 
   it('suppresses when a window is focused', async () => {
-    MockBrowserWindow.getFocusedWindow.mockReturnValue(new BrowserWindow());
+    host.isFocused.mockReturnValue(true);
     await makeManager().notifyChatComplete('Spark');
-    expect(MockNotification.instances).toHaveLength(0);
+    expect(host.notify).not.toHaveBeenCalled();
   });
 });
 
@@ -59,11 +47,11 @@ describe('message formatting', () => {
     await manager.notifyChatComplete('Spark', 'My Novel');
     await manager.notifyChatComplete('Spark');
 
-    expect(MockNotification.instances[0].options).toEqual({
+    expect(shown()[0]).toEqual({
       title: 'Spark is done',
       body: 'Story Pitch has finished responding — My Novel',
     });
-    expect(MockNotification.instances[1].options).toEqual({
+    expect(shown()[1]).toEqual({
       title: 'Spark is done',
       body: 'Story Pitch has finished responding',
     });
@@ -74,11 +62,11 @@ describe('message formatting', () => {
     await manager.notifyChatError('Verity', 'short failure');
     await manager.notifyChatError('Verity', 'x'.repeat(200));
 
-    expect(MockNotification.instances[0].options).toEqual({
+    expect(shown()[0]).toEqual({
       title: 'Verity encountered an error',
       body: 'short failure',
     });
-    expect(MockNotification.instances[1].options.body).toBe('x'.repeat(117) + '...');
+    expect(shown()[1].body).toBe('x'.repeat(117) + '...');
   });
 
   it('notifyBuildComplete pluralizes the format count', async () => {
@@ -86,8 +74,8 @@ describe('message formatting', () => {
     await manager.notifyBuildComplete('My Novel', 1);
     await manager.notifyBuildComplete('My Novel', 3);
 
-    expect(MockNotification.instances[0].options.body).toBe('My Novel — exported 1 format');
-    expect(MockNotification.instances[1].options.body).toBe('My Novel — exported 3 formats');
+    expect(shown()[0].body).toBe('My Novel — exported 1 format');
+    expect(shown()[1].body).toBe('My Novel — exported 3 formats');
   });
 
   it('revision notifications use fixed titles', async () => {
@@ -95,30 +83,13 @@ describe('message formatting', () => {
     await manager.notifyRevisionSessionComplete('Session finished (tasks 1, 2)');
     await manager.notifyRevisionQueueDone();
 
-    expect(MockNotification.instances[0].options).toEqual({
+    expect(shown()[0]).toEqual({
       title: 'Revision session complete',
       body: 'Session finished (tasks 1, 2)',
     });
-    expect(MockNotification.instances[1].options).toEqual({
+    expect(shown()[1]).toEqual({
       title: 'Revision queue complete',
       body: 'All sessions have finished processing',
     });
-  });
-});
-
-describe('click handling', () => {
-  it('restores a minimized window and focuses it when the notification is clicked', async () => {
-    const win = new BrowserWindow();
-    vi.mocked(win.isMinimized).mockReturnValue(true);
-    MockBrowserWindow.getAllWindows.mockReturnValue([win]);
-
-    await makeManager().notifyChatComplete('Spark');
-
-    const instance = MockNotification.instances[0];
-    const [event, onClick] = instance.on.mock.calls[0] as [string, () => void];
-    expect(event).toBe('click');
-    onClick();
-    expect(win.restore).toHaveBeenCalledTimes(1);
-    expect(win.focus).toHaveBeenCalledTimes(1);
   });
 });

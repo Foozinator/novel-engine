@@ -1,25 +1,20 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron';
-import type { IpcMainInvokeEvent } from 'electron';
-import { app } from 'electron';
 import type { DataFolderInfo } from '@domain/types';
+import { PUSH_CHANNELS } from '@domain/channels';
 import { registerIpcHandlers } from './handlers';
+import { ChannelRouter } from './router';
 import { readPointer } from '../dataLocation';
 import { makeFakeAgents, makeFakeSettings, type FakeSettings } from '../../test/fakes';
+import { makeFakeContext, makeFakeEvents, makeFakeHost, type FakeEvents, type FakeHost } from '../../test/fakeHost';
 import { cleanupTempDirs, makeTempDir } from '../../test/tempDir';
-
-vi.mock('electron', () => import('../../test/mocks/electron'));
 
 /**
  * Handlers are thin adapters — these tests verify WIRING (registration,
  * arg forwarding, result/error passthrough), not business logic. Services
  * are recording fakes; any method not explicitly stubbed resolves undefined.
- *
- * `src/main/index.ts` (composition root) is excluded from unit coverage —
- * it is exercised only by launching Electron. It owns the `window:*`
- * channels, which the completeness test therefore treats as exceptions.
+ * The platform is a fake `HostAdapter` and `EventSink`: nothing here touches Electron.
  */
 
 type AnyFn = ReturnType<typeof vi.fn>;
@@ -36,33 +31,26 @@ function auto(impl: Record<string, AnyFn> = {}): ServiceFake {
   });
 }
 
-type Handler = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown;
-
 let userDataPath: string;
 let dataFolderInfo: DataFolderInfo;
 let settings: FakeSettings;
 let svc: Record<string, ServiceFake>;
 let hooks: { onActiveBookChanged: ReturnType<typeof vi.fn<(slug: string) => void>> };
-let handlers: Map<string, Handler>;
-let win: BrowserWindow;
+let router: ChannelRouter;
+let host: FakeHost;
+let events: FakeEvents;
+let ctx: ReturnType<typeof makeFakeContext>;
 
-/** The app page's URL as the handlers see it in these tests. */
-const APP_URL = 'app://novel-engine/index.html';
-const fakeEvent = { sender: {}, senderFrame: { url: APP_URL } } as unknown as IpcMainInvokeEvent;
-const invoke = (channel: string, ...args: unknown[]): unknown => {
-  const handler = handlers.get(channel);
-  if (!handler) throw new Error(`No handler registered for ${channel}`);
-  return handler(fakeEvent, ...args);
-};
+const invoke = (channel: string, ...args: unknown[]): unknown => router.dispatch(channel, ctx, args);
 
 beforeEach(async () => {
   vi.clearAllMocks();
   userDataPath = await makeTempDir();
   dataFolderInfo = { current: userDataPath, defaultDir: userDataPath, source: 'default' };
-  win = new BrowserWindow();
-  vi.mocked(BrowserWindow.fromWebContents).mockReturnValue(null);
-  vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
-  vi.mocked(dialog.showOpenDialog).mockResolvedValue({ canceled: true, filePaths: [] });
+  host = makeFakeHost();
+  events = makeFakeEvents();
+  ctx = makeFakeContext();
+  router = new ChannelRouter();
 
   settings = makeFakeSettings({ authorName: 'Jane Author' });
   svc = {
@@ -78,21 +66,18 @@ beforeEach(async () => {
   hooks = { onActiveBookChanged: vi.fn<(slug: string) => void>() };
 
   registerIpcHandlers(
-    svc as unknown as Parameters<typeof registerIpcHandlers>[0],
+    router,
+    host,
+    events,
+    svc as unknown as Parameters<typeof registerIpcHandlers>[3],
     {
       userDataPath,
       booksDir: '/fake/books-dir',
       dataFolder: dataFolderInfo,
       promptSync: { updated: ['SPARK.md'], edited: ['QUILL.md'] },
-      isAppUrl: (url: string) => url === APP_URL,
     },
     hooks,
   );
-
-  handlers = new Map<string, Handler>();
-  for (const [channel, listener] of vi.mocked(ipcMain.handle).mock.calls) {
-    handlers.set(channel, listener as Handler);
-  }
 });
 
 afterEach(async () => {
@@ -100,33 +85,36 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-describe('channel completeness', () => {
-  it('registers a handler for every channel the preload bridge invokes, with no orphans', async () => {
+describe('channel table', () => {
+  const quoted = (source: string, call: string): string[] =>
+    [...source.matchAll(new RegExp(`${call}\\(\\s*'([^']+)'`, 'g'))].map((m) => m[1]);
+
+  it('matches the preload bridge exactly: every invoke/send has a route and every route has a caller', async () => {
     const preloadSource = await readFile(new URL('../../preload/index.ts', import.meta.url), 'utf-8');
-    const invoked = [...preloadSource.matchAll(/ipcRenderer\.invoke\(\s*'([^']+)'/g)].map((m) => m[1]);
-    const sent = [...preloadSource.matchAll(/ipcRenderer\.send\(\s*'([^']+)'/g)].map((m) => m[1]);
+    const table = router.table();
+    const invoked = quoted(preloadSource, 'ipcRenderer\\.invoke');
+    const sent = quoted(preloadSource, 'ipcRenderer\\.send');
 
-    // window:* channels are registered by the composition root (src/main/index.ts)
-    const compositionRootChannels = new Set(['window:isMaximized', 'window:minimize', 'window:maximize', 'window:close']);
-
-    const missing = invoked.filter((ch) => !handlers.has(ch) && !compositionRootChannels.has(ch));
-    expect(missing, 'preload invokes without a registered handler').toEqual([]);
-
-    const orphaned = [...handlers.keys()].filter((ch) => !invoked.includes(ch));
-    expect(orphaned, 'registered handlers no preload method invokes').toEqual([]);
-
-    // Fire-and-forget send() is reserved for composition-root window controls
-    expect(sent.filter((ch) => !compositionRootChannels.has(ch))).toEqual([]);
+    const routed = (kind: 'invoke' | 'send') => table.filter((r) => r.kind === kind).map((r) => r.channel).sort();
+    expect(routed('invoke'), 'invoke routes vs preload invoke()').toEqual([...new Set(invoked)].sort());
+    expect(routed('send'), 'send routes vs preload send()').toEqual([...new Set(sent)].sort());
   });
 
-  it('registers no ipcMain.on listeners (those belong to the composition root)', () => {
-    expect(vi.mocked(ipcMain.on).mock.calls).toEqual([]);
+  it('push channels match the events the preload bridge subscribes to', async () => {
+    const preloadSource = await readFile(new URL('../../preload/index.ts', import.meta.url), 'utf-8');
+    const subscribed = [...new Set(quoted(preloadSource, 'ipcRenderer\\.on'))].sort();
+    expect(subscribed).toEqual([...PUSH_CHANNELS].sort());
   });
 
-  it('every registered channel follows the namespace:action pattern', () => {
-    for (const channel of handlers.keys()) {
+  it('every route follows the namespace:action pattern and no channel is both a route and a push event', () => {
+    for (const { channel } of router.table()) {
       expect(channel).toMatch(/^[a-zA-Z-]+:[a-zA-Z]+$/);
+      expect((PUSH_CHANNELS as readonly string[]).includes(channel), channel).toBe(false);
     }
+  });
+
+  it('refuses to register a channel twice', () => {
+    expect(() => router.handle('settings:load', () => null)).toThrow(/twice/);
   });
 });
 
@@ -135,18 +123,16 @@ describe('settings namespace', () => {
     expect(await invoke('settings:load')).toEqual(settings.current);
   });
 
-  it('settings:update syncs nativeTheme only when theme is present', async () => {
-    nativeTheme.themeSource = 'light';
-
+  it('settings:update syncs the host theme only when theme is present', async () => {
     await invoke('settings:update', { fontSize: 14 });
-    expect(nativeTheme.themeSource).toBe('light');
+    expect(host.setTheme).not.toHaveBeenCalled();
 
     await invoke('settings:update', { theme: 'dark' });
-    expect(nativeTheme.themeSource).toBe('dark');
+    expect(host.setTheme).toHaveBeenLastCalledWith('dark');
     expect(settings.current.theme).toBe('dark');
 
     await invoke('settings:update', { theme: 'system' });
-    expect(nativeTheme.themeSource).toBe('system');
+    expect(host.setTheme).toHaveBeenLastCalledWith('system');
   });
 
   it('author profile round-trips through the real userData path, empty when missing', async () => {
@@ -191,16 +177,15 @@ describe('books namespace', () => {
     expect(hooks.onActiveBookChanged).toHaveBeenCalledWith('new-slug');
   });
 
-  it('books:uploadCover requires a window and returns null on a canceled dialog', async () => {
-    await expect(Promise.resolve(invoke('books:uploadCover', 'book-a'))).rejects.toThrow('No window found');
-
-    vi.mocked(BrowserWindow.fromWebContents).mockReturnValue(win);
+  it('books:uploadCover returns null on a canceled dialog and saves the picked file', async () => {
     expect(await invoke('books:uploadCover', 'book-a')).toBeNull();
     expect(svc.fs.saveCoverImage).not.toHaveBeenCalled();
 
-    vi.mocked(dialog.showOpenDialog).mockResolvedValue({ canceled: false, filePaths: ['/tmp/cover.png'] });
+    host.pickFiles.mockResolvedValue(['/tmp/cover.png']);
     await invoke('books:uploadCover', 'book-a');
     expect(svc.fs.saveCoverImage).toHaveBeenCalledWith('book-a', '/tmp/cover.png');
+    // The picker is parented to the caller's window
+    expect(host.pickFiles.mock.calls[0][1]).toBe(ctx);
   });
 
   it('books:getAbsolutePath delegates to the filesystem service', async () => {
@@ -212,72 +197,43 @@ describe('books namespace', () => {
   });
 });
 
-describe('sender check', () => {
-  const callFrom = (senderFrame: unknown, channel: string, ...args: unknown[]): unknown => {
-    const handler = handlers.get(channel);
-    if (!handler) throw new Error(`No handler registered for ${channel}`);
-    return handler({ sender: {}, senderFrame } as unknown as IpcMainInvokeEvent, ...args);
-  };
-
-  it('serves the app page', async () => {
-    expect(await callFrom({ url: APP_URL }, 'settings:load')).toEqual(settings.current);
-  });
-
-  it('refuses every channel when the call comes from another page', async () => {
-    for (const channel of handlers.keys()) {
-      await expect(
-        Promise.resolve().then(() => callFrom({ url: 'https://example.com/' }, channel)),
-        channel,
-      ).rejects.toThrow(/did not come from the app window/);
-    }
-    expect(svc.fs.readFile).not.toHaveBeenCalled();
-  });
-
-  it('refuses a call with no sender frame', async () => {
-    await expect(Promise.resolve().then(() => callFrom(null, 'files:read', 'book-a', 'x.md')))
-      .rejects.toThrow(/did not come from the app window/);
-    expect(svc.fs.readFile).not.toHaveBeenCalled();
-  });
-});
-
 describe('shell namespace', () => {
   it('shell:openExternal opens https: and mailto: links only', async () => {
     await invoke('shell:openExternal', 'https://example.com/a');
     await invoke('shell:openExternal', 'mailto:someone@example.com');
-    expect(shell.openExternal).toHaveBeenCalledTimes(2);
+    expect(host.openExternal).toHaveBeenCalledTimes(2);
 
     for (const url of ['http://example.com', 'file:///etc/hosts', 'smb://host/share', 'not a url']) {
       await expect(Promise.resolve().then(() => invoke('shell:openExternal', url)), url).rejects.toThrow();
     }
-    expect(shell.openExternal).toHaveBeenCalledTimes(2);
+    expect(host.openExternal).toHaveBeenCalledTimes(2);
   });
 
   it('shell:openPath opens paths inside the books folder', async () => {
     await invoke('shell:openPath', path.join('/fake/books-dir', 'book-a', 'dist'));
-    expect(shell.openPath).toHaveBeenCalledWith(path.join('/fake/books-dir', 'book-a', 'dist'));
+    expect(host.openPath).toHaveBeenCalledWith(path.join('/fake/books-dir', 'book-a', 'dist'));
   });
 
   it('shell:openPath refuses relative paths and paths outside the books folder', async () => {
     for (const target of ['relative/file.md', '/etc/hosts', '/fake/books-dir/../elsewhere', '/fake/books-dir-other/x']) {
       await expect(Promise.resolve().then(() => invoke('shell:openPath', target)), target).rejects.toThrow();
     }
-    expect(shell.openPath).not.toHaveBeenCalled();
+    expect(host.openPath).not.toHaveBeenCalled();
   });
 
   it('shell:openPath opens an export the user saved this session', async () => {
-    vi.mocked(BrowserWindow.fromWebContents).mockReturnValue(win);
     const target = path.join(userDataPath, 'book-a-build.zip');
     expect(() => invoke('shell:openPath', target)).toThrow();
 
     const distDir = await makeTempDir();
     svc.fs.getAbsolutePath.mockReturnValue(distDir);
     svc.fs.getBookMeta.mockResolvedValue({ title: 'Book A' });
-    vi.mocked(dialog.showSaveDialog).mockResolvedValue({ canceled: false, filePath: target });
+    host.saveFile.mockResolvedValue(target);
     expect(await invoke('build:exportZip', 'book-a')).toBe(target);
     expect(svc.fs.getAbsolutePath).toHaveBeenCalledWith('book-a', 'dist');
 
     await invoke('shell:openPath', target);
-    expect(shell.openPath).toHaveBeenCalledWith(target);
+    expect(host.openPath).toHaveBeenCalledWith(target);
   });
 });
 
@@ -309,14 +265,13 @@ describe('files + versions namespaces', () => {
     );
   });
 
-  it('versions:revert broadcasts chat:filesChanged to every window and returns the version', async () => {
-    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([win]);
+  it('versions:revert broadcasts chat:filesChanged and returns the version', async () => {
     svc.version.revertToVersion.mockResolvedValue({ id: 7 });
 
     const result = await invoke('versions:revert', 'book-a', 'draft.md', 7);
 
     expect(svc.version.revertToVersion).toHaveBeenCalledWith('book-a', 'draft.md', 7);
-    expect(win.webContents.send).toHaveBeenCalledWith('chat:filesChanged', ['draft.md'], 'book-a');
+    expect(events.broadcast).toHaveBeenCalledWith('chat:filesChanged', ['draft.md'], 'book-a');
     expect(result).toEqual({ id: 7 });
   });
 });
@@ -334,7 +289,7 @@ describe('thin adapters', () => {
     expect(svc.query.updateTargetStatus).toHaveBeenCalledWith('book-a', 't1', 'submitted', '2026-07-18');
 
     await invoke('shell:openExternal', 'https://example.com');
-    expect(shell.openExternal).toHaveBeenCalledWith('https://example.com');
+    expect(host.openExternal).toHaveBeenCalledWith('https://example.com');
   });
 
   it('pitchRoom:discard deletes the draft and its conversation', async () => {
@@ -375,11 +330,6 @@ describe('thin adapters', () => {
 describe('chat:send orchestration', () => {
   const params = { agentName: 'Spark', message: 'hi', conversationId: 'conv-1', bookSlug: 'book-a', callId: 'call-1' };
 
-  beforeEach(() => {
-    vi.mocked(BrowserWindow.fromWebContents).mockReturnValue(win);
-    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([win]);
-  });
-
   it('tags stream events, notifies completion with the book title, and snapshots changed files', async () => {
     svc.chat.sendMessage.mockImplementation(
       async ({ onEvent }: { onEvent: (e: Record<string, unknown>) => void }) => {
@@ -394,12 +344,12 @@ describe('chat:send orchestration', () => {
     // Renderer-provided callId is preserved; events tagged for scoping
     const sendCall = svc.chat.sendMessage.mock.calls[0][0] as { callId: string };
     expect(sendCall.callId).toBe('call-1');
-    expect(win.webContents.send).toHaveBeenCalledWith('chat:streamEvent', {
+    expect(events.broadcast).toHaveBeenCalledWith('chat:streamEvent', {
       type: 'textDelta', text: 'hello', callId: 'call-1', conversationId: 'conv-1', source: 'chat',
     });
     expect(svc.notifications.notifyChatComplete).toHaveBeenCalledWith('Spark', 'My Novel');
     expect(svc.notifications.notifyChatError).not.toHaveBeenCalled();
-    expect(win.webContents.send).toHaveBeenCalledWith('chat:filesChanged', ['chapters/01/draft.md'], 'book-a');
+    expect(events.broadcast).toHaveBeenCalledWith('chat:filesChanged', ['chapters/01/draft.md'], 'book-a');
     expect(svc.version.snapshotFile).toHaveBeenCalledWith('book-a', 'chapters/01/draft.md', 'agent');
     expect(svc.statistics.recordWordCountSnapshot).toHaveBeenCalledWith('book-a');
   });
@@ -420,35 +370,8 @@ describe('chat:send orchestration', () => {
   });
 });
 
-describe('broadcast guards', () => {
-  const params = { agentName: 'Spark', message: 'hi', conversationId: 'conv-1', bookSlug: 'book-a', callId: 'call-1' };
-
-  beforeEach(() => {
-    vi.mocked(BrowserWindow.fromWebContents).mockReturnValue(win);
-  });
-
-  it('skips windows with destroyed webContents when broadcasting stream events', async () => {
-    const deadWin = new BrowserWindow();
-    deadWin.webContents.isDestroyed = vi.fn((): boolean => true);
-    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([deadWin]);
-
-    svc.chat.sendMessage.mockImplementation(
-      async ({ onEvent }: { onEvent: (e: Record<string, unknown>) => void }) => {
-        onEvent({ type: 'textDelta', text: 'hello' });
-        return { changedFiles: [] };
-      },
-    );
-
-    await invoke('chat:send', params);
-
-    expect(deadWin.webContents.send).not.toHaveBeenCalled();
-  });
-});
-
 describe('hot-take:start', () => {
   it('creates a Ghostlight conversation, fires the stream, and returns the ids', async () => {
-    vi.mocked(BrowserWindow.fromWebContents).mockReturnValue(win);
-    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([win]);
     svc.db.createConversation.mockImplementation((p: { id: string }) => p);
     svc.chat.sendMessage.mockImplementation(
       async ({ onEvent }: { onEvent: (e: Record<string, unknown>) => void }) => {
@@ -463,7 +386,7 @@ describe('hot-take:start', () => {
     expect(created).toMatchObject({ bookSlug: 'book-a', agentName: 'Ghostlight', purpose: 'hot-take', pipelinePhase: null });
     expect(result.conversationId).toBe(created.id);
     expect(result.callId).toBeTruthy();
-    expect(win.webContents.send).toHaveBeenCalledWith('chat:streamEvent', {
+    expect(events.broadcast).toHaveBeenCalledWith('chat:streamEvent', {
       type: 'textDelta', text: 'take', callId: result.callId, conversationId: result.conversationId, source: 'hot-take',
     });
   });
@@ -471,12 +394,11 @@ describe('hot-take:start', () => {
 
 describe('verity namespace', () => {
   it('verity:auditChapter emits a synthetic callStart and forwards to the audit service', async () => {
-    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([win]);
     svc.audit.auditChapter.mockResolvedValue({ chapter: '01' });
 
     const result = await invoke('verity:auditChapter', 'book-a', '01-first', 'call-7', 'conv-7');
 
-    expect(win.webContents.send).toHaveBeenCalledWith('chat:streamEvent', {
+    expect(events.broadcast).toHaveBeenCalledWith('chat:streamEvent', {
       type: 'callStart', callId: 'call-7', conversationId: 'conv-7', agentName: 'Verity', model: 'unknown', bookSlug: 'book-a',
     });
     const auditCall = svc.audit.auditChapter.mock.calls[0][0] as Record<string, unknown>;
@@ -486,8 +408,7 @@ describe('verity namespace', () => {
 });
 
 describe('revision queue event forwarding', () => {
-  it('forwards queue events to windows, re-tags stream events, and fires notifications', () => {
-    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([win]);
+  it('forwards queue events to the sink, re-tags stream events, and fires notifications', () => {
     const onQueueEvent = svc.revisionQueue.onEvent.mock.calls[0][0] as (event: Record<string, unknown>) => void;
 
     const streamEvent = {
@@ -495,8 +416,8 @@ describe('revision queue event forwarding', () => {
       event: { type: 'textDelta', text: 'revising' },
     };
     onQueueEvent(streamEvent);
-    expect(win.webContents.send).toHaveBeenCalledWith('revision:event', streamEvent);
-    expect(win.webContents.send).toHaveBeenCalledWith('chat:streamEvent', {
+    expect(events.broadcast).toHaveBeenCalledWith('revision:event', streamEvent);
+    expect(events.broadcast).toHaveBeenCalledWith('chat:streamEvent', {
       type: 'textDelta', text: 'revising', callId: 'rev:s1', conversationId: 'c1', source: 'revision',
     });
 
@@ -523,36 +444,35 @@ describe('data folder and prompt sync (#39)', () => {
 
   it('dataFolder:change writes the pointer and relaunches after confirm', async () => {
     const target = await makeTempDir();
-    vi.mocked(dialog.showOpenDialog).mockResolvedValue({ canceled: false, filePaths: [target] });
-    vi.mocked(dialog.showMessageBox).mockResolvedValue({ response: 0, checkboxChecked: false });
+    host.pickFiles.mockResolvedValue([target]);
+    host.confirm.mockResolvedValue(0);
 
     await expect(invoke('dataFolder:change')).resolves.toBe(true);
     expect(readPointer(userDataPath)).toEqual({ dataDir: target, confirmed: true });
-    expect(app.relaunch).toHaveBeenCalled();
-    expect(app.exit).toHaveBeenCalledWith(0);
+    expect(host.relaunch).toHaveBeenCalled();
   });
 
   it('dataFolder:change does nothing when the picker is cancelled', async () => {
     await expect(invoke('dataFolder:change')).resolves.toBe(false);
     expect(readPointer(userDataPath)).toBeNull();
-    expect(app.relaunch).not.toHaveBeenCalled();
+    expect(host.relaunch).not.toHaveBeenCalled();
   });
 
   it('dataFolder:change and reset refuse while a flag or env override is active', async () => {
     dataFolderInfo.source = 'env';
     await expect(invoke('dataFolder:change')).resolves.toBe(false);
     await expect(invoke('dataFolder:reset')).resolves.toBe(false);
-    expect(dialog.showOpenDialog).not.toHaveBeenCalled();
-    expect(app.relaunch).not.toHaveBeenCalled();
+    expect(host.pickFiles).not.toHaveBeenCalled();
+    expect(host.relaunch).not.toHaveBeenCalled();
   });
 
   it('dataFolder:reset points back at the default after confirm', async () => {
     dataFolderInfo.source = 'pointer';
     dataFolderInfo.current = '/elsewhere';
-    vi.mocked(dialog.showMessageBox).mockResolvedValue({ response: 0, checkboxChecked: false });
+    host.confirm.mockResolvedValue(0);
 
     await expect(invoke('dataFolder:reset')).resolves.toBe(true);
     expect(readPointer(userDataPath)).toEqual({ dataDir: null, confirmed: true });
-    expect(app.relaunch).toHaveBeenCalled();
+    expect(host.relaunch).toHaveBeenCalled();
   });
 });

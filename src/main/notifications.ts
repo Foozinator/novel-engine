@@ -1,7 +1,7 @@
-import { Notification, BrowserWindow } from 'electron';
 import type { AgentName } from '@domain/types';
 import type { ISettingsService } from '@domain/interfaces';
 import { AGENT_REGISTRY } from '@domain/constants';
+import type { HostAdapter } from './host';
 
 /**
  * NotificationManager — Fires OS-level notifications when agent calls complete.
@@ -10,11 +10,11 @@ import { AGENT_REGISTRY } from '@domain/constants';
  * 1. Notifications are enabled in settings
  * 2. The main window is NOT focused (no point buzzing the user if they're watching)
  *
- * Lives in the main process layer because Electron's Notification API
- * is only available in the main process.
+ * Lives in the main layer, not infrastructure: the platform pieces (notification,
+ * focus) come from the `HostAdapter`, so this file does not import `electron`.
  */
 export class NotificationManager {
-  constructor(private settings: ISettingsService) {}
+  constructor(private settings: ISettingsService, private host: HostAdapter) {}
 
   /**
    * Notify the user that an agent has finished responding.
@@ -79,28 +79,15 @@ export class NotificationManager {
     const appSettings = await this.settings.load();
     if (!appSettings.enableNotifications) return false;
 
-    // Check if Notification API is supported (always true on macOS/Windows 10+)
-    if (!Notification.isSupported()) return false;
+    // Check if the host can show notifications (always true on macOS/Windows 10+)
+    if (!this.host.notificationsSupported()) return false;
 
     // Only notify if the window is NOT focused — no point buzzing them
     // if they're already looking at the app
-    const focusedWindow = BrowserWindow.getFocusedWindow();
-    return focusedWindow === null;
+    return !this.host.isFocused();
   }
 
   private show(title: string, body: string): void {
-    const notification = new Notification({ title, body });
-
-    notification.on('click', () => {
-      // Bring the app window to front when the notification is clicked
-      const windows = BrowserWindow.getAllWindows();
-      if (windows.length > 0) {
-        const win = windows[0];
-        if (win.isMinimized()) win.restore();
-        win.focus();
-      }
-    });
-
-    notification.show();
+    this.host.notify(title, body);
   }
 }
