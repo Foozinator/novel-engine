@@ -868,6 +868,8 @@ export interface ISourceGenerationService {
     bookSlug: string;
     onProgress: (event: SourceGenerationEvent) => void;
     onStreamEvent: (event: StreamEvent) => void;
+    /** Run only these steps (retry). Omit to run all. */
+    stepIndexes?: number[];
   }): Promise<void>;
 }
 

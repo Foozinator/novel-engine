@@ -156,8 +156,8 @@ const api = {
       ipcRenderer.invoke('import:preview', filePath),
     commit: (config: ImportCommitConfig): Promise<ImportResult> =>
       ipcRenderer.invoke('import:commit', config),
-    generateSources: (bookSlug: string): Promise<void> =>
-      ipcRenderer.invoke('import:generateSources', bookSlug),
+    generateSources: (bookSlug: string, stepIndexes?: number[]): Promise<void> =>
+      ipcRenderer.invoke('import:generateSources', bookSlug, stepIndexes),
     onGenerationProgress: (callback: (event: SourceGenerationEvent) => void) => {
       const handler = (_: Electron.IpcRendererEvent, event: SourceGenerationEvent) => callback(event);
       ipcRenderer.on('import:generationProgress', handler);

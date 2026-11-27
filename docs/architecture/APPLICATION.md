@@ -504,7 +504,7 @@ Dependencies: `ISettingsService`, `IAgentService`, `IDatabaseService`, `IFileSys
 
 | Method | What It Does |
 |--------|-------------|
-| `generate(params)` | Runs 4 sequential agent calls with per-step progress events |
+| `generate(params)` | Runs 4 sequential agent calls with per-step progress events. `stepIndexes` runs only those steps (retry); `started` then lists just them |
 
 **Steps:**
 1. **Spark** → `source/pitch.md`
@@ -513,6 +513,8 @@ Dependencies: `ISettingsService`, `IAgentService`, `IDatabaseService`, `IFileSys
 4. **Verity** → `source/motif-ledger.json`
 
 Each step creates its own conversation. Step errors are caught and reported without aborting remaining steps.
+
+A step is `step-done` only if every expected file was written or changed during that step (compared with a snapshot taken before the call) and is valid: non-empty, and for the ledger parseable JSON with all seven array fields. Otherwise `step-error` carries the reason. Steps run with `unattended: true` (`ContextBuilder` swaps the approval-first write rules and the per-role read guidance for "write directly, read every chapter named") and `maxTurns` = `SOURCE_GENERATION_MAX_TURNS` (80). The ledger prompt asks for empty `flaggedPhrases`; any the agent writes anyway are moved into an `auditLog` observation so imported prose can't create bans.
 
 ### HelperService
 
