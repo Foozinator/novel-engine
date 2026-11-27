@@ -603,6 +603,12 @@ export function parseClaudeCliVersionError(
 export type QuickAction = {
   label: string;     // short label shown in the dropdown
   prompt: string;    // the full text inserted into the chat input
+  /**
+   * True when sending this action as the first message of a pipeline chat
+   * should start the agent's multi-call pass (#111). The app carries the
+   * label with the prefill; it never matches on the message text.
+   */
+  fullPass?: boolean;
 };
 
 export const AGENT_QUICK_ACTIONS: Record<CreativeAgentName, QuickAction[]> = {
@@ -618,7 +624,7 @@ export const AGENT_QUICK_ACTIONS: Record<CreativeAgentName, QuickAction[]> = {
     { label: 'Revise chapter...', prompt: 'Revise chapter' },
   ],
   Ghostlight: [
-    { label: 'Read the manuscript', prompt: 'Read the full manuscript from beginning to end — every chapter in order. Then produce your reader report and write it to source/reader-report.md. Give me your honest, unfiltered experience as a first reader.' },
+    { label: 'Read the manuscript', prompt: 'Read the full manuscript from beginning to end — every chapter in order. Then produce your reader report and write it to source/reader-report.md. Give me your honest, unfiltered experience as a first reader.', fullPass: true },
     { label: 'Hot Take', prompt: '__HOT_TAKE__' },
     // ── Granular passes (manual fallback for multi-call orchestration) ──
     { label: 'Read first half', prompt: 'Read the first half of the manuscript chapters (by word count). Track your engagement, emotions, clarity, pull quotes, drift points, and running questions for each chapter. Write your chapter-by-chapter tracker to source/.scratch/ghostlight-read-1.md.' },
@@ -626,7 +632,7 @@ export const AGENT_QUICK_ACTIONS: Record<CreativeAgentName, QuickAction[]> = {
     { label: 'Synthesize report', prompt: 'Synthesize the final Reader Report. Read source/.scratch/ghostlight-read-1.md and source/.scratch/ghostlight-read-2.md. Combine into the complete reader report with engagement map, emotional arc, running questions, prediction log, strongest/weakest moments, and overall verdict. Write to source/reader-report.md.' },
   ],
   Lumen: [
-    { label: 'Full assessment', prompt: 'Run the full developmental assessment. Read the entire manuscript, apply all seven lenses, and produce the complete report with pacing map, scene necessity audit, and revision roadmap. Write it to source/dev-report.md.' },
+    { label: 'Full assessment', prompt: 'Run the full developmental assessment. Read the entire manuscript, apply all seven lenses, and produce the complete report with pacing map, scene necessity audit, and revision roadmap. Write it to source/dev-report.md.', fullPass: true },
     { label: 'Pacing & scenes', prompt: 'Focus on Lens 4 (Pacing & Momentum) and Lens 5 (Scene Necessity). Read the manuscript, produce the pacing map and scene audit table, and flag any sagging sections or underperforming scenes.' },
     { label: 'Character arcs', prompt: 'Focus on Lens 2 (Protagonist Arc) and Lens 3 (Supporting Cast). Map the protagonist\'s internal trajectory and assess every significant supporting character\'s function. Flag arc stalls, unearned transformations, and redundant characters.' },
     // ── Granular passes (manual fallback for multi-call orchestration) ──
@@ -640,7 +646,7 @@ export const AGENT_QUICK_ACTIONS: Record<CreativeAgentName, QuickAction[]> = {
     { label: 'Synthesize report', prompt: 'Synthesize the final Developmental Assessment. Read source/.scratch/lumen-lenses-1-3.md, source/.scratch/lumen-lenses-4-5.md, and source/.scratch/lumen-lenses-6-7.md. Do NOT read manuscript chapters. Produce the complete dev report with all 7 lenses, pacing map, scene audit table, and revision roadmap. Write to source/dev-report.md.' },
   ],
   Sable: [
-    { label: 'Copy edit', prompt: 'Copy edit the full manuscript. Read every chapter in order, audit for grammar, consistency, and mechanical issues, then produce the audit report and write it to source/audit-report.md. Build or update the style sheet at source/style-sheet.md.' },
+    { label: 'Copy edit', prompt: 'Copy edit the full manuscript. Read every chapter in order, audit for grammar, consistency, and mechanical issues, then produce the audit report and write it to source/audit-report.md. Build or update the style sheet at source/style-sheet.md.', fullPass: true },
     { label: 'Build style sheet', prompt: 'Read the manuscript and build a style sheet — catalog all character name spellings, place names, hyphenation choices, number formatting, recurring constructions, and any inconsistencies. Write it to source/style-sheet.md.' },
     // ── Granular passes (manual fallback for sip-and-track orchestration) ──
     { label: 'Read first half', prompt: 'Read the first half of the manuscript chapters (by word count) as a copy editor. For each chapter, track: style sheet items (names, spellings, capitalization, hyphenation), continuity flags (character details, timeline, geography), grammar/punctuation issues, repetition/echo words, and formatting issues. Write your chapter-by-chapter tracker to source/.scratch/sable-read-1.md.' },
@@ -651,8 +657,8 @@ export const AGENT_QUICK_ACTIONS: Record<CreativeAgentName, QuickAction[]> = {
     { label: 'Synthesize report', prompt: 'Synthesize the final Copy Edit Audit Report. Read source/.scratch/sable-analysis-1.md, source/.scratch/sable-analysis-2.md, and source/.scratch/sable-analysis-3.md. Do NOT read manuscript chapters. Produce the complete audit report with summary, findings by chapter, global findings, crutch word table, and queries for author. Write to source/audit-report.md. Update source/style-sheet.md if needed.' },
   ],
   Forge: [
-    { label: 'Create revision plan', prompt: 'Read source/reader-report.md and source/dev-report.md. Synthesize both into a prioritized revision plan with phased tasks and session prompts for Verity. Write the task list to source/project-tasks.md and the session prompts to source/revision-prompts.md.' },
-    { label: 'Plan copy fixes', prompt: 'Read source/audit-report.md. Create a fix plan with session prompts for Verity to implement the mechanical fixes. Write tasks to source/project-tasks.md and session prompts to source/revision-prompts.md.' },
+    { label: 'Create revision plan', prompt: 'Read source/reader-report.md and source/dev-report.md. Synthesize both into a prioritized revision plan with phased tasks and session prompts for Verity. Write the task list to source/project-tasks.md and the session prompts to source/revision-prompts.md.', fullPass: true },
+    { label: 'Plan copy fixes', prompt: 'Read source/audit-report.md. Create a fix plan with session prompts for Verity to implement the mechanical fixes. Write tasks to source/project-tasks.md and session prompts to source/revision-prompts.md.', fullPass: true },
     { label: 'Plan from my feedback', prompt: 'I have specific revisions I want made. Here\'s what I need changed:\n\n' },
   ],
   Quill: [
@@ -719,6 +725,16 @@ export function getPhaseStarterActions(phaseId: PipelinePhaseId, agent: AgentNam
   return labels
     .map((label) => actions.find((a) => a.label === label))
     .filter((a): a is QuickAction => a !== undefined);
+}
+
+/**
+ * True when `label` names one of the agent's full-pass quick actions
+ * (see `QuickAction.fullPass`). Unknown labels and non-creative agents → false.
+ */
+export function isFullPassAction(agent: AgentName, label: string | undefined): boolean {
+  if (!label || !(CREATIVE_AGENT_NAMES as AgentName[]).includes(agent)) return false;
+  const actions = AGENT_QUICK_ACTIONS[agent as CreativeAgentName] ?? [];
+  return actions.some((a) => a.label === label && a.fullPass === true);
 }
 
 // Token estimation: ~4 chars per token for English

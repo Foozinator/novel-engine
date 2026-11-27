@@ -119,11 +119,14 @@ export class MultiCallOrchestrator {
     agentName: AgentName;
     conversationId: string;
     bookSlug: string;
+    /** Text the author added to the full-pass action. Goes into every step's prompt. */
+    authorNote?: string;
     thinkingBudgetOverride?: number;
     callId?: string;
     onEvent: (event: StreamEvent) => void;
   }): Promise<{ changedFiles: string[] }> {
     const { agentName, conversationId, bookSlug, onEvent } = params;
+    const authorNote = params.authorNote?.trim() || undefined;
 
     const steps = MultiCallOrchestrator.getSteps(agentName);
     if (!steps) {
@@ -178,7 +181,7 @@ export class MultiCallOrchestrator {
     // this step list and the book is unchanged since its last finished step.
     // Otherwise start over: discard this agent's scratch files and archive
     // its earlier output under the next version number.
-    const stepsHash = this.hashSteps(expandedSteps, chapterBatches);
+    const stepsHash = this.hashSteps(expandedSteps, chapterBatches, authorNote);
     const prior = await this.readRunRecord(bookSlug, agentName);
     let record: MultiCallRunRecord;
 
@@ -328,6 +331,7 @@ export class MultiCallOrchestrator {
             agent,
             manifest,
             chapterBatches,
+            authorNote,
             modelContextWindow,
             authorProfileAbsPath,
             seriesBiblePath,
@@ -507,6 +511,7 @@ export class MultiCallOrchestrator {
     agent: Agent;
     manifest: ProjectManifest;
     chapterBatches: Map<string, string>;
+    authorNote?: string;
     modelContextWindow: number | undefined;
     authorProfileAbsPath: string;
     seriesBiblePath: string | null;
@@ -523,9 +528,12 @@ export class MultiCallOrchestrator {
     } = params;
 
     // Resolve the prompt (inject chapter lists for dynamic steps)
-    const prompt = step.dynamic && chapterBatches.has(step.id)
+    const basePrompt = step.dynamic && chapterBatches.has(step.id)
       ? step.promptTemplate.replace('{{CHAPTER_LIST}}', chapterBatches.get(step.id)!)
       : step.promptTemplate;
+    const prompt = params.authorNote
+      ? `${basePrompt}\n\n## Author note\n\nThe author added this to the request. Take it into account in this step:\n\n${params.authorNote}`
+      : basePrompt;
 
     // Save the sub-prompt as a user message in the conversation
     this.db.saveMessage({
@@ -958,10 +966,14 @@ export class MultiCallOrchestrator {
   }
 
   /** Identity of the expanded step list: a changed schema or chapter split means a new run. */
-  private hashSteps(steps: MultiCallStep[], chapterBatches: Map<string, string>): string {
+  private hashSteps(
+    steps: MultiCallStep[],
+    chapterBatches: Map<string, string>,
+    authorNote?: string,
+  ): string {
     const shape = steps.map((s) => [s.id, s.promptTemplate, s.scratchFile, s.outputFile ?? null]);
     return createHash('sha256')
-      .update(JSON.stringify([shape, [...chapterBatches]]))
+      .update(JSON.stringify([shape, [...chapterBatches], authorNote ?? null]))
       .digest('hex');
   }
 

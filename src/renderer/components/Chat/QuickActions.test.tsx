@@ -51,7 +51,7 @@ describe('QuickActions', () => {
     expect(screen.getByText('Revisit the pitch')).toBeInTheDocument();
 
     fireEvent.click(screen.getByText('I have an idea...'));
-    expect(onSelect).toHaveBeenCalledWith('I have a story idea. Here it is:');
+    expect(onSelect).toHaveBeenCalledWith('I have a story idea. Here it is:', 'I have an idea...');
     // Menu closes after selection
     expect(screen.queryByText('Built-in')).toBeNull();
   });

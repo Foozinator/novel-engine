@@ -613,6 +613,10 @@ Ghostlight's synthesis task reads the batch trackers, settles the reader verdict
 
 `lightweightPrompt` is for read steps only; `src/domain/constants.test.ts` enforces that no synthesis step sets it.
 
+### Multi-Call Runs: Entry and Author Note
+
+`ChatService.sendMessage()` starts `runMultiCall()` only for the first message of a pipeline conversation whose agent has steps AND whose `actionLabel` passes `isFullPassAction()` (#111). Any other first message is a normal chat turn, so the author's text reaches the agent. `authorNote` (text typed after the action's prompt) is appended to every step's prompt under `## Author note`, and is part of `stepsHash`, so a run with a different note starts over instead of resuming.
+
 ### Multi-Call Runs: Resume and Archive
 
 `MultiCallOrchestrator.runMultiCall()` keeps a run record at `source/.scratch/<agent>-run.json` (`MultiCallRunRecord`: agent, `stepsHash`, `inputsHash`, `completedSteps`) (#81).

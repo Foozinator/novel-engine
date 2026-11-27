@@ -143,7 +143,7 @@ The Workspace is where you work with the agents. It has three parts: the pipelin
 - **Quick actions ▾**: built-in prompts for the agent, and a **Saved** tab where you keep your own prompts (name, paste, save).
 - **Thinking**: the **Thinking** control next to the input sets how much the agent reasons before answering, for this message.
 - Press **Enter** to send and **Shift+Enter** for a new line.
-- **Long reads run in steps.** The first message in a pipeline conversation with Ghostlight, Lumen, Sable or Forge runs as a series of smaller calls: read the manuscript in batches, then write the report. Later messages in that conversation are ordinary chat.
+- **Long reads run in steps.** Choosing one of the full-pass actions (Read the manuscript, Full assessment, Copy edit, Create revision plan, Plan copy fixes) as the first message in a pipeline conversation with Ghostlight, Lumen, Sable or Forge runs as a series of smaller calls: read the manuscript in batches, then write the report. Text you add after the action's prompt goes to every step as a note from you. Any other first message (Plan from my feedback, Pacing & scenes, Character arcs, Build style sheet, or anything you type) is ordinary chat, and the agent sees your text. Later messages are ordinary chat too.
 - **Stopping an agent**: open the activity drawer (status bar) and stop the call there.
 - If the app closed while an agent was working, a bar says the previous session was interrupted. Check what the agent finished, then ask it to continue.
 

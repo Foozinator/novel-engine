@@ -178,7 +178,7 @@ Everything in `src/domain/`. Pure TypeScript declarations — zero imports from 
 
 | Type | Shape | Used By |
 |------|-------|---------|
-| `SendMessageParams` | `{ agentName, message, conversationId, bookSlug, thinkingBudgetOverride?, callId? }` | chat:send handler |
+| `SendMessageParams` | `{ agentName, message, conversationId, bookSlug, thinkingBudgetOverride?, callId?, actionLabel?, authorNote? }` | chat:send handler |
 
 ### Context Assembly
 
@@ -721,7 +721,7 @@ Implemented by: `QueryService` (`src/application/QueryService.ts`)
 
 ### AGENT_QUICK_ACTIONS
 
-`Record<CreativeAgentName, QuickAction[]>` — pre-built prompt suggestions per agent.
+`Record<CreativeAgentName, QuickAction[]>` — pre-built prompt suggestions per agent. `QuickAction` is `{ label, prompt, fullPass? }`. `fullPass: true` marks the actions that mean a whole multi-call pass (Read the manuscript, Full assessment, Copy edit, Create revision plan, Plan copy fixes) (#111). `isFullPassAction(agent, label)` looks the label up; unknown labels and non-creative agents → `false`.
 
 ### PHASE_STARTER_ACTIONS / getPhaseStarterActions
 

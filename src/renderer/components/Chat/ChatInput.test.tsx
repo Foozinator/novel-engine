@@ -127,6 +127,29 @@ describe('ChatInput', () => {
       'I have a story idea. Here it is:',
     );
   });
+  it('carries the action label and the author\'s added text with a prefilled action (#111)', () => {
+    const { onSend } = renderInput({ prefill: { text: 'Run the full pass.', nonce: 1, label: 'Full assessment' } });
+    const textarea = screen.getByPlaceholderText('Type a message...');
+
+    fireEvent.change(textarea, { target: { value: 'Run the full pass.\n\nWatch the pacing.' } });
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+
+    expect(onSend).toHaveBeenCalledWith('Run the full pass.\n\nWatch the pacing.', {
+      actionLabel: 'Full assessment',
+      authorNote: 'Watch the pacing.',
+    });
+  });
+
+  it('drops the action when the author rewrites the prefilled prompt (#111)', () => {
+    const { onSend } = renderInput({ prefill: { text: 'Run the full pass.', nonce: 1, label: 'Full assessment' } });
+    const textarea = screen.getByPlaceholderText('Type a message...');
+
+    fireEvent.change(textarea, { target: { value: 'Something else entirely' } });
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+
+    expect(onSend).toHaveBeenCalledWith('Something else entirely');
+  });
+
   it('applies an external prefill on each new nonce', () => {
     vi.useFakeTimers();
     try {
