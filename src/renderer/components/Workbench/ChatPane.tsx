@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AGENT_REGISTRY, getPhaseStarterActions } from '@domain/constants';
-import type { CreativeAgentName, PipelinePhase } from '@domain/types';
+import type { CreativeAgentName, PipelinePhase, SendMessageParams } from '@domain/types';
 import { useBookStore } from '../../stores/bookStore';
 import { useChatStore } from '../../stores/chatStore';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -149,7 +149,7 @@ export function ChatPane({ phase }: { phase: PipelinePhase | null }): React.Reac
     () => (phase ? getPhaseStarterActions(phase.id, phase.agent) : []),
     [phase],
   );
-  const [prefill, setPrefill] = useState<{ text: string; nonce: number } | null>(null);
+  const [prefill, setPrefill] = useState<{ text: string; nonce: number; label?: string } | null>(null);
   useEffect(() => {
     setPrefill(null);
   }, [phase?.id]);
@@ -165,7 +165,7 @@ export function ChatPane({ phase }: { phase: PipelinePhase | null }): React.Reac
 
   const [startingConversation, setStartingConversation] = useState(false);
   const handleStarterPick = useCallback(
-    async (prompt: string) => {
+    async (prompt: string, label: string) => {
       if (!activeConversation) {
         setStartingConversation(true);
         try {
@@ -174,14 +174,14 @@ export function ChatPane({ phase }: { phase: PipelinePhase | null }): React.Reac
           setStartingConversation(false);
         }
       }
-      setPrefill({ text: prompt, nonce: Date.now() });
+      setPrefill({ text: prompt, nonce: Date.now(), label });
     },
     [activeConversation, createConversation],
   );
 
   // Same send handling as ChatView, including the hot-take quick action.
   const handleSend = useCallback(
-    async (content: string) => {
+    async (content: string, action?: Pick<SendMessageParams, 'actionLabel' | 'authorNote'>) => {
       if (content === '__HOT_TAKE__') {
         if (!activeSlug) return;
         try {
@@ -194,7 +194,8 @@ export function ChatPane({ phase }: { phase: PipelinePhase | null }): React.Reac
         }
         return;
       }
-      sendMessage(content, thinkingBudget);
+      if (action) sendMessage(content, thinkingBudget, action);
+      else sendMessage(content, thinkingBudget);
       setThinkingBudget(defaultThinkingBudget);
     },
     [sendMessage, thinkingBudget, defaultThinkingBudget, activeSlug],
@@ -255,14 +256,14 @@ export function ChatPane({ phase }: { phase: PipelinePhase | null }): React.Reac
             <PhaseStarterCard
               phase={phase}
               starters={starters}
-              onPick={(prompt) => void handleStarterPick(prompt)}
+              onPick={(prompt, label) => void handleStarterPick(prompt, label)}
               disabled={isStreaming}
             />
           ) : (
             <MessageList hideStreaming={isReadOnly} />
           )}
           <ChatInput
-            onSend={(content) => void handleSend(content)}
+            onSend={(content, action) => void handleSend(content, action)}
             disabled={isStreaming || isReadOnly}
             lockedAgentName={null}
             agentName={
@@ -282,7 +283,7 @@ export function ChatPane({ phase }: { phase: PipelinePhase | null }): React.Reac
         <PhaseStarterCard
           phase={phase}
           starters={starters}
-          onPick={(prompt) => void handleStarterPick(prompt)}
+          onPick={(prompt, label) => void handleStarterPick(prompt, label)}
           onStartBlank={() => void createConversation()}
           disabled={isStreaming || startingConversation}
         />

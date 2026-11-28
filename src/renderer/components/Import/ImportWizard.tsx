@@ -185,8 +185,19 @@ export function ImportWizard() {
               </p>
               {generationSteps.some((s) => s.status === 'error') && (
                 <p className="mb-4 text-xs text-amber-500">
-                  Some steps had errors. You can generate missing documents manually using the agents.
+                  Some steps failed. Retry them, or write the missing documents with the agents.
                 </p>
+              )}
+              {generationSteps.filter((s) => s.status === 'error').map((s) => (
+                <p key={s.index} className="mb-1 text-xs text-red-500">{s.label}: {s.error}</p>
+              ))}
+              {generationSteps.some((s) => s.status === 'error') && (
+                <button
+                  onClick={() => void useImportStore.getState().retryFailedGeneration()}
+                  className="mt-2 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                >
+                  Retry failed steps
+                </button>
               )}
             </div>
           )}

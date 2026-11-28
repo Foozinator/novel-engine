@@ -35,7 +35,7 @@ describe('PhaseStarterCard', () => {
     render(<PhaseStarterCard phase={FIRST_ASSESSMENT} starters={starters} onPick={onPick} disabled={false} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Full assessment' }));
-    expect(onPick).toHaveBeenCalledWith(starters[0].prompt);
+    expect(onPick).toHaveBeenCalledWith(starters[0].prompt, starters[0].label);
   });
 
   it('offers a blank start only when onStartBlank is given', () => {

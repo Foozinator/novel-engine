@@ -222,7 +222,7 @@ describe('importStore', () => {
 
     it('tracks progress events through to the generated step', async () => {
       await useImportStore.getState().startGeneration();
-      expect(mock.import.generateSources).toHaveBeenCalledWith('imported-book');
+      expect(mock.import.generateSources).toHaveBeenCalledWith('imported-book', undefined);
 
       const steps = [
         { index: 0, label: 'Story bible', agentName: 'Lumen' as const, status: 'pending' as const },
@@ -245,6 +245,26 @@ describe('importStore', () => {
 
       mock.emit('import:generationProgress', { type: 'done' });
       expect(useImportStore.getState().step).toBe('generated');
+    });
+
+    it('retryFailedGeneration reruns only the failed steps and keeps the others', async () => {
+      useImportStore.setState({
+        step: 'generated',
+        generationSteps: [
+          { index: 0, label: 'A', agentName: 'Spark', status: 'done' },
+          { index: 1, label: 'B', agentName: 'Verity', status: 'error', error: 'missing file' },
+        ],
+      });
+
+      await useImportStore.getState().retryFailedGeneration();
+      expect(mock.import.generateSources).toHaveBeenCalledWith('imported-book', [1]);
+
+      mock.emit('import:generationProgress', {
+        type: 'started',
+        steps: [{ index: 1, label: 'B', agentName: 'Verity', status: 'pending' }],
+      });
+      const steps = useImportStore.getState().generationSteps;
+      expect(steps.map((x) => [x.index, x.status])).toEqual([[0, 'done'], [1, 'pending']]);
     });
 
     it('a generation error event lands in the error step', async () => {

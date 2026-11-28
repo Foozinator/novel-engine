@@ -504,7 +504,7 @@ Dependencies: `ISettingsService`, `IAgentService`, `IDatabaseService`, `IFileSys
 
 | Method | What It Does |
 |--------|-------------|
-| `generate(params)` | Runs 4 sequential agent calls with per-step progress events |
+| `generate(params)` | Runs 4 sequential agent calls with per-step progress events. `stepIndexes` runs only those steps (retry); `started` then lists just them |
 
 **Steps:**
 1. **Spark** → `source/pitch.md`
@@ -513,6 +513,8 @@ Dependencies: `ISettingsService`, `IAgentService`, `IDatabaseService`, `IFileSys
 4. **Verity** → `source/motif-ledger.json`
 
 Each step creates its own conversation. Step errors are caught and reported without aborting remaining steps.
+
+A step is `step-done` only if every expected file was written or changed during that step (compared with a snapshot taken before the call) and is valid: non-empty, and for the ledger parseable JSON with all seven array fields. Otherwise `step-error` carries the reason. Steps run with `unattended: true` (`ContextBuilder` swaps the approval-first write rules and the per-role read guidance for "write directly, read every chapter named") and `maxTurns` = `SOURCE_GENERATION_MAX_TURNS` (80). The ledger prompt asks for empty `flaggedPhrases`; any the agent writes anyway are moved into an `auditLog` observation so imported prose can't create bans.
 
 ### HelperService
 
@@ -614,6 +616,10 @@ Lumen's steps (`LUMEN_MULTI_CALL_STEPS`) use the lens numbers and names from `ag
 Ghostlight's synthesis task reads the batch trackers, settles the reader verdict, then reads `source/voice-profile.md` if it exists and ends the report with a short "Intent vs. experience" section (#25).
 
 `lightweightPrompt` is for read steps only; `src/domain/constants.test.ts` enforces that no synthesis step sets it.
+
+### Multi-Call Runs: Entry and Author Note
+
+`ChatService.sendMessage()` starts `runMultiCall()` only for the first message of a pipeline conversation whose agent has steps AND whose `actionLabel` passes `isFullPassAction()` (#111). Any other first message is a normal chat turn, so the author's text reaches the agent. `authorNote` (text typed after the action's prompt) is appended to every step's prompt under `## Author note`, and is part of `stepsHash`, so a run with a different note starts over instead of resuming.
 
 ### Multi-Call Runs: Resume and Archive
 

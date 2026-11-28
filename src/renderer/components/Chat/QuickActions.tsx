@@ -7,7 +7,8 @@ import { Tooltip } from '../common/Tooltip';
 
 type QuickActionsProps = {
   agentName: CreativeAgentName;
-  onSelect: (prompt: string) => void;
+  /** `label` is set for built-in actions only; saved prompts carry none. */
+  onSelect: (prompt: string, label?: string) => void;
   disabled: boolean;
   /** Workbench chip trigger instead of the square icon button. Menu unchanged. */
   compact?: boolean;
@@ -67,8 +68,9 @@ export function QuickActions({ agentName, onSelect, disabled, compact = false }:
   }, [open]);
 
   const handleSelect = useCallback(
-    (prompt: string) => {
-      onSelect(prompt);
+    (prompt: string, label?: string) => {
+      if (label) onSelect(prompt, label);
+      else onSelect(prompt);
       setOpen(false);
     },
     [onSelect],
@@ -170,7 +172,7 @@ export function QuickActions({ agentName, onSelect, disabled, compact = false }:
                 actions.map((action, i) => (
                   <button
                     key={i}
-                    onClick={() => handleSelect(action.prompt)}
+                    onClick={() => handleSelect(action.prompt, action.label)}
                     className="w-full text-left px-3 py-1.5 text-[13px] text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
                   >
                     {action.label}

@@ -85,7 +85,7 @@ Everything in `src/main/ipc/` and `src/preload/`. Thin adapter layer between app
 | `import:selectFile` | invoke | `dialog.showOpenDialog()` — file picker for .md/.markdown/.docx | `string \| null` |
 | `import:preview` | invoke | `manuscriptImport.preview(filePath)` | `ImportPreview` |
 | `import:commit` | invoke | `manuscriptImport.commit(config)` + triggers `onActiveBookChanged` | `ImportResult` |
-| `import:generateSources` | invoke | `sourceGeneration.generate()` — broadcasts progress via `import:generationProgress` | `void` |
+| `import:generateSources` | invoke (`bookSlug, stepIndexes?`) | `sourceGeneration.generate()` — broadcasts progress via `import:generationProgress` | `void` |
 | `import:selectFiles` | invoke | `dialog.showOpenDialog()` — multi-select file picker for .md/.markdown/.docx | `string[] \| null` |
 | `import:seriesPreview` | invoke | `seriesImport.preview(filePaths)` | `SeriesImportPreview` |
 | `import:seriesCheckTitles` | invoke | `seriesImport.checkTitles(volumes)` | `SeriesImportTitleProblem[]` |

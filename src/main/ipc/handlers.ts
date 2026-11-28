@@ -359,7 +359,7 @@ export function registerIpcHandlers(
     return result;
   });
 
-  handle('import:generateSources', async (_, bookSlug: string) => {
+  handle('import:generateSources', async (_, bookSlug: string, stepIndexes?: number[]) => {
     const broadcastGenProgress = (genEvent: SourceGenerationEvent) => {
       events.broadcast('import:generationProgress', genEvent);
     };
@@ -377,6 +377,7 @@ export function registerIpcHandlers(
       bookSlug,
       onProgress: broadcastGenProgress,
       onStreamEvent: broadcastStreamEvent,
+      stepIndexes,
     });
   });
 

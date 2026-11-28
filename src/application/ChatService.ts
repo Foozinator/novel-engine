@@ -24,7 +24,7 @@ import type {
   StreamSessionRecord,
 } from '@domain/types';
 import { nanoid } from 'nanoid';
-import { VERITY_PHASE_FILES, VERITY_LEDGER_FILE, AGENT_REGISTRY, PHASE_OUTPUT_FILES, PHASE_OUTPUT_CONTENT_MARKERS, CLAUDE_CLI_PROVIDER_ID, MAX_CALL_CONTEXT_TOKENS } from '@domain/constants';
+import { VERITY_PHASE_FILES, VERITY_LEDGER_FILE, AGENT_REGISTRY, PHASE_OUTPUT_FILES, PHASE_OUTPUT_CONTENT_MARKERS, CLAUDE_CLI_PROVIDER_ID, MAX_CALL_CONTEXT_TOKENS, isFullPassAction } from '@domain/constants';
 import { randomPreparingStatus, randomWaitingStatus } from '@domain/statusMessages';
 import { ContextBuilder } from './ContextBuilder';
 import { readAuthorProfile } from './context/readAuthorProfile';
@@ -130,6 +130,10 @@ export class ChatService implements IChatService {
      *  used by turn-hungry pipeline flows (e.g. web research). */
     maxTurnsOverride?: number;
     callId?: string;
+    /** Quick-action label the message was prefilled from (#111). */
+    actionLabel?: string;
+    /** Text the author added after a full-pass action's prompt (#111). */
+    authorNote?: string;
     onEvent: (event: StreamEvent) => void;
   }): Promise<{ changedFiles: string[] }> {
     const { agentName, message, conversationId, bookSlug, onEvent } = params;
@@ -246,16 +250,20 @@ export class ChatService implements IChatService {
       // sequential smaller calls (Sable, Lumen, Ghostlight). Only triggers
       // for pipeline conversations whose agent has multi-call steps defined.
       // Freeform chat messages and agents without steps bypass this entirely.
+      // Only a full-pass quick action starts the run (#111): any other first
+      // message is a normal chat turn, so the author's text reaches the agent.
       // Note: <= 1 because the user message was already saved above (Step 4).
       if (
         conversation?.purpose === 'pipeline' &&
         MultiCallOrchestrator.hasMultiCallSteps(agentName) &&
+        isFullPassAction(agentName, params.actionLabel) &&
         this.db.getMessages(conversationId).length <= 1  // First message (just saved above)
       ) {
         const result = await this.multiCallOrchestrator.runMultiCall({
           agentName,
           conversationId,
           bookSlug,
+          authorNote: params.authorNote,
           thinkingBudgetOverride: params.thinkingBudgetOverride,
           callId: params.callId,
           onEvent,
