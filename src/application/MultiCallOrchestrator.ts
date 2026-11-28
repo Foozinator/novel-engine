@@ -693,6 +693,7 @@ export class MultiCallOrchestrator {
    *   - `{{CHAPTER_LIST}}`        — chapter file listing for this batch
    *   - `{{READ_TRACKER_FILES}}`  — list of all read-batch scratch files (for analysis steps)
    *   - `{{BATCH_TRACKER_FILES}}` — list of all read-batch scratch files (for synthesis steps)
+   *   - `{{FIRST_LAST_CHAPTERS}}` — first and last chapter draft paths (for steps that read the opening and ending directly)
    *   - `{{BATCH_COUNT}}`         — number of read batches
    *
    * For a 102K-word manuscript at 25K/batch: 4 read steps + analysis steps + synthesis.
@@ -795,13 +796,21 @@ export class MultiCallOrchestrator {
 
     // Update static (non-dynamic, non-synthesis) steps:
     // Replace {{READ_TRACKER_FILES}} placeholder with explicit file list
-    const updatedStaticSteps = staticSteps.map(step => {
-      if (!step.promptTemplate.includes('{{READ_TRACKER_FILES}}')) return step;
-      return {
-        ...step,
-        promptTemplate: step.promptTemplate.replace('{{READ_TRACKER_FILES}}', readTrackerFileList),
-      };
-    });
+    const draftPaths = manifest.files
+      .filter(f => f.path.startsWith('chapters/') && f.path.endsWith('/draft.md'))
+      .map(f => f.path)
+      .sort((a, b) => a.localeCompare(b));
+    const firstLastList = [...new Set([draftPaths[0], draftPaths[draftPaths.length - 1]])]
+      .filter((p): p is string => Boolean(p))
+      .map(p => `- \`${p}\``)
+      .join('\n');
+
+    const updatedStaticSteps = staticSteps.map(step => ({
+      ...step,
+      promptTemplate: step.promptTemplate
+        .replaceAll('{{READ_TRACKER_FILES}}', readTrackerFileList)
+        .replaceAll('{{FIRST_LAST_CHAPTERS}}', firstLastList),
+    }));
 
     // Handle synthesis step: replace placeholders and scale maxTurns.
     // All agent-specific content lives in the step definitions (constants.ts).

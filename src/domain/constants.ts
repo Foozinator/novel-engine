@@ -632,7 +632,7 @@ export const AGENT_QUICK_ACTIONS: Record<CreativeAgentName, QuickAction[]> = {
     { label: 'Synthesize report', prompt: 'Synthesize the final Reader Report. Read source/.scratch/ghostlight-read-1.md and source/.scratch/ghostlight-read-2.md. Combine into the complete reader report with engagement map, emotional arc, running questions, prediction log, strongest/weakest moments, and overall verdict. Write to source/reader-report.md.' },
   ],
   Lumen: [
-    { label: 'Full assessment', prompt: 'Run the full developmental assessment. Read the entire manuscript, apply all seven lenses, and produce the complete report with pacing map, scene necessity audit, and revision roadmap. Write it to source/dev-report.md.', fullPass: true },
+    { label: 'Full assessment', prompt: 'Run the full developmental assessment. Read the entire manuscript, apply all eight lenses, and produce the complete report with pacing map, scene necessity audit, and revision roadmap. Write it to source/dev-report.md.', fullPass: true },
     { label: 'Pacing & scenes', prompt: 'Focus on Lens 4 (Pacing & Momentum) and Lens 5 (Scene Necessity). Read the manuscript, produce the pacing map and scene audit table, and flag any sagging sections or underperforming scenes.' },
     { label: 'Character arcs', prompt: 'Focus on Lens 2 (Protagonist Arc) and Lens 3 (Supporting Cast). Map the protagonist\'s internal trajectory and assess every significant supporting character\'s function. Flag arc stalls, unearned transformations, and redundant characters.' },
     // ── Granular passes (manual fallback for multi-call orchestration) ──
@@ -642,8 +642,10 @@ export const AGENT_QUICK_ACTIONS: Record<CreativeAgentName, QuickAction[]> = {
     // Step 2: Analyze tracking notes through lenses (do NOT re-read chapters)
     { label: 'Lenses 1–3: Structure', prompt: 'Run Lenses 1–3 only. Do NOT read manuscript chapters — read ONLY the tracking note files in source/.scratch/ that start with lumen-read-. Analyze Premise & Promise, Protagonist Arc, and Supporting Cast from your structural notes. Write your analysis to source/.scratch/lumen-lenses-1-3.md. Do not produce the final dev report.' },
     { label: 'Lenses 4–5: Pacing', prompt: 'Run Lenses 4–5 only. Do NOT read manuscript chapters — read ONLY the tracking note files in source/.scratch/ that start with lumen-read-, plus source/.scratch/lumen-lenses-1-3.md for context. Produce the pacing map and scene necessity audit from your structural notes. Write to source/.scratch/lumen-lenses-4-5.md. Do not produce the final dev report.' },
-    { label: 'Lenses 6–7: Craft', prompt: 'Run Lenses 6–7 only. Do NOT read manuscript chapters — read ONLY the tracking note files in source/.scratch/ that start with lumen-read-, plus source/.scratch/lumen-lenses-1-3.md and source/.scratch/lumen-lenses-4-5.md for context. Analyze Prose & Craft and Thematic Integration from your structural notes. Write to source/.scratch/lumen-lenses-6-7.md. Do not produce the final dev report.' },
-    { label: 'Synthesize report', prompt: 'Synthesize the final Developmental Assessment. Read source/.scratch/lumen-lenses-1-3.md, source/.scratch/lumen-lenses-4-5.md, and source/.scratch/lumen-lenses-6-7.md. Do NOT read manuscript chapters. Produce the complete dev report with all 7 lenses, pacing map, scene audit table, and revision roadmap. Write to source/dev-report.md.' },
+    { label: 'Lens 6: Thematic Coherence', prompt: 'Run Lens 6 only. Do NOT read manuscript chapters — read ONLY the tracking note files in source/.scratch/ that start with lumen-read-. Analyze Thematic Coherence from your thematic markers. Write to source/.scratch/lumen-lens-6.md. Do not produce the final dev report.' },
+    { label: 'Lens 7: Opening & Closing', prompt: 'Run Lens 7 only. Read the first and last chapter drafts directly (chapters/<first>/draft.md and chapters/<last>/draft.md) and nothing else. Assess whether the opening hooks and the last line lands. Write to source/.scratch/lumen-lens-7.md. Do not produce the final dev report.' },
+    { label: 'Lens 8: Phrase audit', prompt: 'Run Lens 8 only. Do NOT read manuscript chapters — read ONLY the tracking note files in source/.scratch/ that start with lumen-read-. Tally repeated phrases and patterns across chapters, write the summary to source/.scratch/lumen-lens-8.md, and rebuild flaggedPhrases in source/motif-ledger.json as your system instructions describe. Do not produce the final dev report.' },
+    { label: 'Synthesize report', prompt: 'Synthesize the final Developmental Assessment. Read source/.scratch/lumen-lenses-1-3.md, source/.scratch/lumen-lenses-4-5.md, source/.scratch/lumen-lens-6.md, source/.scratch/lumen-lens-7.md, and source/.scratch/lumen-lens-8.md. Do NOT read manuscript chapters. Produce the complete dev report with all 8 lenses, pacing map, scene audit table, and revision roadmap. Write to source/dev-report.md.' },
   ],
   Sable: [
     { label: 'Copy edit', prompt: 'Copy edit the full manuscript. Read every chapter in order, audit for grammar, consistency, and mechanical issues, then produce the audit report and write it to source/audit-report.md. Build or update the style sheet at source/style-sheet.md.', fullPass: true },
@@ -1230,11 +1232,12 @@ Also update source/style-sheet.md if the analysis-1 pass built or modified it.`,
 ];
 
 /**
- * Lumen (Developmental Editor) — 7 steps: N read batches + 3 lens analyses + synthesis.
+ * Lumen (Developmental Editor) — N read batches + 5 lens-group steps + synthesis.
  *
  * Uses the same sip-and-track pattern as Ghostlight:
  *   1. Dynamic read batches (~25K words each) produce structural tracking notes
- *   2. Three lens-group steps analyze the tracking notes (never re-read chapters)
+ *   2. Lens-group steps analyze the tracking notes (never re-read chapters); Lens 7
+ *      is the exception and reads the first and last chapters directly
  *   3. Synthesis step combines all analyses into the final dev report
  *
  * The read batches have `dynamic: true` — the orchestrator expands them
@@ -1263,6 +1266,7 @@ For each chapter, track these structural elements in concise bullet form:
 - **Scene purpose**: What each scene accomplishes. Flag scenes doing < 2 jobs.
 - **Prose & craft notes**: Voice consistency, POV discipline, dialogue authenticity, standout passages.
 - **Thematic markers**: Motifs, symbols, thematic statements — organic or forced?
+- **Repeated phrases and patterns**: Exact phrases, sentence templates, narrator glosses, or paragraph shapes that recur or echo other chapters (quote them).
 - **Key quotes**: 1–2 pull quotes per chapter that exemplify strengths or weaknesses.
 
 **IMPORTANT: You MUST use the Write tool to create \`source/.scratch/lumen-read-1.md\` before finishing.** Do not end without writing the file.
@@ -1296,6 +1300,7 @@ For each chapter, track in concise bullet form:
 - **Scene purpose**: What each scene accomplishes. Flag scenes doing < 2 jobs.
 - **Prose & craft notes**: Voice consistency, POV discipline, dialogue authenticity, standout passages.
 - **Thematic markers**: Motifs, symbols, thematic statements — organic or forced?
+- **Repeated phrases and patterns**: Exact phrases, sentence templates, narrator glosses, or paragraph shapes that recur or echo other chapters (quote them).
 - **Key quotes**: 1–2 pull quotes per chapter that exemplify strengths or weaknesses.
 
 **IMPORTANT: You MUST use the Write tool to create \`source/.scratch/lumen-read-2.md\` before finishing.** Do not end without writing the file.
@@ -1350,7 +1355,7 @@ Focus on the **Pacing** and **Scene purpose** fields in each chapter's tracking 
 
 After reading all tracking files, analyze:
 - **Lens 4: Pacing & Momentum** — Using your tracked pacing data (tempo, tension levels, momentum), produce a **pacing map** (table: chapter | tempo | tension | momentum | notes). Flag sags, rushes, and structural dead zones.
-- **Lens 5: Scene Necessity** — Using your tracked scene purposes, produce a **scene audit table** (chapter | scene | jobs performed | verdict). Flag underperformers (scenes doing < 2 jobs) and dead weight.
+- **Lens 5: Scene Necessity Audit** — Using your tracked scene purposes, produce a **scene audit table** (chapter | scene | jobs performed | verdict). Flag underperformers (scenes doing < 2 jobs) and dead weight.
 
 Write your analysis (including the pacing map and scene audit table) to source/.scratch/lumen-lenses-4-5.md.
 
@@ -1360,26 +1365,67 @@ Do NOT produce the final dev report yet — this is lens group 2 of 3.`,
     isSynthesis: false,
   },
   {
-    id: 'lumen-lenses-6-7',
-    label: 'Lenses 6–7: Craft & Theme',
-    promptTemplate: `Run Lenses 6–7 of the developmental assessment.
+    id: 'lumen-lens-6',
+    label: 'Lens 6: Thematic Coherence',
+    promptTemplate: `Run Lens 6 of the developmental assessment.
 
 **IMPORTANT**: Do NOT read any manuscript chapters. Do NOT use the Read tool on any chapters/ files. Your structural tracking notes already contain everything you need.
 
 Read ONLY these tracking note files (use the Read tool on each one):
 {{READ_TRACKER_FILES}}
 
-Focus on the **Prose & craft notes** and **Thematic markers** fields in each chapter's tracking notes.
+Focus on the **Thematic markers** field in each chapter's tracking notes.
 
 After reading all tracking files, analyze:
-- **Lens 6: Prose & Craft** — Using your tracked prose/craft notes, assess voice consistency, POV discipline, dialogue authenticity, sensory detail quality. Quote specific examples from your tracking notes.
-- **Lens 7: Thematic Integration** — Using your tracked thematic markers, does the theme emerge organically? Over-signaled or under-developed? How do motifs and symbols evolve across the narrative?
+- **Lens 6: Thematic Coherence** — Does the manuscript know what it is about, and does every major element serve that understanding? Identify the theme(s) as embodied in the manuscript, not as stated in notes. Do the protagonist's arc, the central conflict, and the resolution point toward the same conclusion? Flag thematic dead ends, thematic contradictions, and over-the-nose moments.
 
-Write your analysis to source/.scratch/lumen-lenses-6-7.md.
+Write your analysis to source/.scratch/lumen-lens-6.md.
 
-Do NOT produce the final dev report yet — this is lens group 3 of 3.`,
-    scratchFile: 'source/.scratch/lumen-lenses-6-7.md',
+Do NOT produce the final dev report yet.`,
+    scratchFile: 'source/.scratch/lumen-lens-6.md',
     maxTurns: 10,
+    isSynthesis: false,
+  },
+  {
+    id: 'lumen-lens-7',
+    label: 'Lens 7: Opening & Closing',
+    promptTemplate: `Run Lens 7 of the developmental assessment.
+
+Tracking notes cannot tell you whether a last line lands, so read the first and last chapters directly. Use the **Read** tool on exactly these files, and no others:
+{{FIRST_LAST_CHAPTERS}}
+
+Analyze:
+- **Lens 7: Opening & Closing** — Does the opening hook and the ending resonate? First chapter: does it establish voice, create a question, introduce stakes, and make the reader want to continue? How soon is the central tension hinted at? Final chapter: does it deliver emotional payoff, resolve or intentionally leave open the dramatic question, and does the last line land? Flag slow openings that bury the hook, endings that over-explain or introduce new information, and epilogues that undercut the climax.
+
+Write your analysis to source/.scratch/lumen-lens-7.md.
+
+Do NOT produce the final dev report yet.`,
+    scratchFile: 'source/.scratch/lumen-lens-7.md',
+    maxTurns: 10,
+    isSynthesis: false,
+  },
+  {
+    id: 'lumen-lens-8',
+    label: 'Lens 8: Phrase & Pattern Audit',
+    promptTemplate: `Run Lens 8 of the developmental assessment.
+
+**IMPORTANT**: Do NOT read any manuscript chapters. Do NOT use the Read tool on any chapters/ files. Your structural tracking notes already contain everything you need.
+
+Read ONLY these tracking note files (use the Read tool on each one):
+{{READ_TRACKER_FILES}}
+
+Focus on the **Repeated phrases and patterns** field in each chapter's tracking notes.
+
+After reading all tracking files, analyze:
+- **Lens 8: Phrase & Pattern Audit** — Combine the per-chapter notes into one tally of every phrase, construction, or narrative move that recurs across chapters. Categorize each (thematic phrase, structural formulation, editorial intrusion, rhetorical move) and record the exact phrase, every chapter where it appears, and the total count. If source/reader-report.md exists, read it and cross-reference its "Repetition Fatigue" section.
+
+Write the prose summary of the significant patterns (what to keep at most twice, what to eliminate) to source/.scratch/lumen-lens-8.md.
+
+Then follow the Lens 8 process in your system instructions to rebuild \`flaggedPhrases\` in \`source/motif-ledger.json\`: read the existing ledger (or create it if missing), replace only the \`flaggedPhrases\` array, and leave every other section unchanged.
+
+Do NOT produce the final dev report yet.`,
+    scratchFile: 'source/.scratch/lumen-lens-8.md',
+    maxTurns: 12,
     isSynthesis: false,
   },
   // ── Synthesis (reads all lens analyses, writes final report) ──
@@ -1389,18 +1435,20 @@ Do NOT produce the final dev report yet — this is lens group 3 of 3.`,
     promptTemplate: `Synthesize the final Developmental Assessment Report.
 
 **CRITICAL RULES — read carefully before doing anything:**
-1. You have EXACTLY 3 files to read. Do NOT read anything else — no chapters, no batch trackers, no other files.
-2. After reading all 3 files, write the report IMMEDIATELY. Do not re-read files.
+1. You have EXACTLY 5 files to read. Do NOT read anything else — no chapters, no batch trackers, no other files.
+2. After reading all 5 files, write the report IMMEDIATELY. Do not re-read files.
 3. If you are tempted to read a file not listed below, STOP and write the report instead.
 
-Read these 3 files (use the Read tool on each):
-- source/.scratch/lumen-lenses-1-3.md (Premise, Protagonist Arc, Supporting Cast)
-- source/.scratch/lumen-lenses-4-5.md (Pacing & Scene Necessity — includes pacing map and scene audit table)
-- source/.scratch/lumen-lenses-6-7.md (Prose Craft & Thematic Integration)
+Read these 5 files (use the Read tool on each):
+- source/.scratch/lumen-lenses-1-3.md (Lens 1: Premise & Promise, Lens 2: Protagonist Arc, Lens 3: Supporting Cast)
+- source/.scratch/lumen-lenses-4-5.md (Lens 4: Pacing & Momentum, Lens 5: Scene Necessity Audit — includes pacing map and scene audit table)
+- source/.scratch/lumen-lens-6.md (Lens 6: Thematic Coherence)
+- source/.scratch/lumen-lens-7.md (Lens 7: Opening & Closing)
+- source/.scratch/lumen-lens-8.md (Lens 8: Phrase & Pattern Audit)
 
 Then IMMEDIATELY write the final report to source/dev-report.md with these sections:
 - Executive summary (what's working, what's not, why)
-- All 7 lens sections (consolidated from the three analyses)
+- All 8 lens sections (consolidated from the analyses), using the lens names above
 - Pacing map
 - Scene necessity audit table
 - Prioritized revision roadmap`,
