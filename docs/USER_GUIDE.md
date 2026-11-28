@@ -2,7 +2,7 @@
 
 *Novel Engine Spur is a fork of Novel Engine by John Paul Ruf.*
 
-> Last updated: 2026-11-25
+> Last updated: 2026-11-28
 
 ---
 
@@ -96,7 +96,7 @@ The pipeline is 15 phases that take a book from idea to querying. Each phase has
 | 14 | **Publish & Audit** | Quill | `source/metadata.md` is written |
 | 15 | **Query Agents** | Quill | `source/query-tracker.md` has your targets |
 
-The spine on the left of the Workspace groups the phases into five stages: **Conceive**, **Draft**, **Assess**, **Revise** and **Ship**.
+The spine on the left of the Workspace groups the phases into five stages: **Conceive**, **Draft**, **Assess**, **Revise** and **Ship**. Drag its right edge to resize it. The arrow button at its top right collapses it to a narrow strip of phase dots: hover a dot for its name, click it to select the phase. The app remembers the choice.
 
 ### Phase States
 

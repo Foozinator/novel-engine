@@ -4,6 +4,27 @@ All notable changes to Novel Engine Spur are documented here.
 
 ---
 
+## [2026-11-28] — Pipeline spine collapses to a rail (#87, PR 0)
+
+### Summary
+
+The Workspace's pipeline spine can now collapse to a 44px rail of phase nodes, giving the workbench more room. The rail keeps the stage gaps, each node's done/current/locked state, selection, and the guided tour's targets; it drops phase names, the book header and the current-phase card (the phase header keeps the primary action). The choice persists in localStorage. This is the first, independent pull request of #87: the spine will grow once passes can repeat.
+
+### Changed
+- `src/renderer/components/PipelineSpine/PipelineSpine.tsx` — `CollapseToggle` in the book header (expanded) and at the top of the rail (collapsed). Collapsed state persisted under `novel-engine:pipeline-spine-collapsed`. Phase selection moved into one `onSelectPhase` used by both layouts (Query Agents still opens the Query Manager).
+- `src/renderer/components/PipelineSpine/PhaseNode.tsx` — Added `PhaseDot` (rail node with `aria-label` and hover text naming the phase, agent and state). The node markup and hover text are shared through `NodeMark` and `phaseTitle()`.
+- `src/renderer/components/PipelineSpine/PipelineSpine.test.tsx` — Collapse/expand with persistence, restore from localStorage, rail selection and tour targets.
+- `docs/architecture/RENDERER.md` — New `PipelineSpine/` section.
+- `docs/USER_GUIDE.md` — The spine's resize and collapse controls.
+
+### Architecture Impact
+- None — no wiring changes. New localStorage key `novel-engine:pipeline-spine-collapsed`.
+
+### Migration Notes
+- None
+
+---
+
 ## [2026-11-27] — First pipeline message no longer dropped for Lumen, Sable, Ghostlight and Forge (#111)
 
 ### Summary

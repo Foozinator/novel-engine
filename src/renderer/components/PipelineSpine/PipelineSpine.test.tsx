@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { screen, fireEvent } from '@testing-library/react';
 import type { PipelinePhase, PipelinePhaseId, PhaseStatus } from '@domain/types';
 import { PipelineSpine } from './PipelineSpine';
@@ -12,6 +12,12 @@ import { makeBookSummary } from '../../../test/novelEngineMock';
 
 // workspaceStore has cross-store subscriptions — register it last (S22 rule)
 resetStoresBeforeEach(useBookStore, usePipelineStore, useViewStore, useWorkspaceStore);
+
+const COLLAPSED_KEY = 'novel-engine:pipeline-spine-collapsed';
+
+beforeEach(() => {
+  window.localStorage.clear();
+});
 
 function phase(id: string, status: PhaseStatus, agent: PipelinePhase['agent'] = null): PipelinePhase {
   return { id: id as PipelinePhaseId, label: `Label ${id}`, agent, status, description: '' };
@@ -87,5 +93,51 @@ describe('PipelineSpine', () => {
 
     expect(useViewStore.getState().currentView).toBe('query-manager');
     expect(useWorkspaceStore.getState().selectedPhaseId).not.toBe('query-agents');
+  });
+});
+
+describe('PipelineSpine collapse', () => {
+  it('collapses to a rail of phase nodes and expands again, persisting the choice', () => {
+    renderSpine();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse pipeline' }));
+
+    expect(window.localStorage.getItem(COLLAPSED_KEY)).toBe('true');
+    // The rail drops names, stage headers, the book header and the action card...
+    expect(screen.queryByText('Label pitch')).not.toBeInTheDocument();
+    expect(screen.queryByText('CONCEIVE')).not.toBeInTheDocument();
+    expect(screen.queryByText('Test Book')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Open Scaffold/ })).not.toBeInTheDocument();
+    // ...but keeps one node per phase, named for screen readers
+    expect(screen.getByRole('button', { name: 'Label pitch' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Label query-agents' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand pipeline' }));
+
+    expect(window.localStorage.getItem(COLLAPSED_KEY)).toBe('false');
+    expect(screen.getByText('Label pitch')).toBeInTheDocument();
+    expect(screen.getByText('Test Book')).toBeInTheDocument();
+  });
+
+  it('restores the collapsed state from localStorage', () => {
+    window.localStorage.setItem(COLLAPSED_KEY, 'true');
+    renderSpine();
+
+    expect(screen.getByRole('button', { name: 'Expand pipeline' })).toBeInTheDocument();
+    expect(screen.queryByText('Label scaffold')).not.toBeInTheDocument();
+  });
+
+  it('rail nodes select phases like the full rows, and keep the tour targets', () => {
+    window.localStorage.setItem(COLLAPSED_KEY, 'true');
+    const { container } = renderSpine();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Label first-draft' }));
+    expect(useWorkspaceStore.getState().selectedPhaseId).toBe('first-draft');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Label query-agents' }));
+    expect(useViewStore.getState().currentView).toBe('query-manager');
+
+    expect(container.querySelector('[data-tour="pipeline-spine"]')).not.toBeNull();
+    expect(container.querySelector('[data-tour="pipeline-phase-pitch"]')).not.toBeNull();
   });
 });

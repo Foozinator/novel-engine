@@ -1,6 +1,6 @@
 # Renderer — Stores, Components, Views
 
-> Last updated: 2026-11-22 (#79)
+> Last updated: 2026-11-28 (#87)
 
 Everything in `src/renderer/`. React + Zustand UI layer. Talks to backend only through `window.novelEngine`.
 
@@ -547,6 +547,15 @@ Importing the module sets marked's options once: `gfm`, `breaks`, `async: false`
 | `CompanionPane.tsx` | Companion tab bar (`companion/` Sources, Chapter, Reports, Explorer tabs); `openCompanionDoc()` |
 | `companion/ExplorerTab.tsx` | Book folder browser (`FileBrowser`) with breadcrumb and read-only preview. History and Edit (hands off to the manuscript editor) show for text files only; Edit is also hidden for Verity drafts. Non-text files (`isTextFilePath()` false) are never read: the preview shows name, type and size |
 | `usePhaseConversations.ts` | Phase-scoped conversation list, auto-activation of the latest, create/select |
+
+### PipelineSpine/
+
+| File | Purpose |
+|------|---------|
+| `PipelineSpine.tsx` | Workspace's left panel: book header (cover, status, words, progress), phases grouped by `STAGES`, current-phase action card. Resizable (`novel-engine:pipeline-spine-width`). Collapses to a 44px rail of phase nodes (`novel-engine:pipeline-spine-collapsed`); the rail keeps selection, stage gaps and the tour targets, and drops names, the book header and the action card (#87) |
+| `PhaseNode.tsx` | `PhaseNode`: one spine row (line, node, label, agent chip). `PhaseDot`: the rail's node-only button, named by `aria-label` and hover text. Both share `NodeMark` and the hover text |
+| `stages.ts` | `STAGES`: the five stage groups with hardcoded phase IDs; `agentForPhase()` |
+| `usePhaseAction.ts` | Shared current-phase action state (primary action, confirm gates, revision queue, auto-draft) for the spine card and `PhaseHeader` |
 
 ### Files/
 

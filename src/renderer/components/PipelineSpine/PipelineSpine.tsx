@@ -7,13 +7,52 @@ import { useViewStore } from '../../stores/viewStore';
 import { useResizeHandle } from '../../hooks/useResizeHandle';
 import { ResizeHandle } from '../Layout/ResizeHandle';
 import { Icon } from '../common/Icon';
-import { PhaseNode } from './PhaseNode';
+import { PhaseDot, PhaseNode } from './PhaseNode';
 import { STAGES } from './stages';
 import { usePhaseAction } from './usePhaseAction';
 
 const SPINE_DEFAULT = 282;
 const SPINE_MIN = 220;
 const SPINE_MAX = 420;
+const SPINE_COLLAPSED = 44;
+const COLLAPSED_KEY = 'novel-engine:pipeline-spine-collapsed';
+
+function loadCollapsed(): boolean {
+  try {
+    return localStorage.getItem(COLLAPSED_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function persistCollapsed(value: boolean): void {
+  try {
+    localStorage.setItem(COLLAPSED_KEY, String(value));
+  } catch {
+    // localStorage might be unavailable
+  }
+}
+
+function CollapseToggle({
+  collapsed,
+  onToggle,
+}: {
+  collapsed: boolean;
+  onToggle: () => void;
+}): React.ReactElement {
+  const label = collapsed ? 'Expand pipeline' : 'Collapse pipeline';
+  return (
+    <button
+      onClick={onToggle}
+      aria-label={label}
+      aria-expanded={!collapsed}
+      title={label}
+      className="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-ne-line bg-ne-bg1 text-ne-ink-faint transition-colors hover:border-ne-brass/50 hover:text-ne-brass-hi"
+    >
+      <Icon name="chevronRight" size={11} strokeWidth={2} className={collapsed ? '' : 'rotate-180'} />
+    </button>
+  );
+}
 
 const PRIMARY_BTN_CLASS =
   'flex w-full items-center justify-center gap-2 rounded-[7px] bg-gradient-to-b from-ne-brass-hi to-ne-brass px-2.5 py-[7px] text-xs font-semibold text-ne-bg0 transition-[filter] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50';
@@ -88,12 +127,24 @@ function CurrentPhaseCard({
  * The Workspace's left panel: book header + the pipeline as navigation.
  * Replaces Dashboard's PipelineCard and the right-dock PipelineTracker
  * (both stay mounted until SESSION-14).
+ *
+ * Collapses to a narrow rail of phase nodes (persisted). The rail keeps
+ * selection and the current-phase marker; the phase's actions stay in
+ * the workbench header.
  */
 export function PipelineSpine(): React.ReactElement {
   const { phases } = usePipelineStore();
   const { activeSlug, books, totalWordCount } = useBookStore();
   const { selectedPhaseId, selectPhase } = useWorkspaceStore();
   const [coverError, setCoverError] = useState(false);
+  const [collapsed, setCollapsed] = useState(loadCollapsed);
+
+  const toggleCollapsed = () => {
+    setCollapsed((prev) => {
+      persistCollapsed(!prev);
+      return !prev;
+    });
+  };
 
   const { width, isDragging, onMouseDown, resetWidth } = useResizeHandle({
     direction: 'left', // handle on right edge: dragging right = wider
@@ -119,6 +170,46 @@ export function PipelineSpine(): React.ReactElement {
   const phaseNumber = currentIdx >= 0 ? currentIdx + 1 : isComplete ? total : completed + 1;
   const phaseById = new Map(phases.map((p) => [p.id, p]));
 
+  const onSelectPhase = (phase: PipelinePhase) => {
+    if (phase.id === 'query-agents') {
+      useViewStore.getState().navigate('query-manager');
+    } else {
+      selectPhase(phase.id);
+    }
+  };
+
+  if (collapsed) {
+    return (
+      <div
+        data-tour="pipeline-spine"
+        className="flex h-full shrink-0 flex-col items-center border-r border-ne-line bg-ne-bg1"
+        style={{ width: SPINE_COLLAPSED }}
+      >
+        <div className="flex shrink-0 justify-center pb-2 pt-4">
+          <CollapseToggle collapsed onToggle={toggleCollapsed} />
+        </div>
+        <div className="min-h-0 w-full flex-1 overflow-y-auto pb-4">
+          {STAGES.map((stage) => (
+            <div key={stage.label} className="pt-2.5" title={stage.label}>
+              {stage.phaseIds.map((id) => {
+                const phase = phaseById.get(id);
+                if (!phase) return null;
+                return (
+                  <PhaseDot
+                    key={id}
+                    phase={phase}
+                    isSelected={selectedPhaseId === phase.id}
+                    onSelect={() => onSelectPhase(phase)}
+                  />
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       data-tour="pipeline-spine"
@@ -126,10 +217,13 @@ export function PipelineSpine(): React.ReactElement {
       style={{ width }}
     >
       {/* Book header */}
-      <div className="shrink-0 border-b border-ne-line-soft px-4 pb-3.5 pt-4">
+      <div className="relative shrink-0 border-b border-ne-line-soft px-4 pb-3.5 pt-4">
+        <div className="absolute right-3 top-3">
+          <CollapseToggle collapsed={false} onToggle={toggleCollapsed} />
+        </div>
         {book ? (
           <>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 pr-7">
               {coverError ? (
                 <div className="flex h-[57px] w-[38px] shrink-0 items-center justify-center rounded border border-ne-line bg-ne-bg2 text-ne-ink-faint">
                   <Icon name="manuscript" size={16} />
@@ -197,13 +291,7 @@ export function PipelineSpine(): React.ReactElement {
                     <PhaseNode
                       phase={phase}
                       isSelected={selectedPhaseId === phase.id}
-                      onSelect={() => {
-                        if (phase.id === 'query-agents') {
-                          useViewStore.getState().navigate('query-manager');
-                        } else {
-                          selectPhase(phase.id);
-                        }
-                      }}
+                      onSelect={() => onSelectPhase(phase)}
                     />
                     {currentPhase?.id === phase.id && activeSlug && (
                       <CurrentPhaseCard phase={phase} activeSlug={activeSlug} />
