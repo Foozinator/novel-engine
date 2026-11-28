@@ -2,7 +2,7 @@
 
 *Novel Engine Spur is a fork of Novel Engine by John Paul Ruf.*
 
-> Last updated: 2026-11-25
+> Last updated: 2026-11-28
 
 ---
 
@@ -420,6 +420,7 @@ author-profile.md       # Your author profile
 novel-engine.db         # Chats, token usage, version history
 settings.json           # App settings
 backups/                # Database copies taken before upgrades
+logs/                   # Notes from the app's pipeline-history check
 USER_GUIDE.md           # This guide (replaced on every launch)
 instance.lock           # Held while the app is running
 ```
@@ -431,6 +432,8 @@ There are also a few small files the app manages itself, such as `active-book.js
 ```
 books/my-novel/
   about.json              # Title, author, status, cover, plus Spark's genre and comp details
+  pipeline-state.json     # Confirmed phases (the app's)
+  pipeline-log.jsonl      # Pipeline history (the app's; don't edit)
   source/
     pitch.md              # Spark
     scene-outline.md      # Verity
@@ -458,6 +461,8 @@ books/my-novel/
 ```
 
 Agents keep working notes in `source/.scratch/` while a long read is running.
+
+The app starts `pipeline-log.jsonl` the first time you open a book and adds to it each time a phase moves. For now it only records; the pipeline still follows `pipeline-state.json`. Older versions of the app ignore it. If you delete it, the app starts it again from the book's current position.
 
 ### Customizing Agent Prompts
 

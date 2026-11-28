@@ -264,6 +264,10 @@ export function makeFakeFs(
       files.set(`${slug}/${path}`, content);
       writes.push({ bookSlug: slug, path, content });
     },
+    appendFile: async (slug: string, path: string, content: string) => {
+      const key = `${slug}/${path}`;
+      files.set(key, (files.get(key) ?? '') + content);
+    },
     fileExists: async (slug: string, path: string) => files.has(`${slug}/${path}`),
     deleteFile: async (slug: string, path: string) => {
       files.delete(`${slug}/${path}`);

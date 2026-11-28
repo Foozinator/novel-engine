@@ -1,6 +1,6 @@
 # Infrastructure — Implementations
 
-> Last updated: 2026-11-22 (#79)
+> Last updated: 2026-11-28 (#87)
 
 Everything in `src/infrastructure/`. Implements domain interfaces using Node.js builtins and npm packages.
 
@@ -117,6 +117,7 @@ Key behavior:
 - `archiveBook`/`unarchiveBook` moves books to/from `_archived/` subdirectory; `unarchiveBook` removes the book's `.claude/` folder
 - Every book-relative path goes through `resolveBookPath()` (read/write/delete/rename/exists/list, covers, word counts, manifest). Pitch slugs and draft IDs go through `safeSegment()`. A `coverImage` outside the book reads as no cover
 - `writeFile` refuses to overwrite a binary file (#83). Paths that pass `isTextFilePath()` skip the check. For any other path it reads the first 8192 bytes of the existing file; a NUL or invalid UTF-8 throws `Not a text file: … was left unchanged`. Missing files are created as before
+- `appendFile` (#87) appends with `fs.appendFile` after the same `resolveBookPath()` and binary checks as `writeFile`; it creates the file and its folders. Used for the run log (`pipeline-log.jsonl`)
 - `listDirectory` file entries carry `size` (bytes) from the `stat` the tree walk already makes
 - `listDirectory` entry paths use `/` on every platform (`buildFileTree` passes them through `toPortablePath()`), so they match the `chapters/<slug>/draft.md` keys in version history
 - Shelved pitches stored in `books/_pitches/{slug}.md` with YAML front matter

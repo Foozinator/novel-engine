@@ -31,6 +31,7 @@ describe('book file operations stay inside the book', () => {
   it('refuses relative paths that leave the book', async () => {
     await expect(lib.service.readFile('my-book', '../../outside.txt')).rejects.toThrow(/outside book/);
     await expect(lib.service.writeFile('my-book', '../../outside.txt', 'x')).rejects.toThrow(/outside book/);
+    await expect(lib.service.appendFile('my-book', '../../outside.txt', 'x')).rejects.toThrow(/outside book/);
     await expect(lib.service.deletePath('my-book', '../..')).rejects.toThrow(/outside book/);
     await expect(lib.service.fileExists('my-book', '../../outside.txt')).rejects.toThrow(/outside book/);
     await expect(lib.service.renameFile('my-book', 'notes.md', '../../moved.md')).rejects.toThrow(/outside book/);

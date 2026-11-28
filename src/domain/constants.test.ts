@@ -31,11 +31,15 @@ import {
   DEFAULT_SETTINGS,
   FILE_MANIFEST_KEYS,
   HELPER_SLUG,
+  LEGACY_PHASE_SLOTS,
   MAX_CONTEXT_TOKENS,
   MODEL_PRICING,
   PHASE_OUTPUT_CONTENT_MARKERS,
   PHASE_OUTPUT_FILES,
   PHASE_STARTER_ACTIONS,
+  PHASE_TYPES,
+  PASS_TEMPLATES,
+  phaseTypeOutputs,
   PIPELINE_PHASES,
   PITCH_ROOM_SLUG,
   PROSE_FONTS,
@@ -107,6 +111,36 @@ describe('AGENT_QUICK_ACTIONS', () => {
         expect(action.label.length).toBeGreaterThan(0);
         expect(action.prompt.length).toBeGreaterThan(0);
       }
+    }
+  });
+});
+
+describe('run log plan (#87)', () => {
+  it('the default plan has one run per legacy phase, in order, with the same agent and outputs', () => {
+    expect(LEGACY_PHASE_SLOTS.map((s) => s.legacyPhase)).toEqual(PHASE_IDS);
+    for (const slot of LEGACY_PHASE_SLOTS) {
+      const phase = PIPELINE_PHASES.find((p) => p.id === slot.legacyPhase)!;
+      expect(PHASE_TYPES[slot.type].agent, slot.legacyPhase).toBe(phase.agent);
+      expect(PASS_TEMPLATES[slot.passKind].types, slot.legacyPhase).toContain(slot.type);
+      const extractable = PHASE_OUTPUT_FILES[slot.legacyPhase];
+      if (extractable) expect(PHASE_TYPES[slot.type].outputs, slot.legacyPhase).toEqual(extractable);
+    }
+    expect(LEGACY_PHASE_SLOTS.map((s) => s.type)).toEqual([
+      'pitch', 'scaffold', 'draft', 'read', 'assessment',
+      'revision-plan', 'revision', 'read', 'assessment',
+      'copy-edit', 'fix-plan', 'mechanical-fixes', 'build', 'publish', 'query-agents',
+    ]);
+  });
+
+  it('every phase type is keyed by its own name and expands {slug} in its outputs', () => {
+    for (const [key, def] of Object.entries(PHASE_TYPES)) expect(def.type).toBe(key);
+    expect(phaseTypeOutputs('build', 'my-book')).toEqual(['dist/my-book.md']);
+    expect(phaseTypeOutputs('draft', 'my-book')).toEqual([]);
+  });
+
+  it('only action-gated types have no outputs', () => {
+    for (const def of Object.values(PHASE_TYPES)) {
+      expect(def.outputs.length === 0, def.type).toBe(def.gate === 'action');
     }
   });
 });

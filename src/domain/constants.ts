@@ -3,7 +3,7 @@
  * (value imports, not type-only). Permitted for pure data constants
  * with zero Node.js dependencies. See docs/architecture/ARCHITECTURE.md.
  */
-import type { AgentName, AgentMeta, AuditSeverity, BookTitleConflict, CreativeAgentName, PipelinePhaseId, AppSettings, ProseFontId, ProviderId, ProviderConfig, ModelInfo } from './types';
+import type { AgentName, AgentMeta, AuditSeverity, BookTitleConflict, CreativeAgentName, PipelinePhaseId, AppSettings, ProseFontId, ProviderId, ProviderConfig, ModelInfo, PassKind, PhaseType, PhaseTypeDef } from './types';
 
 // === Product Identity ===
 
@@ -146,6 +146,72 @@ export const PIPELINE_PHASES: { id: PipelinePhaseId; label: string; agent: Agent
   { id: 'publish',            label: 'Publish & Audit',       agent: 'Quill',      description: 'Audit outputs and prepare metadata' },
   { id: 'query-agents',       label: 'Query Agents',           agent: 'Quill',      description: 'Research agents and publishers, generate query letters, track submissions' },
 ];
+
+// === Run log (#87) ===
+
+/** The per-book run log: JSON Lines, one event per line, only ever appended to. */
+export const RUN_LOG_FILE = 'pipeline-log.jsonl';
+
+/** The legacy confirmation state (`{ confirmedPhases }`). The run log migrates from it. */
+export const PIPELINE_STATE_FILE = 'pipeline-state.json';
+
+const PLAN_OUTPUTS = ['source/project-tasks.md', 'source/revision-prompts.md'];
+
+/**
+ * Every phase type. Types that had a one-to-one phase ID keep it; first and
+ * second read become `read`, first and second assessment `assessment`.
+ */
+export const PHASE_TYPES: Record<PhaseType, PhaseTypeDef> = {
+  'pitch':            { type: 'pitch',            label: 'Story Pitch',           agent: 'Spark',      outputs: ['source/pitch.md'],            gate: 'files',  minWords: 50,  rewrites: false },
+  'scaffold':         { type: 'scaffold',         label: 'Story Scaffold',        agent: 'Verity',     outputs: ['source/scene-outline.md'],    gate: 'files',  minWords: 200, rewrites: false },
+  'draft':            { type: 'draft',            label: 'Draft',                 agent: 'Verity',     outputs: [],                             gate: 'action', minWords: 0,   rewrites: true },
+  'read':             { type: 'read',             label: 'Read',                  agent: 'Ghostlight', outputs: ['source/reader-report.md'],    gate: 'files',  minWords: 50,  rewrites: false },
+  'assessment':       { type: 'assessment',       label: 'Structural Assessment', agent: 'Lumen',      outputs: ['source/dev-report.md'],       gate: 'files',  minWords: 50,  rewrites: false },
+  'revision-plan':    { type: 'revision-plan',    label: 'Revision Plan',         agent: 'Forge',      outputs: PLAN_OUTPUTS,                   gate: 'files',  minWords: 50,  rewrites: false },
+  'revision':         { type: 'revision',         label: 'Revision',              agent: 'Verity',     outputs: [],                             gate: 'action', minWords: 0,   rewrites: true },
+  'copy-edit':        { type: 'copy-edit',        label: 'Copy Edit',             agent: 'Sable',      outputs: ['source/audit-report.md'],     gate: 'files',  minWords: 50,  rewrites: false },
+  'fix-plan':         { type: 'fix-plan',         label: 'Fix Planning',          agent: 'Forge',      outputs: PLAN_OUTPUTS,                   gate: 'files',  minWords: 50,  rewrites: false },
+  'mechanical-fixes': { type: 'mechanical-fixes', label: 'Mechanical Fixes',      agent: 'Verity',     outputs: [],                             gate: 'action', minWords: 0,   rewrites: true },
+  'build':            { type: 'build',            label: 'Build',                 agent: null,         outputs: ['dist/{slug}.md'],             gate: 'files',  minWords: 0,   rewrites: false },
+  'publish':          { type: 'publish',          label: 'Publish & Audit',       agent: 'Quill',      outputs: ['source/metadata.md'],         gate: 'files',  minWords: 50,  rewrites: false },
+  'query-agents':     { type: 'query-agents',     label: 'Query Agents',          agent: 'Quill',      outputs: ['source/query-tracker.md'],    gate: 'files',  minWords: 50,  rewrites: false },
+  'readiness':        { type: 'readiness',        label: 'Readiness Check',       agent: 'Lumen',      outputs: ['source/readiness-report.md'], gate: 'files',  minWords: 50,  rewrites: false },
+};
+
+/** A type's live output paths for one book. */
+export function phaseTypeOutputs(type: PhaseType, bookSlug: string): string[] {
+  return PHASE_TYPES[type].outputs.map((p) => p.replace('{slug}', bookSlug));
+}
+
+/** The runs each kind of pass adds, in order. */
+export const PASS_TEMPLATES: Record<PassKind, { label: string; types: PhaseType[] }> = {
+  'conceive':  { label: 'Conceive',        types: ['pitch', 'scaffold'] },
+  'draft':     { label: 'Draft',           types: ['draft'] },
+  'assess':    { label: 'Assess',          types: ['read', 'assessment'] },
+  'revision':  { label: 'Revision pass',   types: ['revision-plan', 'revision', 'read', 'assessment'] },
+  'copy-edit': { label: 'Copy edit pass',  types: ['copy-edit', 'fix-plan', 'mechanical-fixes'] },
+  'ship':      { label: 'Ship',            types: ['build', 'publish', 'query-agents'] },
+  'read':      { label: 'Read',            types: ['read'] },
+  'readiness': { label: 'Readiness check', types: ['readiness'] },
+};
+
+/** A new book's plan. Its 15 runs line up one-to-one with PIPELINE_PHASES. */
+export const DEFAULT_PLAN: PassKind[] = ['conceive', 'draft', 'assess', 'revision', 'copy-edit', 'ship'];
+
+/**
+ * Legacy phase `i` (PIPELINE_PHASES[i]) is run `i` of the default plan.
+ * Used by the migration, and to keep conversations tagged with a legacy
+ * phase ID attached to the run that replaced it.
+ */
+export const LEGACY_PHASE_SLOTS: {
+  legacyPhase: PipelinePhaseId;
+  type: PhaseType;
+  passKind: PassKind;
+  /** Index of the pass in DEFAULT_PLAN. */
+  passIndex: number;
+}[] = DEFAULT_PLAN.flatMap((passKind, passIndex) =>
+  PASS_TEMPLATES[passKind].types.map((type) => ({ type, passKind, passIndex })),
+).map((slot, i) => ({ ...slot, legacyPhase: PIPELINE_PHASES[i].id }));
 
 /**
  * Maps pipeline phases to the output file(s) each agent is expected to write.

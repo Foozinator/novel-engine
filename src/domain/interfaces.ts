@@ -40,8 +40,13 @@ import type {
   ModelInfo,
   MotifLedger,
   PersistedStreamEvent,
+  PhaseStatus,
   PipelinePhase,
   PipelinePhaseId,
+  Run,
+  RunEventBody,
+  RunLog,
+  RunLogMigration,
   PitchDraft,
   ProgressStage,
   ProjectManifest,
@@ -272,6 +277,8 @@ export interface IFileSystemService {
   // File operations
   readFile(bookSlug: string, relativePath: string): Promise<string>;
   writeFile(bookSlug: string, relativePath: string, content: string): Promise<void>;
+  /** Append to a text file, creating it and its folders when missing. Same path and binary checks as writeFile. */
+  appendFile(bookSlug: string, relativePath: string, content: string): Promise<void>;
   deleteFile(bookSlug: string, relativePath: string): Promise<void>;
   deletePath(bookSlug: string, relativePath: string): Promise<void>;
   renameFile(bookSlug: string, oldPath: string, newPath: string): Promise<void>;
@@ -558,6 +565,48 @@ export interface IPipelineService {
    * with "Advance →" or delete them manually to redo the phase.
    */
   revertPhase(bookSlug: string, phaseId: PipelinePhaseId): Promise<void>;
+}
+
+/**
+ * The per-book run log (`pipeline-log.jsonl`, #87). Reads validate every
+ * event and drop the ones that don't fit; writes only ever append, one
+ * book at a time.
+ */
+export interface IRunLogService {
+  /** Fold the book's log into its current plan. A missing log is empty. */
+  load(bookSlug: string): Promise<RunLog>;
+
+  /**
+   * Append events under the book's lock. `plan` sees the log as it is and
+   * returns the events to add (none: nothing is written). Events that
+   * would be dropped on read throw, and nothing is written.
+   */
+  update(bookSlug: string, plan: (log: RunLog) => Promise<RunEventBody[]>): Promise<RunLog>;
+
+  /**
+   * Build an epoch from the legacy pipeline: one planned run per legacy
+   * phase, then the state each phase is in, with finished runs given the
+   * content they produced. Runs when the log is missing or no longer
+   * matches pipeline-state.json; otherwise 'up-to-date'. Writes the log
+   * and nothing else.
+   */
+  migrate(bookSlug: string, legacy: PipelinePhase[]): Promise<RunLogMigration>;
+
+  /** sha256 of pipeline-state.json, or null when it doesn't exist. */
+  legacyStateHash(bookSlug: string): Promise<string | null>;
+
+  /**
+   * An active run is ready to confirm. Files gate: every output exists with
+   * enough words and one differs from the hash recorded when the run
+   * started. Action gate: only a migrated run that was already waiting.
+   */
+  isReady(bookSlug: string, run: Run): Promise<boolean>;
+
+  /** The legacy view (status per legacy phase), recomputed from the log and the files. */
+  projectLegacy(bookSlug: string, log: RunLog): Promise<Partial<Record<PipelinePhaseId, PhaseStatus>>>;
+
+  /** Events that record `runId` as done with its outputs as they are now, then start the next run. */
+  doneEvents(bookSlug: string, log: RunLog, runId: string): Promise<RunEventBody[]>;
 }
 
 export interface IBuildService {

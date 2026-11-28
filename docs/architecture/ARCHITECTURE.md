@@ -1,6 +1,6 @@
 # Architecture — Novel Engine Spur
 
-> Last updated: 2026-11-25 (#72)
+> Last updated: 2026-11-28 (#87)
 
 Electron + React 18 + TypeScript 5 + Tailwind v4 + Zustand + better-sqlite3 + Claude Code CLI + Codex CLI + Ollama CLI + Pandoc
 
@@ -97,6 +97,9 @@ src/
 │   ├── ChatService.ts                       # Full send→stream→save orchestration (via CLI)
 │   ├── ChapterValidator.ts                  # Validates/corrects chapter file placement
 │   ├── PipelineService.ts                   # Phase detection from file existence + book status
+│   ├── ShadowPipelineService.ts             # Wraps PipelineService: run log migration, mirroring and check (#87 shadow mode)
+│   ├── RunLogService.ts                     # Run log I/O: per-book appends, migration, readiness, legacy projection (#87)
+│   ├── runLog.ts                            # Run log format: validate and fold pipeline-log.jsonl (#87)
 │   ├── archives.ts                          # Versioned -vN archives of reports and plans (#81)
 │   ├── BuildService.ts                      # Pandoc execution for DOCX/EPUB/PDF
 │   ├── UsageService.ts                      # Token tracking, cost estimation
@@ -138,6 +141,7 @@ src/
 │   ├── dataFolderDialogs.ts                 # Data-folder dialogs through HostAdapter: startup checks, change/reset from Settings
 │   ├── dataFolderLock.ts                    # acquireFolderLockOrAsk(): takes the folder lock; Quit / Use another folder dialog
 │   ├── notifications.ts                     # Notification manager (HostAdapter.notify)
+│   ├── shadowLog.ts                         # Run log shadow reports → console + {userData}/logs/run-log-shadow.jsonl (#87)
 │   ├── appUrl.ts                            # createAppUrlMatcher(): the app's own page, for the window lock and IPC sender check
 │   └── ipc/
 │       ├── router.ts                        # ChannelRouter: transport-neutral channel → handler table
@@ -239,8 +243,14 @@ ChatService
 ├── UsageService
 └── ChapterValidator
 
-PipelineService
-└── IFileSystemService (FileSystemService)
+IPipelineService (ShadowPipelineService, #87 shadow mode)
+├── IPipelineService (PipelineService)
+│   └── IFileSystemService (FileSystemService)
+├── IRunLogService (RunLogService)
+│   └── IFileSystemService (FileSystemService)
+└── report: makeShadowReporter(userDataPath).report   # src/main/shadowLog.ts
+
+Active-book changes (startup and `onActiveBookChanged`) call `bookWatcher.watch(slug)` and `pipeline.openBook(slug)`.
 
 BuildService
 ├── IFileSystemService (FileSystemService)
@@ -396,6 +406,8 @@ The fork ships as **Novel Engine Spur** (`APP_NAME` in `src/domain/constants.ts`
 ├── books/
 │   └── {slug}/
 │       ├── about.json              # BookMeta
+│       ├── pipeline-state.json     # Legacy confirmed phases (PipelineService)
+│       ├── pipeline-log.jsonl      # Run log, append-only (#87; shadow mode, older builds ignore it)
 │       ├── source/                 # Agent output files
 │       │   ├── pitch.md
 │       │   ├── voice-profile.md
@@ -421,6 +433,7 @@ The fork ships as **Novel Engine Spur** (`APP_NAME` in `src/domain/constants.ts`
 ├── data-location.json             # Pointer to the data folder (default folder only)
 ├── author-profile.md              # Global author profile
 ├── active-book.json               # { "book": "slug-name" }
+├── logs/run-log-shadow.jsonl      # Run log shadow reports (#87)
 ├── settings.json                  # AppSettings
 └── novel-engine.db                # SQLite database
 ```

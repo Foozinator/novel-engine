@@ -4,6 +4,45 @@ All notable changes to Novel Engine Spur are documented here.
 
 ---
 
+## [2026-11-28] — Run log in shadow mode (#87, PR 1)
+
+### Summary
+
+First step of #87 (any number of passes): each book gets an append-only run log, `pipeline-log.jsonl`, in the model chosen in #56. Phase types replace phase IDs, and the 15 phases are the default plan of six passes. The pipeline still runs on `PipelineService` and `pipeline-state.json`. A wrapper, `ShadowPipelineService`, migrates a book's log the first time the book is opened. It then records every Advance, Done, Complete Revision and Revert in the log, and on each detection recomputes the legacy view from the log and compares the two. Differences, dropped log lines and errors go to the console and to `{dataFolder}/logs/run-log-shadow.jsonl`, and repeat only when they change. Completion in the log compares output hashes with those recorded when a run started, not word counts. The migration writes only the log, so an older build opens the book where it was. No UI change and no new IPC channels.
+
+### Added
+- `src/application/runLog.ts` — The log format: `parseRunLog` validates every line and folds it into a plan. A line is dropped and listed in `issues` when it is unreadable, malformed, out of sequence, names an unknown run, reuses a run ID, makes an illegal transition, or names paths its run's type doesn't write. Also `currentRun`, `projectStatuses`, `stampEvents`, `reopenEvents` and hash and word-count helpers.
+- `src/application/RunLogService.ts` — Implements `IRunLogService`. Appends one book at a time and checks new events before writing them. A torn last line is left in place and the next append starts on a new line. Also: migration with output attribution across `-vN` archives, `isReady` (baseline hashes), `projectLegacy` and `doneEvents`.
+- `src/application/ShadowPipelineService.ts` — Wraps `IPipelineService`: migration on open, mirroring, the check and reports. Legacy results and errors pass through unchanged.
+- `src/main/shadowLog.ts` — `makeShadowReporter(userDataPath)`: writes reports to the console and to `logs/run-log-shadow.jsonl`, appending in order.
+- `src/test/pipelineFixtures.ts` — Legacy fixture books built with the real `FileSystemService`, `PipelineService` and archives: `legacyBookAt(k, variant)`, `legacyWork`, `legacyConfirm`, `tree`, `diffTrees`.
+- `src/application/runLog.test.ts`, `src/application/RunLogService.test.ts`, `src/application/ShadowPipelineService.test.ts`, `src/main/shadowLog.test.ts` — Format and validation; migration of fixture books at each of the 15 phases, with and without the phase's work, plus a finished book. For each one: only the log is added, an older build sees the same pipeline, the log shows the same position, a second migration does nothing, and outputs are attributed to the phase that wrote them. Each is then driven to the end in shadow mode with no differences. Edge cases: no or unreadable state file, several archives per report, reverted books, re-migration, deleting the log, a torn line, the same-word-count report.
+
+### Changed
+- `src/domain/types.ts` — Run log types: `PhaseType`, `RunGate`, `PhaseTypeDef`, `PassKind`, `RunState`, `RunOrigin`, `RunOutput`, `RunBaseline`, `DraftChapterRef`, `RunEventBody`, `RunEvent`, `RunEventType`, `Run`, `RunLogIssue`, `RunLog` and `RunLogMigration`.
+- `src/domain/constants.ts` — `RUN_LOG_FILE`, `PIPELINE_STATE_FILE`, `PHASE_TYPES`, `phaseTypeOutputs()`, `PASS_TEMPLATES`, `DEFAULT_PLAN`, `LEGACY_PHASE_SLOTS`.
+- `src/domain/interfaces.ts` — `IFileSystemService.appendFile`; new `IRunLogService`.
+- `src/infrastructure/filesystem/FileSystemService.ts` — `appendFile`: same path containment and binary check as `writeFile`; creates the file and its folders.
+- `src/main/composition.ts` — `pipeline` is `ShadowPipelineService(PipelineService, RunLogService, shadow reporter)`. Opening a book (at startup and on every active-book change) calls `pipeline.openBook(slug)` as well as starting the watcher.
+- `src/test/fakes.ts` — `appendFile` on the fake filesystem.
+- `src/domain/constants.test.ts`, `src/infrastructure/filesystem/FileSystemService.binary.test.ts`, `src/infrastructure/filesystem/FileSystemService.paths.test.ts` — The default plan lines up with `PIPELINE_PHASES`; `appendFile` checks.
+- `docs/architecture/DOMAIN.md`, `docs/architecture/APPLICATION.md`, `docs/architecture/INFRASTRUCTURE.md`, `docs/architecture/ARCHITECTURE.md` — Run log types, constants and interfaces; the three new application modules and the known differences the check reports; `appendFile`; source tree, dependency graph and folder layout.
+- `docs/USER_GUIDE.md` — §17: `pipeline-state.json`, `pipeline-log.jsonl` and `logs/` in the folder listings, and what the log does for now.
+
+### Architecture Impact
+- New interface: `IRunLogService` (implemented by `RunLogService`).
+- New dependency: `ShadowPipelineService` → `IPipelineService` (`PipelineService`) + `IRunLogService` (`RunLogService`) + the report sink from `src/main/shadowLog.ts`. `IpcServices.pipeline` and `DashboardService` now receive the wrapper.
+- New `IFileSystemService` method: `appendFile`.
+- New book file: `pipeline-log.jsonl`. New data-folder file: `logs/run-log-shadow.jsonl`.
+- No new IPC channels; no renderer change.
+
+### Migration Notes
+- On first open in this build, each book gets `pipeline-log.jsonl`. Nothing else in the book changes. Older builds ignore the file. Deleting it is safe: the next open rebuilds it.
+- When `pipeline-state.json` changes outside this build (an older build was used), the next detection adds a new epoch to the log. Earlier lines stay.
+- No database change.
+
+---
+
 ## [2026-11-27] — Lumen's pipeline assessment runs all eight lenses (#115)
 
 ### Summary
