@@ -30,6 +30,30 @@ All notable changes to Novel Engine Spur are documented here.
 
 ---
 
+## [2026-11-27] — Source generation verifies the files it writes (#82)
+
+### Summary
+
+`SourceGenerationService` reported every step done when the provider call returned, even if no file was written. It also ran under the interactive "ask for approval before writing" rule, Spark's read guidance told it to skip `chapters/` while its prompt said to read them all, Spark had 5 turns, and the ledger prompt asked for flagged phrases, which turned the author's own repeated phrases into bans. A step now succeeds only when its expected files were written or changed during that step and are valid. Unattended runs get their own write and read instructions and 80 turns. Failed steps can be retried from the import wizard.
+
+### Added
+- `src/application/SourceGenerationService.ts` — `SOURCE_GENERATION_MAX_TURNS`; per-step `outputs`, before/after file check, ledger validation, and `flaggedPhrases` demotion to an `auditLog` observation; `stepIndexes` to run a subset.
+- `src/renderer/components/Import/ImportWizard.tsx` — failed-step errors and a "Retry failed steps" button.
+
+### Changed
+- `src/application/ContextBuilder.ts` — `build({ unattended })` replaces the approval-first write rules and read guidance with unattended instructions.
+- `src/domain/interfaces.ts`, `src/main/ipc/handlers.ts`, `src/preload/index.ts` — `generateSources(bookSlug, stepIndexes?)`.
+- `src/renderer/stores/importStore.ts` — `retryFailedGeneration()`, `runGeneration()`; a retry's `started` event merges into existing steps.
+- `src/application/SourceGenerationService.test.ts`, `src/renderer/stores/importStore.test.ts` — tests for a missing file, unchanged file, invalid ledger, retry, flagged-phrase demotion and the store retry.
+
+### Architecture Impact
+- IPC channel `import:generateSources` takes an optional second argument `stepIndexes`.
+
+### Migration Notes
+- None. A guarded run on a throwaway 4-chapter manuscript (fork data folder in a scratch dir, Claude CLI guard on) wrote all four documents (five files), and the ledger had no flagged phrases.
+
+---
+
 ## [2026-11-25] — User guide rewritten for the current UI; docs rule covers it (#67, step 1)
 
 ### Summary

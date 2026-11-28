@@ -307,6 +307,7 @@ File: `stores/importStore.ts`
 | `renameChapter(index, title)` | Renames a detected chapter |
 | `mergeWithNext(index)` | Merges chapter with the following one |
 | `removeChapter(index)` | Removes a detected chapter |
+| `retryFailedGeneration()` | Reruns only the steps in `error`; other steps keep their status |
 | `commitImport()` | Ignored while `importing`. Sets `importing`, re-checks the title (back to `preview` with `titleConflict` when taken), commits via bridge, transitions to `success` |
 | `startGeneration()` | Starts source doc generation, subscribes to progress events |
 | `reset()` | Cleans up generation listener, resets to idle |

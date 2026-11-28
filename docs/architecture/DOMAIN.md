@@ -603,7 +603,7 @@ Implemented by: `SourceGenerationService` (`src/application/`)
 
 | Method | Signature | Returns |
 |--------|-----------|---------|
-| `generate` | `(params: { bookSlug, onProgress, onStreamEvent }) => Promise<void>` | Runs 4 sequential agent calls (Spark pitch, Verity outline+bible, Verity voice, Verity motif) |
+| `generate` | `(params: { bookSlug, onProgress, onStreamEvent, stepIndexes? }) => Promise<void>` | Runs 4 sequential agent calls (Spark pitch, Verity outline+bible, Verity voice, Verity motif) |
 
 ### ISeriesService
 

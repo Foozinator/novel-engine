@@ -25,6 +25,8 @@ type ImportState = {
   removeChapter: (index: number) => void;
   commitImport: () => Promise<void>;
   startGeneration: () => Promise<void>;
+  retryFailedGeneration: () => Promise<void>;
+  runGeneration: (stepIndexes?: number[]) => Promise<void>;
   reset: () => void;
 };
 
@@ -157,15 +159,29 @@ export const useImportStore = create<ImportState>((set, get) => ({
     }
   },
 
-  startGeneration: async () => {
-    const { result } = get();
-    if (!result) return;
+  startGeneration: () => get().runGeneration(),
 
-    set({ step: 'generating', generationSteps: [] });
+  retryFailedGeneration: () => {
+    const failed = get().generationSteps.filter((s) => s.status === 'error').map((s) => s.index);
+    return get().runGeneration(failed);
+  },
+
+  runGeneration: async (stepIndexes?: number[]) => {
+    const { result, generationCleanup } = get();
+    if (!result) return;
+    if (generationCleanup) generationCleanup();
+
+    set({ step: 'generating', ...(stepIndexes ? {} : { generationSteps: [] }) });
 
     const cleanup = window.novelEngine.import.onGenerationProgress((event) => {
       if (event.type === 'started') {
-        set({ generationSteps: event.steps });
+        // A retry announces only its own steps; keep the others' results
+        set((s) => ({
+          generationSteps: [
+            ...s.generationSteps.filter((old) => !event.steps.some((n) => n.index === old.index)),
+            ...event.steps,
+          ].sort((a, b) => a.index - b.index),
+        }));
       } else if (event.type === 'step-started') {
         set((s) => ({
           generationSteps: s.generationSteps.map((step) =>
@@ -194,7 +210,7 @@ export const useImportStore = create<ImportState>((set, get) => ({
     set({ generationCleanup: cleanup });
 
     try {
-      await window.novelEngine.import.generateSources(result.bookSlug);
+      await window.novelEngine.import.generateSources(result.bookSlug, stepIndexes);
     } catch (err: unknown) {
       set({ step: 'error', error: err instanceof Error ? err.message : String(err) });
     }
