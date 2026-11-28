@@ -4,6 +4,28 @@ All notable changes to Novel Engine Spur are documented here.
 
 ---
 
+## [2026-11-27] — Lumen's pipeline assessment runs all eight lenses (#115)
+
+### Summary
+
+The pipeline's Lumen steps had drifted from `agents/LUMEN.md` since upstream's multi-call change (f9b438c). They ran lenses 1–5, then a "Lens 6: Prose & Craft" and a "Lens 7: Thematic Integration" that LUMEN.md doesn't define, and asked the synthesis for "all 7 lens sections". Opening & Closing never ran, and pipeline assessments never rebuilt `flaggedPhrases`. The steps now use LUMEN.md's numbers and names. Lens 8 tallies repeated phrases from the read trackers and rebuilds `flaggedPhrases` as LUMEN.md describes; if #114 replaces the ledger with counts, that step changes with it.
+
+### Added
+- `src/domain/constants.test.ts` — "Lumen lens coverage": reads every `### Lens N: Name` heading in `agents/LUMEN.md` and checks the analysis steps and the synthesis use the same set.
+
+### Changed
+- `src/domain/constants.ts` — `LUMEN_MULTI_CALL_STEPS`: `lumen-lenses-6-7` replaced by `lumen-lens-6` (Thematic Coherence), `lumen-lens-7` (Opening & Closing, reads first and last chapters) and `lumen-lens-8` (Phrase & Pattern Audit). Lens 5 named "Scene Necessity Audit". Read steps track a "Repeated phrases and patterns" field. Synthesis reads five scratch files and asks for all 8 lens sections. Lumen quick actions (`Full assessment`, granular passes, `Synthesize report`) match.
+- `src/application/MultiCallOrchestrator.ts` — `expandDynamicSteps()` fills `{{FIRST_LAST_CHAPTERS}}` in static steps, and replaces every `{{READ_TRACKER_FILES}}` occurrence.
+- `docs/architecture/APPLICATION.md` — Lumen step list.
+
+### Architecture Impact
+- New step placeholder: `{{FIRST_LAST_CHAPTERS}}`. No new services, channels or stores.
+
+### Migration Notes
+- None. Scratch files `lumen-lenses-6-7.md` from earlier runs are ignored.
+
+---
+
 ## [2026-11-25] — User guide rewritten for the current UI; docs rule covers it (#67, step 1)
 
 ### Summary

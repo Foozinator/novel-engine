@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { CreativeAgentName } from '@domain/types';
 import {
@@ -381,6 +383,29 @@ describe('AGENT_MULTI_CALL_STEPS', () => {
         expect(step.promptTemplate).toContain('{{CHAPTER_LIST}}');
       }
     }
+  });
+});
+
+describe('Lumen lens coverage', () => {
+  const lumenMd = readFileSync(resolve(__dirname, '../../agents/LUMEN.md'), 'utf8');
+  const lenses = [...lumenMd.matchAll(/^### Lens (\d+): (.+)$/gm)].map((m) => `Lens ${m[1]}: ${m[2].trim()}`);
+  const steps = AGENT_MULTI_CALL_STEPS.Lumen ?? [];
+  const analysis = steps.filter((s) => !s.isSynthesis && !s.dynamic).map((s) => s.promptTemplate).join('\n');
+  const synthesis = steps.find((s) => s.isSynthesis)!.promptTemplate;
+
+  it('LUMEN.md defines lenses', () => {
+    expect(lenses.length).toBeGreaterThan(0);
+  });
+
+  it('every LUMEN.md lens is analyzed by a pipeline step', () => {
+    for (const lens of lenses) expect(analysis, lens).toContain(lens);
+  });
+
+  it('the synthesis step names every LUMEN.md lens and no others', () => {
+    for (const lens of lenses) expect(synthesis, lens).toContain(lens);
+    expect(synthesis).toContain(`All ${lenses.length} lens sections`);
+    const used = new Set([...(analysis + synthesis).matchAll(/Lens \d+: [A-Z][A-Za-z &]+/g)].map((m) => m[0].trim()));
+    for (const u of used) expect(lenses.some((l) => l.startsWith(u) || u.startsWith(l)), u).toBe(true);
   });
 });
 
