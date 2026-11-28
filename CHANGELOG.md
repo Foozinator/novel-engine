@@ -4,6 +4,25 @@ All notable changes to Novel Engine Spur are documented here.
 
 ---
 
+## [2026-11-28] — Forge: reply format and one numbering scheme (#116)
+
+### Summary
+
+A 25-turn Fix Planning session showed Forge's replies were hard to follow. Findings sometimes appeared only in the narration between tool calls. Replies cited numbers defined many messages earlier or only in the file. Its IDs mixed "Task 18" and "Decision 2", (a)/(i) sub-options, "S01" and the reports' own markers, and open Phase 0 decisions got lost across turns. `agents/FORGE.md` now describes the structure to produce. The final message stands on its own. Every numbered item a reply mentions is restated in one line. Every reply ends with **Recorded** / **Needs your answer** / **Next**, with **Still open** while Phase 0 decisions are unanswered. Everything in `project-tasks.md`, decisions included, is "Task N" in the existing `- [ ] **N. Title**` form, options are N.a/N.b, and sessions are "Session N". Lumen's and Sable's IDs appear only in a task's source note. Answered decisions are ticked in the file with an **Answer:** line, so the open list comes from disk. The Revision Queue and `WRANGLER-PARSE.md` need no change. Checked with an 11-turn Fix Planning run on a throwaway book (Opus, with the dev guard): every reply followed the format, and the queue loaded the plan and ticked Session 1's tasks.
+
+### Changed
+- `agents/FORGE.md` — Task Format: source note on every task; Phase 0 tasks list options as N.a/N.b sub-bullets and are ticked with an **Answer:** line when answered. "Task Numbering" became "Numbering — One Scheme": Task N everywhere (decisions included), N.a options, Session N, report IDs only in source notes, stable numbers, and the checkbox line kept machine-readable for the queue. New "Reply Format" section: final message is the answer, restate numbered items, closing **Recorded** / **Needs your answer** / **Still open** / **Next**. **Still open** stays while any decision is open, even when all are asked above, and its count includes the ones asked above. A task's parts are unnumbered sub-bullets. Sable's minor findings and queries are one final-pass task with sub-bullets instead of an unnumbered checklist. Report Mode workflow records each answer in the turn it arrives. The feedback-vs-reports question and the Collaboration Etiquette example no longer use (a)/(b)/(c) or "Decision 2".
+- `agents/prompt-history.json` — Regenerated (`npm run agent-hashes`) with the new `FORGE.md` hash, so unedited installed copies update.
+- `docs/USER_GUIDE.md` — Forge paragraph explains task numbers, lettered options, ticked answers and the reply's closing headings.
+
+### Architecture Impact
+- None — no wiring changes. The `- [ ] **N.` checkbox form that `RevisionQueueService.approveSession()` ticks and the integer task numbers `WRANGLER-PARSE.md` reads are unchanged.
+
+### Migration Notes
+- None. Existing plans keep working. Ticked Phase 0 tasks count as completed in the queue's task progress.
+
+---
+
 ## [2026-11-27] — Lumen's pipeline assessment runs all eight lenses (#115)
 
 ### Summary

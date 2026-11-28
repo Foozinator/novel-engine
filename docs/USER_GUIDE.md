@@ -2,7 +2,7 @@
 
 *Novel Engine Spur is a fork of Novel Engine by John Paul Ruf.*
 
-> Last updated: 2026-11-25
+> Last updated: 2026-11-28
 
 ---
 
@@ -184,7 +184,7 @@ Wrangler works in the background (it reads Forge's plan into revision queue sess
 
 **Sable** audits grammar, consistency and formatting, and keeps the style sheet. Quick actions: *Copy edit*, *Build style sheet*.
 
-**Forge** turns the reports into a phased task list and session prompts for Verity. Quick actions: *Create revision plan*, *Plan copy fixes*, *Plan from my feedback*.
+**Forge** turns the reports into a phased task list and session prompts for Verity. Everything in the list, including the questions it needs you to decide, is a numbered task (Task 1, Task 2…), and a question's options are lettered: answer "2.b". Forge ticks a question in `source/project-tasks.md` once you answer it. Each Forge reply ends with **Recorded**, **Needs your answer** and **Next**, plus **Still open** while questions remain. Quick actions: *Create revision plan*, *Plan copy fixes*, *Plan from my feedback*.
 
 **Quill** prepares the book for publication and querying. Quick actions include *Prepare for publication*, *Generate metadata*, *Query Letter (Traditional)*, *Synopsis (Traditional)*, *Analyze for queries* and *Find agents for this book*.
 
