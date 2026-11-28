@@ -64,8 +64,11 @@ export class ContextBuilder {
     seriesBiblePath?: string;
     maxContextTokens?: number;
     authorEditsSection?: string;
+    /** No human is answering: swap the approval-first write rules and the
+     *  per-role read guidance for instructions that fit unattended runs. */
+    unattended?: boolean;
   }): AssembledContext {
-    const { agentName, agentSystemPrompt, manifest, messages, purposeInstructions, thinkingBudget, authorProfilePath, authorProfileContent, maxContextTokens, authorEditsSection } = params;
+    const { unattended, agentName, agentSystemPrompt, manifest, messages, purposeInstructions, thinkingBudget, authorProfilePath, authorProfileContent, maxContextTokens, authorEditsSection } = params;
     // Agents whose read guidance leaves out the series bible (Ghostlight)
     // get neither its path nor the Series Context section.
     const seriesBiblePath = ContextBuilder.wantsSeriesBible(agentName) ? params.seriesBiblePath : undefined;
@@ -81,7 +84,7 @@ export class ContextBuilder {
     // Only agents whose guidance asks for the profile get it inlined.
     const profileText = ContextBuilder.wantsAuthorProfile(agentName) ? authorProfileContent?.trim() : undefined;
     const authorProfileSection = profileText ? this.buildAuthorProfileSection(profileText) : null;
-    let guidanceSection = this.buildReadGuidance(agentName, (file) => {
+    let guidanceSection = unattended ? null : this.buildReadGuidance(agentName, (file) => {
       if (file !== AUTHOR_PROFILE_FILE || profileText === undefined) return `\`${file}\``;
       return profileText ? `the author profile (included below — don't read it)` : null;
     });
@@ -95,7 +98,7 @@ export class ContextBuilder {
     }
 
     // 3. Build file-writing and tool-use instructions
-    const writeInstructions = this.buildFileWriteInstructions();
+    const writeInstructions = unattended ? this.buildUnattendedWriteInstructions() : this.buildFileWriteInstructions();
     const toolUseInstructions = this.buildToolUseInstructions();
 
     // 4. Assemble full system prompt
@@ -260,6 +263,21 @@ Every turn re-sends the whole conversation, so work in as few turns as you can:
 - Read a file whole, once. Don't page through it in small chunks, and don't re-read a file that's already in this conversation. The Project Files table gives word counts.
 - When you have several changes to make to one file (ledger entries, story-bible items, line fixes), decide all of them first, then make every Edit in a single turn.
 - Don't write scripts to inspect or transform files. Use Read and Grep to inspect, Edit and Write to change.`;
+  }
+
+  /**
+   * Write and read rules for unattended runs (source generation after an
+   * import). Nobody can approve a write, and the task prompt names what to read.
+   */
+  private buildUnattendedWriteInstructions(): string {
+    return `## File Writing (unattended run)
+
+No one is available to answer questions or approve anything. Do not ask for approval. Read what the task needs, including every chapter it names, then **write each requested file directly** with the Write tool and finish. The task is not complete until the files exist. Ignore any earlier instruction to read selectively or to skip \`chapters/\` for this task.
+
+**Rules:**
+- Write complete files to the exact paths the task names
+- Do not modify chapters or any file the task does not name
+`;
   }
 
   /**
