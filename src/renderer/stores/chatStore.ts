@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AgentName, Conversation, ConversationPurpose, Message, PipelinePhaseId, ProgressStage, StreamEvent, StreamSessionRecord, TimestampedToolUse, UsageRecord } from '@domain/types';
+import type { AgentName, Conversation, ConversationPurpose, Message, PipelinePhaseId, ProgressStage, SendMessageParams, StreamEvent, StreamSessionRecord, TimestampedToolUse, UsageRecord } from '@domain/types';
 import { randomRespondingStatus } from '@domain/statusMessages';
 import { createStreamHandler } from './streamHandler';
 import { useBookStore } from './bookStore';
@@ -131,7 +131,7 @@ type ChatState = {
   loadConversations: (bookSlug: string) => Promise<void>;
   createConversation: (agentName: AgentName, bookSlug: string, phase: PipelinePhaseId | null, purpose?: ConversationPurpose) => Promise<void>;
   setActiveConversation: (conversationId: string) => Promise<void>;
-  sendMessage: (content: string, thinkingBudgetOverride?: number) => Promise<void>;
+  sendMessage: (content: string, thinkingBudgetOverride?: number, action?: Pick<SendMessageParams, 'actionLabel' | 'authorNote'>) => Promise<void>;
   deleteConversation: (conversationId: string) => Promise<void>;
 
   // External stream attachment (used by auto-draft, revision queue, etc.)
@@ -230,7 +230,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  sendMessage: async (content: string, thinkingBudgetOverride?: number) => {
+  sendMessage: async (content: string, thinkingBudgetOverride?: number, action?: Pick<SendMessageParams, 'actionLabel' | 'authorNote'>) => {
     const { activeConversation } = get();
     if (!activeConversation) return;
 
@@ -272,6 +272,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         bookSlug,
         thinkingBudgetOverride,
         callId,
+        actionLabel: action?.actionLabel,
+        authorNote: action?.authorNote,
       });
     } catch (error) {
       console.error('Failed to send message:', error);

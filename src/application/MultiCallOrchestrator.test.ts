@@ -56,9 +56,10 @@ function makeOrchestrator(fsFake: FakeFileSystem, seriesBiblePath: string | null
   );
 }
 
-function run(agentName: 'Forge' | 'Ghostlight' | 'Lumen' | 'Sable' | 'Spark') {
+function run(agentName: 'Forge' | 'Ghostlight' | 'Lumen' | 'Sable' | 'Spark', authorNote?: string) {
   return orchestrator.runMultiCall({
     agentName,
+    authorNote,
     conversationId,
     bookSlug: 'book',
     onEvent: (e) => events.push(e),
@@ -218,6 +219,29 @@ describe('static step schemas (Forge)', () => {
 
   it('throws for agents without step schemas', async () => {
     await expect(run('Spark')).rejects.toThrow(/No multi-call steps defined/);
+  });
+});
+
+describe('author note (#111)', () => {
+  it('appends the author note to every step prompt', async () => {
+    wireProviderWrites(['source/project-tasks.md', 'source/revision-prompts.md']);
+
+    await run('Forge', 'Keep chapter 7 as it is.');
+
+    expect(provider.calls).toHaveLength(2);
+    for (const call of provider.calls) {
+      expect(call.messages[0].content).toContain('Keep chapter 7 as it is.');
+    }
+  });
+
+  it('adds nothing without a note', async () => {
+    wireProviderWrites(['source/project-tasks.md', 'source/revision-prompts.md']);
+
+    await run('Forge');
+
+    for (const call of provider.calls) {
+      expect(call.messages[0].content).not.toContain('Author note');
+    }
   });
 });
 

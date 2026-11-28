@@ -8,7 +8,7 @@ type PhaseStarterCardProps = {
   /** Curated starting points (from getPhaseStarterActions). */
   starters: QuickAction[];
   /** Called with the full prompt — same effect as a Quick actions pick. */
-  onPick: (prompt: string) => void;
+  onPick: (prompt: string, label: string) => void;
   /** Shown only when no conversation exists yet: start one with an empty input. */
   onStartBlank?: () => void;
   disabled: boolean;
@@ -54,7 +54,7 @@ export function PhaseStarterCard({
           {starters.map((action) => (
             <button
               key={action.label}
-              onClick={() => onPick(action.prompt)}
+              onClick={() => onPick(action.prompt, action.label)}
               disabled={disabled}
               title={action.prompt}
               className="rounded-[7px] border border-ne-line bg-ne-bg2 px-3 py-1.5 text-xs text-ne-ink transition-colors hover:border-ne-brass/60 hover:text-ne-brass-hi disabled:cursor-not-allowed disabled:opacity-50"

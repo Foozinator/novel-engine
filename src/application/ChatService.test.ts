@@ -233,6 +233,42 @@ describe('sendMessage — guards and routing', () => {
   });
 });
 
+describe('first pipeline message routing (#111)', () => {
+  const doneEvent: StreamEvent = { type: 'done', inputTokens: 1, outputTokens: 1, thinkingTokens: 0, filesTouched: {} };
+
+  it("'Plan from my feedback' plus text is a normal Forge chat turn and the text reaches Forge", async () => {
+    const conversationId = await newConversation('pipeline', 'Forge', 'revision-plan-1');
+    h.provider.scriptNext([{ type: 'textDelta', text: 'Got it.' }, doneEvent]);
+    const message = "I have specific revisions I want made. Here's what I need changed:\n\nCut chapter 3.";
+
+    await send(conversationId, { agentName: 'Forge', message, actionLabel: 'Plan from my feedback', authorNote: 'ignored' });
+
+    expect(events).not.toContainEqual(expect.objectContaining({ type: 'multiCallProgress' }));
+    expect(h.provider.calls).toHaveLength(1);
+    const sent = h.provider.calls[0].messages.map((m) => m.content).join('\n');
+    expect(sent).toContain('Cut chapter 3.');
+  });
+
+  it('a typed first message without an action is a normal chat turn for every multi-call agent', async () => {
+    for (const agentName of ['Lumen', 'Sable', 'Ghostlight', 'Forge'] as const) {
+      const conversationId = await newConversation('pipeline', agentName, null);
+      h.provider.scriptNext([{ type: 'textDelta', text: 'ok' }, doneEvent]);
+      await send(conversationId, { agentName, message: 'What should I look at first?' });
+    }
+    expect(events).not.toContainEqual(expect.objectContaining({ type: 'multiCallProgress' }));
+    expect(h.provider.calls).toHaveLength(4);
+  });
+
+  it("'Create revision plan' as the first message still starts the multi-call run", async () => {
+    const conversationId = await newConversation('pipeline', 'Forge', 'revision-plan-1');
+    h.provider.scriptNext([{ type: 'textDelta', text: 'step' }, doneEvent]);
+
+    await send(conversationId, { agentName: 'Forge', message: 'Create revision plan prompt', actionLabel: 'Create revision plan' });
+
+    expect(events).toContainEqual(expect.objectContaining({ type: 'multiCallProgress', step: 1 }));
+  });
+});
+
 describe('post-stream extraction fallback', () => {
   // Agents WITHOUT multi-call steps (Spark, Quill) — Ghostlight/Lumen/Sable/Forge
   // would route first pipeline messages into MultiCallOrchestrator instead.

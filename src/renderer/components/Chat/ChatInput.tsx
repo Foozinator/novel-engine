@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CreativeAgentName } from '@domain/types';
+import type { CreativeAgentName, SendMessageParams } from '@domain/types';
 import { QuickActions } from './QuickActions';
 import { ThinkingBudgetSlider } from './ThinkingBudgetSlider';
 import { Tooltip } from '../common/Tooltip';
 
 type ChatInputProps = {
-  onSend: (message: string) => void;
+  /** `action` is set when the message is a built-in quick action, plus any text the author added (#111). */
+  onSend: (message: string, action?: Pick<SendMessageParams, 'actionLabel' | 'authorNote'>) => void;
   disabled: boolean;
   lockedAgentName?: string | null;
   /** The current agent for quick-action prompts. */
@@ -28,7 +29,7 @@ type ChatInputProps = {
    * External request to fill the textarea (e.g. the workbench phase starter
    * card). Each new `nonce` applies `text` exactly like a quick-action pick.
    */
-  prefill?: { text: string; nonce: number } | null;
+  prefill?: { text: string; nonce: number; label?: string } | null;
 };
 
 /** Chip that opens a popover hosting the existing ThinkingBudgetSlider. */
@@ -78,10 +79,22 @@ export function ChatInput({ onSend, disabled, lockedAgentName, agentName, readOn
 
   const canSend = value.trim().length > 0 && !disabled;
 
+  // The built-in quick action the textarea was filled from, if any (#111).
+  const pendingActionRef = useRef<{ label: string; prompt: string } | null>(null);
+
   const handleSend = useCallback(() => {
     const trimmed = value.trim();
     if (!trimmed || disabled) return;
-    onSend(trimmed);
+    // The action stays attached only while its prompt is intact at the start;
+    // whatever follows is the author's note. An edited prompt is a plain message.
+    const pending = pendingActionRef.current;
+    pendingActionRef.current = null;
+    const prompt = pending?.prompt.trim();
+    if (pending && prompt && trimmed.startsWith(prompt)) {
+      onSend(trimmed, { actionLabel: pending.label, authorNote: trimmed.slice(prompt.length).trim() });
+    } else {
+      onSend(trimmed);
+    }
     setValue('');
   }, [value, disabled, onSend]);
 
@@ -96,7 +109,8 @@ export function ChatInput({ onSend, disabled, lockedAgentName, agentName, readOn
   );
 
   // When a quick action is selected, populate the textarea and focus it
-  const handleQuickAction = useCallback((prompt: string) => {
+  const handleQuickAction = useCallback((prompt: string, label?: string) => {
+    pendingActionRef.current = label ? { label, prompt } : null;
     setValue(prompt);
     // Focus the textarea so the user can edit or just hit Enter
     setTimeout(() => textareaRef.current?.focus(), 0);
@@ -105,9 +119,10 @@ export function ChatInput({ onSend, disabled, lockedAgentName, agentName, readOn
   // Apply an external prefill (same path as a quick-action pick).
   const prefillNonce = prefill?.nonce ?? null;
   const prefillText = prefill?.text ?? '';
+  const prefillLabel = prefill?.label;
   useEffect(() => {
     if (prefillNonce === null) return;
-    handleQuickAction(prefillText);
+    handleQuickAction(prefillText, prefillLabel);
     // Keyed on the nonce only: the same text may be requested twice.
   }, [prefillNonce]); // eslint-disable-line react-hooks/exhaustive-deps
 

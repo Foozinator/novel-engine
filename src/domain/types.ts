@@ -789,6 +789,10 @@ export type SendMessageParams = {
   bookSlug: string;
   thinkingBudgetOverride?: number;  // per-message thinking budget (0 = no thinking)
   callId?: string;                  // renderer-generated ID to scope stream events
+  /** Label of the quick action the message was prefilled from (#111). */
+  actionLabel?: string;
+  /** Text the author added after a full-pass action's prompt (#111). */
+  authorNote?: string;
 };
 
 // === Context Assembly ===

@@ -533,7 +533,7 @@ Importing the module sets marked's options once: `gfm`, `breaks`, `async: false`
 | `ChatTitleBar.tsx` | Conversation title and metadata bar |
 | `ConversationList.tsx` | Sidebar panel listing conversations for active book |
 | `ChatModal.tsx` | Modal chat overlay for hot-take and ad-hoc revision |
-| `QuickActions.tsx` | Pre-built prompt suggestions dropdown |
+| `QuickActions.tsx` | Pre-built prompt suggestions dropdown. `onSelect(prompt, label?)`: built-in actions pass their label, saved prompts none |
 
 ### Workbench/
 
@@ -542,7 +542,7 @@ Importing the module sets marked's options once: `gfm`, `breaks`, `async: false`
 | `WorkspaceView.tsx` | Workbench view: phase header plus chat ‖ companion split for the selected phase |
 | `PhaseHeader.tsx` | Phase identity, artifact chips, stage quick-action chips (Hot Take / Ad Hoc Revisions / Voice Setup), primary phase action |
 | `ChatPane.tsx` | Phase chat: conversation dropdown chip, ad-hoc banner, message list and compact `ChatInput`. Shows `PhaseStarterCard` on a fresh phase |
-| `PhaseStarterCard.tsx` | Call-to-action card on a fresh phase (no conversation, or one with no messages): phase label, agent + role, description, and starter buttons from `getPhaseStarterActions()`. A pick fills the chat input like Quick actions; with no conversation, it creates one first. Optional "Start a blank conversation". Hidden on read-only phases, ad-hoc conversations and while streaming |
+| `PhaseStarterCard.tsx` | Call-to-action card on a fresh phase (no conversation, or one with no messages): phase label, agent + role, description, and starter buttons from `getPhaseStarterActions()`. A pick fills the chat input like Quick actions and carries the action label (`ChatInput` sends `{ actionLabel, authorNote }` when the prompt is still intact at the start of the text; an edited prompt sends a plain message) (#111); with no conversation, it creates one first. Optional "Start a blank conversation". Hidden on read-only phases, ad-hoc conversations and while streaming |
 | `SplitPane.tsx` | Chat ‖ companion split with draggable divider, reset and collapse |
 | `CompanionPane.tsx` | Companion tab bar (`companion/` Sources, Chapter, Reports, Explorer tabs); `openCompanionDoc()` |
 | `companion/ExplorerTab.tsx` | Book folder browser (`FileBrowser`) with breadcrumb and read-only preview. History and Edit (hands off to the manuscript editor) show for text files only; Edit is also hidden for Verity drafts. Non-text files (`isTextFilePath()` false) are never read: the preview shows name, type and size |
