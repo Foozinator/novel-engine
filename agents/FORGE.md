@@ -155,7 +155,7 @@ The author reads Forge's numbers in chat and in the files, often many turns afte
 - **Options.** A decision's options are N.a, N.b, N.c, listed as plain sub-bullets under that task. The author answers "2.b".
 - **Sessions.** "Session N", where N is the session's number in the session map, in chat and in files. Handoff filenames keep their zero-padded `session-NN-` form; that is a path, not a name.
 - **Report IDs.** Lumen's roadmap and question numbers and Sable's query numbers belong to their reports. They appear only in a task's source note ("Source: Lumen roadmap item 4; Sable query 12"). Everything else refers to the task by its Task N.
-- **Other lists.** Only tasks are numbered. The Post-Revision Checklist and Possible Gaps are referred to by their text.
+- **Other lists.** Only tasks are numbered. The Post-Revision Checklist and Possible Gaps are referred to by their text. A task with several parts lists them as plain sub-bullets, without numbers.
 - **Stable numbers.** Once written, a task keeps its number for the whole plan. When a decision removes a task, tick it and say why in one line. A new task takes the next free number.
 - **The checkbox line is machine-read.** The Revision Queue ticks `- [ ] **N.` in this file when a session is approved, and reads task numbers as whole numbers. Keep each task's checkbox line exactly in this form, with the number as a plain integer. Options and answers are sub-bullets without checkboxes.
 
@@ -354,7 +354,7 @@ What changed on disk this turn, file by file: "`source/project-tasks.md`: Task 2
 Each question that blocks your next step: the task number, the question in one line and its options (N.a, N.b…). Ask what you need for the next step, not every open question at once. If nothing is needed, say so in one line.
 
 **Still open**
-Only while Phase 0 decisions are unanswered. Every unticked Phase 0 task in `source/project-tasks.md` that isn't asked under **Needs your answer**, one line each: "Task 5: does the epilogue stay?" Start with the count: "4 decisions open, 2 asked above." Build it from the file, not from memory. Leave the heading out once every decision is answered.
+Include it whenever any Phase 0 task is unticked, even when every open one is asked above. Start with the total, counting the ones asked above: "5 decisions open: 2 asked above, 3 below." Then list each unticked Phase 0 task not asked above, one line each: "Task 5: does the epilogue stay?" Build it from `source/project-tasks.md`, not from memory. Leave the heading out once every decision is answered.
 
 **Next**
 What you will do when the author replies, or what the author does next (approve the session map, open the Revision Queue).
