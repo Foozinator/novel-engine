@@ -131,6 +131,180 @@ export type PipelinePhase = {
   description: string;
 };
 
+// === Run log (#87) ===
+//
+// A book's pipeline history as an append-only log of events
+// (`pipeline-log.jsonl` in the book folder). Phase TYPES are kinds of work
+// that can run any number of times; each execution is a RUN. Runs added
+// together for one job form a PASS. The 15 legacy phases are the runs of
+// the default plan (`DEFAULT_PLAN`, `LEGACY_PHASE_SLOTS`).
+//
+// Shadow mode (PR 1): the pipeline still runs on PipelineService and
+// pipeline-state.json. The log is migrated on book open, kept in step with
+// each legacy action, and compared with the legacy view.
+
+/** A kind of pipeline work. Today's 15 phase IDs map onto the first 13; `readiness` is #89. */
+export type PhaseType =
+  | 'pitch'
+  | 'scaffold'
+  | 'draft'
+  | 'read'
+  | 'assessment'
+  | 'revision-plan'
+  | 'revision'
+  | 'copy-edit'
+  | 'fix-plan'
+  | 'mechanical-fixes'
+  | 'build'
+  | 'publish'
+  | 'query-agents'
+  | 'readiness';
+
+/**
+ * How a run becomes ready to confirm. `files`: its outputs exist with
+ * substance and differ from the hashes recorded when it started. `action`:
+ * only the author's action completes it (Complete Revision, Mark done).
+ */
+export type RunGate = 'files' | 'action';
+
+export type PhaseTypeDef = {
+  type: PhaseType;
+  label: string;
+  agent: AgentName | null;
+  /** Live output paths relative to the book root. `{slug}` is the book's slug. */
+  outputs: string[];
+  gate: RunGate;
+  /** Words each output needs to count as written (0: existing is enough). */
+  minWords: number;
+  /** A run of this type rewrites chapters (draft snapshots, #87 PR 5). */
+  rewrites: boolean;
+};
+
+/** The kind of a pass: a template of runs added together. */
+export type PassKind =
+  | 'conceive'
+  | 'draft'
+  | 'assess'
+  | 'revision'
+  | 'copy-edit'
+  | 'ship'
+  | 'read'
+  | 'readiness';
+
+/** `proposed` runs come from an agent and wait for the author (#59). */
+export type RunState = 'planned' | 'proposed' | 'active' | 'done' | 'skipped' | 'declined';
+
+export type RunOrigin = 'template' | 'author' | 'agent' | 'import' | 'migration';
+
+/** One output of a finished run, addressed by content. */
+export type RunOutput = { path: string; sha256: string; words: number };
+
+/** Output hashes when a run started. `null` for a path that didn't exist. */
+export type RunBaseline = Record<string, string | null>;
+
+/** One chapter in a draft snapshot. */
+export type DraftChapterRef = { slug: string; sha256: string; words: number };
+
+export type RunEventBody =
+  | {
+      /** Starts a new epoch: runs planned before it leave the plan but stay in the file. */
+      e: 'migrated';
+      /** The legacy state file the epoch was built from. */
+      from: {
+        file: 'pipeline-state.json';
+        sha256: string | null;
+        confirmedPhases: string[] | null;
+        readable: boolean;
+      };
+      /** What the legacy pipeline showed at migration time. */
+      legacy: Partial<Record<PipelinePhaseId, PhaseStatus>>;
+      /** Number of events the migration wrote after this one. */
+      batch: number;
+    }
+  | {
+      e: 'planned';
+      run: string;
+      type: PhaseType;
+      pass: string;
+      passKind: PassKind;
+      /** The run this one follows in plan order; null for the first. */
+      after: string | null;
+      origin: RunOrigin;
+      label?: string;
+      legacyPhase?: PipelinePhaseId;
+      proposedBy?: AgentName;
+      reason?: string;
+    }
+  | { e: 'approved'; run: string }
+  | { e: 'declined'; run: string }
+  /** Null baseline: unknown (a migrated run awaiting confirmation). Its outputs all count as new. */
+  | { e: 'started'; run: string; baseline: RunBaseline | null; draft?: number }
+  /** A pass was inserted before this started run; it goes back to planned. */
+  | { e: 'deferred'; run: string }
+  | { e: 'done'; run: string; outputs: RunOutput[] }
+  | { e: 'skipped'; run: string; reason: string }
+  /** Undo a Done or a skip. The run is active again. */
+  | { e: 'reopened'; run: string }
+  | { e: 'archived'; path: string; to: string; sha256: string }
+  /** A draft snapshot. Its folder is derived from the number, never stored. */
+  | { e: 'snapshot'; draft: number; reason: string; chapters: DraftChapterRef[] }
+  /** Shadow mode: this build wrote pipeline-state.json, which now has this hash. */
+  | { e: 'legacy-synced'; sha256: string | null };
+
+export type RunEvent = RunEventBody & { v: 1; seq: number; at: string };
+
+export type RunEventType = RunEventBody['e'];
+
+export type Run = {
+  id: string;
+  type: PhaseType;
+  pass: string;
+  passKind: PassKind;
+  origin: RunOrigin;
+  label?: string;
+  legacyPhase?: PipelinePhaseId;
+  proposedBy?: AgentName;
+  reason?: string;
+  state: RunState;
+  /** Set by `started`; null when unknown (see the `started` event). */
+  baseline?: RunBaseline | null;
+  outputs: RunOutput[];
+  startedAt?: string;
+  doneAt?: string;
+  skipReason?: string;
+};
+
+/** A line of the log that was not folded, and why. Lines are 1-based. */
+export type RunLogIssue = { line: number; reason: string };
+
+/** The log folded into the current plan. */
+export type RunLog = {
+  /** The current epoch's runs in plan order. */
+  runs: Run[];
+  /** The latest `migrated` event, or null when the book was never migrated. */
+  migrated: Extract<RunEvent, { e: 'migrated' }> | null;
+  /** Hash of pipeline-state.json the log last knew (migration or `legacy-synced`). */
+  legacySha: string | null;
+  /** Events after the latest migration's batch. */
+  eventsSinceMigration: number;
+  archived: Extract<RunEvent, { e: 'archived' }>[];
+  drafts: Extract<RunEvent, { e: 'snapshot' }>[];
+  lastSeq: number;
+  /** Highest run and pass numbers in any epoch. IDs are never reused. */
+  maxRun: number;
+  maxPass: number;
+  /** Lines dropped while reading: unreadable, malformed or illegal. */
+  issues: RunLogIssue[];
+};
+
+export type RunLogMigration = {
+  /** `remigrated`: a new epoch, because pipeline-state.json changed after the last one. */
+  outcome: 'migrated' | 'remigrated' | 'up-to-date';
+  log: RunLog;
+  /** For the author, when the legacy state file could not be read. */
+  notice: string | null;
+};
+
 // === Chat / Conversation ===
 
 export type MessageRole = 'user' | 'assistant';

@@ -1,6 +1,6 @@
 # Application — Services & Orchestration
 
-> Last updated: 2026-11-23 (#61)
+> Last updated: 2026-11-28 (#87)
 
 Everything in `src/application/`. Business logic that orchestrates infrastructure through injected interfaces.
 
@@ -249,6 +249,69 @@ An archive sits next to its live file with a version suffix: `source/reader-repo
 | `latestPlanArchive(fs, slug)` | `{ version, tasks, prompts }` for the newest version across both plan files |
 | `archiveGroup(fs, slug, paths, 'copy' \| 'move')` | Archives the existing live files under one shared version. If each already matches its newest archive, writes nothing (`move` then only removes the live files). Returns `{ version, created }` or null. |
 | `archivePlan(fs, slug, mode)` | `archiveGroup(PLAN_FILES)`; a `move` also renames a non-empty `session-handoffs/` to `session-handoffs-vN/` |
+
+### runLog (run log format, #87)
+
+File: `src/application/runLog.ts` — pure functions over the text of `pipeline-log.jsonl`.
+
+One JSON event per line (`RunEvent`), appended only. Reading never fails. A line is dropped and listed in `RunLog.issues` (1-based line, reason) when it:
+- doesn't parse (a torn write);
+- doesn't match its event's shape: format version, sequence, run and pass IDs, known phase types, pass kinds, origins, agents and legacy phase IDs, sha256 hashes, in-book paths without `.`/`..` segments, `archived.to` that is a `-vN` version of `path`, safe draft chapter names, bounded text;
+- has a sequence number that doesn't increase;
+- refers to a run the current epoch doesn't know, reuses a run ID from any epoch, or makes an illegal transition;
+- names outputs or baseline paths its run's type doesn't write, or a draft number that doesn't follow the last.
+
+| Export | What It Does |
+|--------|-------------|
+| `parseRunLog(raw, bookSlug)` | Validates and folds into `RunLog`. A `migrated` event starts a new epoch: earlier runs leave the plan but keep their IDs reserved |
+| `currentRun(log)` | First planned or active run in plan order (proposed and declined runs don't count) |
+| `projectStatuses(log, currentIsReady)` | Legacy view: complete before the current run, pending-completion or active at it, locked after |
+| `stampEvents(bodies, lastSeq, at)` | Adds `v`, `seq` and `at` |
+| `reopenEvents(log, runIds)` | `reopened` for each listed run that is done or skipped |
+| `sha256Text`, `countWords`, `runId(n)`, `passId(n)`, `emptyRunLog()` | Helpers |
+
+Transitions: planned → active (`started`) → done; planned or active → done (a migrated phase, Mark done) or skipped; proposed → planned (`approved`) or declined; active → planned (`deferred`); done or skipped → active (`reopened`). Reopening clears a null baseline, so a reopened action-gated run waits for its action again.
+
+### RunLogService (#87)
+
+File: `src/application/RunLogService.ts`
+
+Dependencies: `IFileSystemService`. Implements `IRunLogService`.
+
+| Method | What It Does |
+|--------|-------------|
+| `load(bookSlug)` | Reads and folds the log |
+| `update(bookSlug, plan)` | Per-book queue: read, fold, `plan(log)`, stamp, fold again to check, then `fs.appendFile`. New events that would be dropped throw and nothing is written. After a torn last line the append starts on a new line |
+| `migrate(bookSlug, legacy)` | Up to date when the log has an epoch and its `legacySha` matches pipeline-state.json. Otherwise appends `migrated` (legacy file hash, parsed confirmed phases or `readable: false`, the legacy view, batch size), one `planned` per `LEGACY_PHASE_SLOTS` entry, then complete → `done` (attributed outputs), pending-completion → `started` with a null baseline, active → `started` with today's hashes. Run and pass numbers continue after earlier epochs |
+| `legacyStateHash(bookSlug)` | sha256 of pipeline-state.json or null |
+| `isReady(bookSlug, run)` | No word-count comparisons: outputs exist with `minWords` and differ from the baseline (no baseline: they count as new). Action gate: only a null baseline |
+| `projectLegacy(bookSlug, log)` | `projectStatuses` with `isReady` of the current run |
+| `doneEvents(bookSlug, log, runId)` | `done` with today's outputs, then `started` for the next planned run with today's hashes |
+
+**Output attribution at migration:** per output path, the versions are its `-vN` archives (oldest first) then the live file, with repeats collapsed. Walking that path's legacy phases from the last back, each complete or pending phase takes the newest version left; complete ones record it. An active phase keeps a live file that differs from the newest archive. Leftovers (abandoned attempts) stay on disk, unattributed.
+
+**Migration writes only the log.** pipeline-state.json, about.json, reports and archives stay byte for byte, so an older build opens the book where it was. Deleting the log undoes the migration.
+
+### ShadowPipelineService (#87, PR 1: shadow mode)
+
+File: `src/application/ShadowPipelineService.ts`
+
+Dependencies: `IPipelineService` (the legacy `PipelineService`), `IRunLogService`, a report callback. Implements `IPipelineService`; every call returns what `PipelineService` returns and its errors propagate.
+
+| Method | What It Does |
+|--------|-------------|
+| `openBook(bookSlug)` | Marks the book opened; its next detection migrates it. Called by the composition root for the active book at startup and on every active-book change |
+| `detectPhases(bookSlug)` | Legacy detection, then the check: skip a book that has no log and wasn't opened; migrate when the log is missing or its `legacySha` doesn't match pipeline-state.json (a new epoch: an older build was used or a mirror failed); report dropped lines; compare `projectLegacy` with the legacy statuses and report differences |
+| `confirmPhaseAdvancement`, `markPhaseComplete`, `completeRevision` | Legacy action, then `doneEvents` for the phase's run (`revision` for Complete Revision) |
+| `revertPhase` | Legacy revert, then `reopened` for the phase's run and every later done or skipped run |
+| `getActivePhase`, `getAgentForPhase` | Legacy only |
+
+Mirroring records an action only when the log matched pipeline-state.json before it, and then appends `legacy-synced` with the new hash. Shadow errors are reported, never thrown. Reports (`ShadowReport`: migrated, remigrated, mismatch, issues, error) repeat only when they change; a cleared error is reported again if it returns.
+
+**Known differences the check reports (by design of the new model):**
+- A new report with the same word count as the one it replaces is ready in the log; today's pipeline misses it (#87).
+- After a revert past several phases, leftover work counts differently: a book reverted before migration has later runs start fresh (today's pipeline counts some leftover files); after a revert in shadow mode and a redone revision, a reopened read keeps its report (today's pipeline wants a new read because Complete Revision archived it).
+- A status-based phase an agent completes by changing `about.json` status is pending in today's pipeline only.
 
 ### BuildService
 

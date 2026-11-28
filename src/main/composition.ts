@@ -26,6 +26,8 @@ import { HelperService } from '@app/HelperService';
 import { StreamManager } from '@app/StreamManager';
 import { ChapterValidator } from '@app/ChapterValidator';
 import { PipelineService } from '@app/PipelineService';
+import { RunLogService } from '@app/RunLogService';
+import { ShadowPipelineService } from '@app/ShadowPipelineService';
 import { BuildService } from '@app/BuildService';
 import { UsageService } from '@app/UsageService';
 import { RevisionQueueService } from '@app/RevisionQueueService';
@@ -47,6 +49,7 @@ import type { EventSink, HostAdapter } from './host';
 import type { IpcServices } from './ipc/handlers';
 import { NotificationManager } from './notifications';
 import { bootstrap, needsBootstrap, ensureAgents, ensureUserGuide, AUTHOR_PROFILE_TEMPLATE } from './bootstrap';
+import { makeShadowReporter } from './shadowLog';
 import { fetchCodexModels, fetchLlamaServerModels, fetchOllamaModels, normalizeCodexModels } from './modelDiscovery';
 
 /**
@@ -265,7 +268,14 @@ export async function composeApp(options: CompositionOptions): Promise<Compositi
   const series = new SeriesService(userDataPath);
   const version = new VersionService(db, fs);
   const chat = new ChatService(settings, agents, db, providers, fs, chapterValidator, pitchRoom, hotTake, adhocRevision, streamManager, series, version);
-  const pipeline = new PipelineService(fs);
+  // Run log in shadow mode (#87): PipelineService still decides; the log
+  // is migrated on open, mirrors each action and is checked on each detect.
+  const runLog = new RunLogService(fs);
+  const pipeline = new ShadowPipelineService(
+    new PipelineService(fs),
+    runLog,
+    makeShadowReporter(userDataPath).report,
+  );
   const build = new BuildService(fs, pandocPath, booksDir);
   const revisionQueue = new RevisionQueueService(fs, providers, agents, db, settings, version);
   const motifLedger = new MotifLedgerService(fs, providers, settings);
@@ -340,9 +350,13 @@ export async function composeApp(options: CompositionOptions): Promise<Compositi
   });
 
   // Start watching the active book (if one is set)
+  const openBook = (slug: string) => {
+    bookWatcher.watch(slug);
+    pipeline.openBook(slug);
+  };
   fs.getActiveBookSlug().then((activeSlug) => {
     if (activeSlug) {
-      bookWatcher.watch(activeSlug);
+      openBook(activeSlug);
     }
   }).catch(() => {
     // No active book yet — watcher will start when user selects one
@@ -367,7 +381,7 @@ export async function composeApp(options: CompositionOptions): Promise<Compositi
     },
     booksDir,
     promptSync,
-    onActiveBookChanged: (slug: string) => bookWatcher.watch(slug),
+    onActiveBookChanged: openBook,
     dispose: () => {
       if (disposed) return;
       disposed = true;

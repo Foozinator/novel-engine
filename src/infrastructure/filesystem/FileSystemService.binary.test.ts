@@ -71,6 +71,18 @@ describe('writeFile over binary files (#83)', () => {
     expect(await lib.service.readFile('book', 'source/long.org')).toBe('replaced');
   });
 
+  it('appendFile refuses a binary file too, and appends to text', async () => {
+    const [png] = BINARY_FIXTURES;
+    const abs = await seedBytes('assets/cover.png', png.bytes);
+    await expect(lib.service.appendFile('book', 'assets/cover.png', 'x')).rejects.toThrow(/Not a text file/);
+    expect((await readFile(abs)).equals(png.bytes)).toBe(true);
+
+    // A new file and its folders are created; later appends add to the end
+    await lib.service.appendFile('book', 'logs/run.jsonl', '{"a":1}\n');
+    await lib.service.appendFile('book', 'logs/run.jsonl', '{"a":2}\n');
+    expect(await lib.service.readFile('book', 'logs/run.jsonl')).toBe('{"a":1}\n{"a":2}\n');
+  });
+
   it('creates a new file at a non-text path, since nothing is overwritten', async () => {
     await lib.service.writeFile('book', 'assets/new.png', 'placeholder');
     expect(await lib.service.readFile('book', 'assets/new.png')).toBe('placeholder');

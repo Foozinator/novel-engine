@@ -501,6 +501,17 @@ export class FileSystemService implements IFileSystemService {
     await fs.writeFile(filePath, content, 'utf-8');
   }
 
+  async appendFile(bookSlug: string, relativePath: string, content: string): Promise<void> {
+    const filePath = resolveBookPath(this.booksDir, bookSlug, relativePath);
+    if (!isTextFilePath(relativePath) && (await looksBinary(filePath))) {
+      throw new Error(
+        `Not a text file: ${relativePath} in book "${bookSlug}" was left unchanged`,
+      );
+    }
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.appendFile(filePath, content, 'utf-8');
+  }
+
   async deleteFile(bookSlug: string, relativePath: string): Promise<void> {
     const filePath = resolveBookPath(this.booksDir, bookSlug, relativePath);
     try {

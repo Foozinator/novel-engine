@@ -1,6 +1,6 @@
 # Domain — Types, Interfaces, Constants
 
-> Last updated: 2026-11-23 (#61)
+> Last updated: 2026-11-28 (#87)
 
 Everything in `src/domain/`. Pure TypeScript declarations — zero imports from other layers.
 
@@ -56,6 +56,29 @@ Everything in `src/domain/`. Pure TypeScript declarations — zero imports from 
 | `PipelinePhaseId` | `'pitch' \| 'scaffold' \| ... \| 'publish' \| 'query-agents'` (15 values) | PipelineService, PipelineTracker |
 | `PhaseStatus` | `'complete' \| 'pending-completion' \| 'active' \| 'locked'` | PipelineTracker UI |
 | `PipelinePhase` | `{ id, label, agent, status, description }` | PipelineService.detectPhases() |
+
+### Run log (#87)
+
+A book's pipeline history as an append-only event log, `pipeline-log.jsonl`. In shadow mode (PR 1) the legacy pipeline still decides; see `ShadowPipelineService` in APPLICATION.md.
+
+| Type | Shape | Used By |
+|------|-------|---------|
+| `PhaseType` | `'pitch' \| 'scaffold' \| 'draft' \| 'read' \| 'assessment' \| 'revision-plan' \| 'revision' \| 'copy-edit' \| 'fix-plan' \| 'mechanical-fixes' \| 'build' \| 'publish' \| 'query-agents' \| 'readiness'` | `PHASE_TYPES`, runs |
+| `RunGate` | `'files' \| 'action'` | `PhaseTypeDef` |
+| `PhaseTypeDef` | `{ type, label, agent, outputs, gate, minWords, rewrites }`; `{slug}` in outputs | `PHASE_TYPES` |
+| `PassKind` | `'conceive' \| 'draft' \| 'assess' \| 'revision' \| 'copy-edit' \| 'ship' \| 'read' \| 'readiness'` | `PASS_TEMPLATES`, runs |
+| `RunState` | `'planned' \| 'proposed' \| 'active' \| 'done' \| 'skipped' \| 'declined'` | `Run` |
+| `RunOrigin` | `'template' \| 'author' \| 'agent' \| 'import' \| 'migration'` | `planned` event |
+| `RunOutput` | `{ path, sha256, words }`: an output addressed by content | `done` event, `Run.outputs` |
+| `RunBaseline` | `Record<path, sha256 \| null>`: output hashes when a run started | `started` event |
+| `DraftChapterRef` | `{ slug, sha256, words }` | `snapshot` event |
+| `RunEventBody` | Union on `e`: `migrated` (legacy file hash, confirmed phases, readable, legacy view, batch size; starts an epoch), `planned` (run, type, pass, passKind, after, origin, label?, legacyPhase?, proposedBy?, reason?), `approved`, `declined`, `started` (baseline or null = unknown, draft?), `deferred`, `done` (outputs), `skipped` (reason), `reopened`, `archived` (path, to, sha256), `snapshot` (draft, reason, chapters; folder derived from the number), `legacy-synced` (new hash of pipeline-state.json) | `IRunLogService.update` |
+| `RunEvent` | `RunEventBody & { v: 1, seq, at }` | One log line |
+| `RunEventType` | `RunEventBody['e']` | — |
+| `Run` | `{ id, type, pass, passKind, origin, label?, legacyPhase?, proposedBy?, reason?, state, baseline?, outputs, startedAt?, doneAt?, skipReason? }` | Folded log |
+| `RunLogIssue` | `{ line, reason }`: a dropped line | `RunLog.issues` |
+| `RunLog` | `{ runs, migrated, legacySha, eventsSinceMigration, archived, drafts, lastSeq, maxRun, maxPass, issues }` | `IRunLogService.load` |
+| `RunLogMigration` | `{ outcome: 'migrated' \| 'remigrated' \| 'up-to-date', log, notice }` | `IRunLogService.migrate` |
 
 ### Chat / Conversation
 
@@ -385,6 +408,7 @@ Implemented by: `FileSystemService` (`src/infrastructure/filesystem/`)
 | `getProjectManifest` | `(slug) => Promise<ProjectManifest>` | File listing with word counts |
 | `readFile` | `(bookSlug, relativePath) => Promise<string>` | File contents |
 | `writeFile` | `(bookSlug, relativePath, content) => Promise<void>` | Throws when an existing file that isn't a known text type looks binary; the file is left unchanged |
+| `appendFile` | `(bookSlug, relativePath, content) => Promise<void>` | Appends; creates the file and its folders. Same path and binary checks as `writeFile` (#87) |
 | `deleteFile` | `(bookSlug, relativePath) => Promise<void>` | — |
 | `deletePath` | `(bookSlug, relativePath) => Promise<void>` | Recursive delete |
 | `renameFile` | `(bookSlug, oldPath, newPath) => Promise<void>` | — |
@@ -467,17 +491,31 @@ Router/manager for all configured providers. Services call with a model ID; regi
 
 ### IPipelineService
 
-Implemented by: `PipelineService` (`src/application/`)
+Implemented by: `PipelineService` (`src/application/`), wrapped by `ShadowPipelineService` in the composition root (#87). The wrapper returns exactly what `PipelineService` returns.
 
 | Method | Signature | Returns |
 |--------|-----------|---------|
-| `detectPhases` | `(bookSlug) => Promise<PipelinePhase[]>` | All 14 phases with statuses |
+| `detectPhases` | `(bookSlug) => Promise<PipelinePhase[]>` | All 15 phases with statuses |
 | `getActivePhase` | `(bookSlug) => Promise<PipelinePhase \| null>` | First non-complete phase |
 | `getAgentForPhase` | `(phaseId) => AgentName \| null` | Agent assignment |
 | `markPhaseComplete` | `(bookSlug, phaseId) => Promise<void>` | Advances book status |
 | `confirmPhaseAdvancement` | `(bookSlug, phaseId) => Promise<void>` | Confirms pending-completion |
 | `completeRevision` | `(bookSlug) => Promise<void>` | Archives the reports and plan under their next version; confirms `revision` |
 | `revertPhase` | `(bookSlug, phaseId) => Promise<void>` | Rolls back phase + subsequent |
+
+### IRunLogService
+
+Implemented by: `RunLogService` (`src/application/`) (#87)
+
+| Method | Signature | Returns |
+|--------|-----------|---------|
+| `load` | `(bookSlug) => Promise<RunLog>` | The log folded into its current plan; a missing log is empty. Bad lines are dropped and listed in `issues` |
+| `update` | `(bookSlug, plan: (log) => Promise<RunEventBody[]>) => Promise<RunLog>` | Appends what `plan` returns, one book at a time. Throws, writing nothing, if a new event would be dropped on read |
+| `migrate` | `(bookSlug, legacy: PipelinePhase[]) => Promise<RunLogMigration>` | Builds an epoch from the legacy view when the log is missing or behind pipeline-state.json. Writes only the log |
+| `legacyStateHash` | `(bookSlug) => Promise<string \| null>` | sha256 of pipeline-state.json, or null |
+| `isReady` | `(bookSlug, run) => Promise<boolean>` | Active run ready to confirm: files gate = outputs exist with `minWords` and one differs from the baseline; action gate = only a migrated run that was already waiting |
+| `projectLegacy` | `(bookSlug, log) => Promise<Partial<Record<PipelinePhaseId, PhaseStatus>>>` | The legacy view recomputed from the log and the files |
+| `doneEvents` | `(bookSlug, log, runId) => Promise<RunEventBody[]>` | `done` with today's outputs, then `started` for the next planned run with today's hashes as baseline |
 
 ### IBuildService
 
@@ -712,6 +750,27 @@ Implemented by: `QueryService` (`src/application/QueryService.ts`)
 ### PIPELINE_PHASES
 
 15-phase pipeline in order. See [Application](./APPLICATION.md) for detection logic.
+
+### Run log constants (#87)
+
+| Export | Shape | Purpose |
+|--------|-------|---------|
+| `RUN_LOG_FILE` | `'pipeline-log.jsonl'` | The run log, in the book folder |
+| `PIPELINE_STATE_FILE` | `'pipeline-state.json'` | The legacy confirmation state the log migrates from |
+| `PHASE_TYPES` | `Record<PhaseType, PhaseTypeDef>` | Label, agent, live outputs, gate, minimum words, rewrites chapters. `draft`, `revision` and `mechanical-fixes` are action-gated with no outputs; `build` outputs `dist/{slug}.md` with `minWords` 0; `readiness` (#89) outputs `source/readiness-report.md` |
+| `phaseTypeOutputs(type, bookSlug)` | `string[]` | A type's outputs with `{slug}` filled in |
+| `PASS_TEMPLATES` | `Record<PassKind, { label, types }>` | Runs each pass adds: revision = plan, revision, read, assessment; copy-edit = copy edit, fix plan, mechanical fixes; and so on |
+| `DEFAULT_PLAN` | `PassKind[]` | conceive, draft, assess, revision, copy-edit, ship: 15 runs |
+| `LEGACY_PHASE_SLOTS` | `{ legacyPhase, type, passKind, passIndex }[]` | `PIPELINE_PHASES[i]` ↔ run `i` of the default plan |
+
+| Legacy phase | Type | Pass |
+|---|---|---|
+| pitch, scaffold | pitch, scaffold | conceive |
+| first-draft | draft | draft |
+| first-read, first-assessment | read, assessment | assess |
+| revision-plan-1, revision, second-read, second-assessment | revision-plan, revision, read, assessment | revision |
+| copy-edit, revision-plan-2, mechanical-fixes | copy-edit, fix-plan, mechanical-fixes | copy-edit |
+| build, publish, query-agents | build, publish, query-agents | ship |
 
 ### AGENT_READ_GUIDANCE
 
